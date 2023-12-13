@@ -28,6 +28,38 @@ def halfspace_vmd(omega, sigma, r):
     Hz /= (2*np.pi*k**2 * r**5)
     return Hz
 
+def halfspace_center_circle_loop(omega, sigma, r, I=1.):
+    """ get the vertical component of the response at the center of a circular loop on the earth's surface.
+        see equation 4.94 of ward and hohmann (pg. 220)
+        Args:
+            omega (1d-array): set of angular frequencies
+            sigma    (float): halfspace conductivity
+            r        (float): radius of the loop
+        Returns:
+            Hz    (1d-array): magnetic field strength
+    """
+    k = calc_wavenumber(omega, sigma)
+
+    Hz = 3-(3+3j*k*r - (r*k)**2)*np.exp(-1j*k*r)
+    Hz *= -I / (k**2 * r**3)
+    return Hz
+
+
+
+def freespace_u0(omega, wave_length):
+    """compute the vertical component of the wavenumber in freespace.
+     
+    Args:
+        omega (_type_): _description_
+        wave_length (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    k2 = mu0*epsilon0*omega**2
+    return np.squeeze(np.sqrt(wave_length[None,:]**2 - k2[:,None]))
+
+
 def refl_transverse_electric(sigma, thickness, wave_length, omega, mu=mu0, epsilon=epsilon0):
     """ rte = (Y_0 - hat Y_1)/(Y_0 + hat Y_1) - W&H eq 4.19 (pg 205)
         where Y_0 is the intrinsic admittance
