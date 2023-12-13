@@ -3,6 +3,40 @@ import numpy as np
 
 pi = np.pi
 
+def plot_loglog(x, *args, color='C0', ax=None):
+    if ax is None:
+        fig, ax = plt.subplots()
+    if len(args) > 0:
+        t = x
+        x = args[0]
+    else:
+        t = np.arange(len(x))
+
+    if x.dtype == complex:
+
+        xp = x.real*1.
+        xn = x.real*1.
+        xp[x < 0] = np.nan
+        xn[x > 0] = np.nan
+
+        yp = x.imag*1.
+        yn = x.imag*1.
+        yp[yp < 0] = np.nan
+        yn[yp > 0] = np.nan
+        ax.loglog(t, xp, 'C0', label='Real')
+        ax.loglog(t, np.abs(xn), 'C0--')
+        ax.loglog(t, yp, 'C1', label='Imag')
+        ax.loglog(t, np.abs(yn), 'C1--')
+        ax.legend()
+    else:
+        xp = x*1.
+        xn = x*1.
+        xp[x < 0] = np.nan
+        xn[x > 0] = np.nan
+        ax.loglog(t, xp, color)
+        ax.loglog(t, np.abs(xn), color+'--')
+    return ax
+
 def christensen1990_calculate_smoothing(omega_0, sc):
     """calculate the parameter a.
 
@@ -165,8 +199,8 @@ class Hankel:
         self.n_decades = log10max-log10min
         self.lamda = 10**(np.arange(log10min*smp_per_decade, log10max*smp_per_decade+1)*self.delta)
         self.v     = np.log(self.lamda)
-        self.filter_coefficients=self.calc_coefficients()
-        self.filter_i0 = np.searchsorted(v, 0)
+        self.fc=self.calc_coefficients()
+        self.filter_i0 = np.searchsorted(self.v, 0)
         self.F = self.func(self.lamda)
     
     @property
@@ -179,12 +213,10 @@ class Hankel:
     def __call__(self, r):
         i_offset = int(np.round(self.smp_per_decade*np.log10(r)))
         if i_offset==0:
-            return self.F.dot(self.filter_coefficients)/r
-        elif i_offset>0:
-            i_offset *= -1
-            return self.fc[:i_offset].dot(self.F[-i_offset:])/np.sqrt(r_offset)/twopi_sqrt
+            return self.F.dot(self.fc)/r
         else:
-            return self.F[:-i_offset].dot(self.filter_coefficients[i_offset:])/r
+            return self.F[:-i_offset].dot(self.fc[i_offset:])/r
+        
         
 # instead of giving hz(t) from Hz(f) this is giving d Hz / dt (t)
 twopi = np.pi*2.
