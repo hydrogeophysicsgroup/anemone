@@ -197,7 +197,7 @@ class Hankel:
         self.nu    = order
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
-        self.lamda = 10**(np.arange(log10min*smp_per_decade, log10max*smp_per_decade+1)*self.delta)
+        self.lamda = 10**(np.arange(log10min*self.smp_per_decade, log10max*self.smp_per_decade+1)*self.delta)
         self.v     = np.log(self.lamda)
         self.fc=self.calc_coefficients()
         self.filter_i0 = np.searchsorted(self.v, 0)
@@ -208,14 +208,14 @@ class Hankel:
         return 1./self.smp_per_decade
     
     def calc_coefficients(self):
-        return optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4., nu=self.nu)
+        return optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4., nu=self.nu, smp_per_decade=self.smp_per_decade)
     
     def __call__(self, r):
         i_offset = int(np.round(self.smp_per_decade*np.log10(r)))
         if i_offset==0:
-            return self.F.dot(self.fc)/r
+            return np.einsum('...i,...i->...', self.F, self.fc)/r
         else:
-            return self.F[:-i_offset].dot(self.fc[i_offset:])/r
+            return np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])/r
         
         
 # instead of giving hz(t) from Hz(f) this is giving d Hz / dt (t)
