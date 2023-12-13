@@ -1,4 +1,5 @@
 from em1d import transforms
+from em1d import physics
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -22,6 +23,7 @@ def calc_rte_halfspace(omega, sigma, wave_length, epsilon=None, mu=None):
     u1          = np.sqrt(lambda_sqrd-K1_sqrd)
     rte         = 1./(wave_length+u1)
     return rte
+
 
 m=1.
 def calc_wavenumber(omega, sigma, mu=mu0, epsilon=epsilon0):

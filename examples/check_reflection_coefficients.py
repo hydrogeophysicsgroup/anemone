@@ -1,5 +1,4 @@
 from em1d import physics
-from em1d.transforms import plot_loglog
 import matplotlib.pyplot as plt
 import numpy as np
 
