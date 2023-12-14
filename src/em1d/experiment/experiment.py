@@ -32,9 +32,13 @@ class Receiver:
 
 @dataclass
 class Loop:
-    x: np.ndarray
-    y: np.ndarray
-    z: np.ndarray
+    def __init__(self, x, y, z):
+        self.x = np.array(x)
+        self.y = np.array(y)
+        self.z = np.array(z)
+        if not np.all(self.z == self.z[0]): raise NotImplemented('current implementation only supports horizontal transmitter loops; all z values must be equal.')
+
+
 
     @classmethod
     def square(cls, side, **kwargs):
