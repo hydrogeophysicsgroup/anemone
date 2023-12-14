@@ -1,4 +1,3 @@
-from typing import Any
 import numpy as np
 
 mu0 = np.pi*4e-7
@@ -48,13 +47,13 @@ def halfspace_center_circle_loop(omega, sigma, r, I=1.):
 
 def freespace_u0(omega, wave_length):
     """compute the vertical component of the wavenumber in freespace.
-     
+       this function automatically handles the broadcasting to get all combinations of wave_lengths and frequencies.     
     Args:
-        omega (_type_): _description_
-        wave_length (_type_): _description_
+        omega       (1d-array): angular frequency
+        wave_length (1d-array): wavelength
 
     Returns:
-        _type_: _description_
+        u0 (squeezed 2d-array): vertical wavenumber with shape = omega.shape+wave_length.shape
     """
     k2 = mu0*epsilon0*omega**2
     return np.squeeze(np.sqrt(wave_length[None,:]**2 - k2[:,None]))
@@ -66,12 +65,12 @@ def refl_transverse_electric(sigma, thickness, wave_length, omega, mu=mu0, epsil
         and hat Y_1 is the surface or boundary admittance
 
     Args:
-        sigma (1d-array): conductivity of each layer
-        thickness (1d-array): thickness of each layer
+        sigma       (1d-array): conductivity of each layer
+        thickness   (1d-array): thickness of each layer
         wave_length (1d-array): wave_length (lambda)
-        omega (1d-array): angular frequency
-        mu (_type_, optional): _description_. Defaults to mu0.
-        epsilon (_type_, optional): _description_. Defaults to epsilon0.
+        omega       (1d-array): angular frequency
+        mu             (float): _description_. Defaults to mu0.
+        epsilon        (float): _description_. Defaults to epsilon0.
 
     Returns:
         reflection coefficients for transverse electric mode
@@ -104,47 +103,6 @@ def refl_transverse_electric(sigma, thickness, wave_length, omega, mu=mu0, epsil
     rte = (adm_freespace - adm_boundary[0]) / (adm_freespace + adm_boundary[0])
     return rte
 
-# def refl_transverse_electric(sigma, thickness, wave_length, omega, mu=mu0, epsilon=epsilon0):
-#     """ rte = (Y_0 - hat Y_1)/(Y_0 + hat Y_1) - W&H eq 4.19 (pg 205)
-#         where Y_0 is the intrinsic admittance
-#         and hat Y_1 is the surface or boundary admittance
-
-#     Args:
-#         sigma (1d-array): conductivity of each layer
-#         thickness (1d-array): thickness of each layer
-#         wave_length (1d-array): wave_length (lambda)
-#         omega (1d-array): angular frequency
-#         mu (_type_, optional): _description_. Defaults to mu0.
-#         epsilon (_type_, optional): _description_. Defaults to epsilon0.
-
-#     Returns:
-#         reflection coefficients for transverse electric mode
-#     """
-
-#     n_layers=len(sigma)
-
-#     lambda2 = wave_length**2
-    
-#     adm_boundary  = np.zeros(sigma.shape+wave_length.shape, dtype=complex)
-#     adm_intrinsic = np.zeros(sigma.shape+wave_length.shape, dtype=complex)
-    
-#     adm_freespace = np.sqrt(lambda2 - omega**2 * mu0*epsilon0)/(1j*omega*mu)
-    
-#     for i in range(n_layers):
-#         adm_intrinsic[i] = np.sqrt(lambda2 - (calc_wavenumber(omega, sigma[i])**2))/(1j*omega*mu)
-    
-    
-#     adm_boundary[-1] = adm_intrinsic[-1]*1.
-#     tanh_un_thick = np.tanh(adm_intrinsic[:-1]*thickness[:, None]*(1j*omega*mu))
-#     for i in range(n_layers-2, -1, -1):
-#         adm_boundary[i] = adm_intrinsic[i] \
-#                         *(adm_boundary[i+1] + adm_intrinsic[i]*tanh_un_thick[i]) \
-#                         /(adm_intrinsic[i]  + adm_boundary[i+1]*tanh_un_thick[i])
-        
-#     rte = (adm_freespace - adm_boundary[0]) / (adm_freespace + adm_boundary[0])
-#     return rte
-
-
 def refl_transverse_magnetic(sigma, thickness, wave_length, omega, mu=mu0, epsilon=epsilon0):
     """ rtm = (Z_0 - hat Z_1)/(Z_0 + hat Z_1) - W&H eq 4.20 (pg 206)
         where Z_0 is the intrinsic impedance
@@ -161,6 +119,8 @@ def refl_transverse_magnetic(sigma, thickness, wave_length, omega, mu=mu0, epsil
     Returns:
         reflection coefficients for transverse magnetic mode
     """
+    raise NotImplemented("Rtm mode is not implemented. I think there is a free-space impedance term needed analogous to that in the Rte coefficients...")
+
     if isinstance(mu, float):
         mu = np.ones_like(sigma)*mu
     if isinstance(epsilon, float):
