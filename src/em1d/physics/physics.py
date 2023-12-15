@@ -73,7 +73,6 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     """ rte = (Y_0 - hat Y_1)/(Y_0 + hat Y_1) - W&H eq 4.19 (pg 205)
         where Y_0 is the intrinsic admittance
         and hat Y_1 is the surface or boundary admittance
-        
 
     Args:
         sigma       (1d-array): conductivity of each layer
@@ -102,10 +101,10 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     
     k2 = calc_wavenumber(omega, sigma, sqrt=False)[:, :, None]
     yn = calc_zy(omega, sigma, mu=mu, epsilon=epsilon)[1]
-    adm_intrinsic = np.sqrt(lambda2[None,:]-k2)/
+    #adm_intrinsic = np.sqrt(lambda2[None,:]-k2)/
     
-    # for i in range(n_layers):
-    #     adm_intrinsic[i] = np.sqrt(lambda2[None, :] - (calc_wavenumber(omega, sigma[i], sqrt=False))[:, None])/(1j*omega[:, None]*mu[i])
+    for i in range(n_layers):
+        adm_intrinsic[i] = np.sqrt(lambda2[None, :] - (calc_wavenumber(omega, sigma[i])**2)[:, None])/(1j*omega[:, None]*mu[i])
     
     
     adm_boundary[-1] = adm_intrinsic[-1]*1.
@@ -114,6 +113,7 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
         adm_boundary[i] = adm_intrinsic[i] \
                         *(adm_boundary[i+1] + adm_intrinsic[i]*tanh_un_thick[i]) \
                         /(adm_intrinsic[i]  + adm_boundary[i+1]*tanh_un_thick[i])
+
     rte = (adm_freespace - adm_boundary[0]) / (adm_freespace + adm_boundary[0])
     return rte
 

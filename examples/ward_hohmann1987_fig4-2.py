@@ -24,7 +24,6 @@ def calc_rte_halfspace(omega, sigma, wave_length, epsilon=None, mu=None):
     rte         = 1./(wave_length+u1)
     return rte
 
-
 m=1.
 def calc_wavenumber(omega, sigma, mu=mu0, epsilon=epsilon0):
     return np.sqrt(mu*omega*(epsilon*omega - 1j*sigma))
