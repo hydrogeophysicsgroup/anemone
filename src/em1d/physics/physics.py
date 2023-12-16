@@ -107,7 +107,7 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     
     adm_freespace = np.sqrt(lambda2 - omega**2 * mu0*epsilon0)/(1j*omega*mu0)
     
-    k2 = calc_wavenumber(sigma, omega, sqrt=False)
+    k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
 
     adm_intrinsic = np.sqrt(lambda2 - k2) / zn
@@ -151,7 +151,7 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
     
     imp_freespace = np.sqrt(lambda2 - omega**2 * mu0*epsilon0)/(1j*omega*epsilon0)
     
-    k2 = calc_wavenumber(sigma, omega, sqrt=False)
+    k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     yn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[1]
 
     imp_intrinsic = np.sqrt(lambda2 - k2) / yn
