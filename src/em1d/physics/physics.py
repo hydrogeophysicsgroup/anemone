@@ -11,7 +11,7 @@ mu0 = np.pi*4e-7
 epsilon0 = 8.854187817e-12
 
 def calc_zy(sigma, omega, epsilon=epsilon0, mu=mu0):
-    """compute the impedivity (zhat) and admittivity
+    """compute the impedivity (zhat) and admittivity (yhat)
        see W&H between eq. 1.15->1.16, reference to harrington, 1961
     """
     z = 1j*mu*omega
@@ -62,7 +62,7 @@ def halfspace_center_circle_loop(omega, sigma, r, I=1.):
 
 
 
-def freespace_u0(omega, wave_length):
+def freespace_u0(omega, wave_length, sqrt=True):
     """compute the vertical component of the wavenumber in freespace.
        this function automatically handles the broadcasting to get all combinations of wave_lengths and frequencies.     
     Args:
@@ -73,7 +73,9 @@ def freespace_u0(omega, wave_length):
         u0 (squeezed 2d-array): vertical wavenumber with shape = omega.shape+wave_length.shape
     """
     k2 = mu0*epsilon0*omega**2
-    return np.squeeze(np.sqrt(wave_length**2 - k2))
+    u02 = wave_length**2 - k2
+    if sqrt: u02=np.sqrt(u02)
+    return u02
 
 
 def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsilon=epsilon0):
@@ -103,13 +105,13 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     
     adm_boundary  = np.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=complex)
     
-    adm_freespace = np.sqrt(lambda2[None, :] - omega[:,None]**2 * mu0*epsilon0)/(1j*omega[:, None]*mu0)
+    adm_freespace = np.sqrt(lambda2 - omega**2 * mu0*epsilon0)/(1j*omega*mu0)
     
-    k2 = calc_wavenumber(sigma[:, None], omega[None, :], sqrt=False)[:, :, None]
-    zn = calc_zy(sigma[:, None], omega[None,:], mu=mu[:, None], epsilon=epsilon[:, None])[0][:, :, None]
+    k2 = calc_wavenumber(sigma, omega, sqrt=False)
+    zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
 
-    adm_intrinsic = np.sqrt(lambda2[None, None, :] - k2) / zn
-    tanh_un_thick = np.tanh(adm_intrinsic[:-1]*thickness[:, None, None]*zn[:-1])
+    adm_intrinsic = np.sqrt(lambda2 - k2) / zn
+    tanh_un_thick = np.tanh(adm_intrinsic[:-1]*thickness*zn[:-1])
     adm_boundary[-1] = adm_intrinsic[-1]*1.
     
     for i in range(n_layers-2, -1, -1):
@@ -147,13 +149,13 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
     
     imp_boundary  = np.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=complex)
     
-    imp_freespace = np.sqrt(lambda2[None, :] - omega[:,None]**2 * mu0*epsilon0)/(1j*omega[:, None]*epsilon0)
+    imp_freespace = np.sqrt(lambda2 - omega**2 * mu0*epsilon0)/(1j*omega*epsilon0)
     
-    k2 = calc_wavenumber(sigma[:, None], omega[None, :], sqrt=False)[:, :, None]
-    yn = calc_zy(sigma[:, None], omega[None,:], mu=mu[:, None], epsilon=epsilon[:, None])[1][:, :, None]
+    k2 = calc_wavenumber(sigma, omega, sqrt=False)
+    yn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[1]
 
-    imp_intrinsic = np.sqrt(lambda2[None, None, :] - k2) / yn
-    tanh_un_thick = np.tanh(imp_intrinsic[:-1]*thickness[:, None, None]*yn[:-1])
+    imp_intrinsic = np.sqrt(lambda2 - k2) / yn
+    tanh_un_thick = np.tanh(imp_intrinsic[:-1]*thickness*yn[:-1])
     imp_boundary[-1] = imp_intrinsic[-1]*1.
     
     for i in range(n_layers-2, -1, -1):

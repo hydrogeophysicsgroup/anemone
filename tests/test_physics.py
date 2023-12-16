@@ -16,7 +16,7 @@ def test_frequency_response():
     frqs = np.logspace(-6, 5, 501)  # Hz
     omega = 2*np.pi*frqs           # radians
     
-    hz_analytical = physics.halfspace_vmd(omega, sigma, rho)
+    hz_analytical = physics.halfspace_vmd(sigma, omega, rho)
 
     hz = np.zeros(len(frqs), dtype=complex)
     for i_frq, freq in enumerate(frqs):
