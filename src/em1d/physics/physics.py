@@ -1,3 +1,10 @@
+# so there are a few dimensions of parameters required to compute the TEM forward model.
+# 1. depth       (z)
+# 2. frequency   (omega)
+# 3. wave length (lambda)
+# we assume the physical properties of the earth only change with depth, i.e. the earth is 1D.
+# the order of arguments will be sigma, omega, wavelength
+
 import numpy as np
 
 mu0 = np.pi*4e-7
@@ -16,7 +23,7 @@ def calc_wavenumber(sigma, omega, mu=mu0, epsilon=epsilon0, sqrt=True):
     """get the intrinsic complex wavenumber 'k' 
        see equation 4.30 in ward in hohmann (pg 207)
     """
-    k = mu*omega[None,:]*(epsilon*omega[None,:] - 1j*sigma[:,None])
+    k = mu*omega*(epsilon*omega - 1j*sigma)
     if sqrt: k = np.sqrt(k)
     return k
 
@@ -32,7 +39,7 @@ def halfspace_vmd(sigma, omega, r):
         Returns:
             z-component of the magnetic field
     """
-    k = calc_wavenumber(omega, sigma)
+    k = calc_wavenumber(sigma, omega)
     Hz = 9 - (9 + 9j*k*r - 4*k**2 * r**2 -1j*k**3*r**3)*np.exp(-1j*k*r)
     Hz /= (2*np.pi*k**2 * r**5)
     return Hz
@@ -66,7 +73,7 @@ def freespace_u0(omega, wave_length):
         u0 (squeezed 2d-array): vertical wavenumber with shape = omega.shape+wave_length.shape
     """
     k2 = mu0*epsilon0*omega**2
-    return np.squeeze(np.sqrt(wave_length[None,:]**2 - k2[:,None]))
+    return np.squeeze(np.sqrt(wave_length**2 - k2))
 
 
 def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsilon=epsilon0):
@@ -95,20 +102,16 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     lambda2 = wave_length**2
     
     adm_boundary  = np.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=complex)
-    adm_intrinsic = np.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=complex)
     
     adm_freespace = np.sqrt(lambda2[None, :] - omega[:,None]**2 * mu0*epsilon0)/(1j*omega[:, None]*mu0)
     
-    k2 = calc_wavenumber(omega, sigma, sqrt=False)[:, :, None]
-    yn = calc_zy(omega, sigma, mu=mu, epsilon=epsilon)[1]
-    #adm_intrinsic = np.sqrt(lambda2[None,:]-k2)/
-    
-    for i in range(n_layers):
-        adm_intrinsic[i] = np.sqrt(lambda2[None, :] - (calc_wavenumber(omega, sigma[i])**2)[:, None])/(1j*omega[:, None]*mu[i])
-    
-    
+    k2 = calc_wavenumber(sigma[:, None], omega[None, :], sqrt=False)[:, :, None]
+    zn = calc_zy(sigma[:, None], omega[None,:], mu=mu[:, None], epsilon=epsilon[:, None])[0][:, :, None]
+
+    adm_intrinsic = np.sqrt(lambda2[None, None, :] - k2) / zn
+    tanh_un_thick = np.tanh(adm_intrinsic[:-1]*thickness[:, None, None]*zn[:-1])
     adm_boundary[-1] = adm_intrinsic[-1]*1.
-    tanh_un_thick = np.tanh(adm_intrinsic[:-1]*thickness[:, None, None]*(1j*omega[None, :, None]*mu[:-1, None, None]))
+    
     for i in range(n_layers-2, -1, -1):
         adm_boundary[i] = adm_intrinsic[i] \
                         *(adm_boundary[i+1] + adm_intrinsic[i]*tanh_un_thick[i]) \
