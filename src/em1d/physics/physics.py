@@ -136,8 +136,6 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
     Returns:
         reflection coefficients for transverse magnetic mode
     """
-    # raise NotImplemented("Rtm mode is not implemented. I think there is a free-space impedance term needed analogous to that in the Rte coefficients...")
-
     if isinstance(mu, float):
         mu = np.ones_like(sigma)*mu
     if isinstance(epsilon, float):
@@ -148,22 +146,22 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
     lambda2 = wave_length**2
     
     imp_boundary  = np.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=complex)
-    imp_intrinsic = np.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=complex)
     
-    imp_freespace = np.sqrt(lambda2[None, :] - omega[:,None]**2 * mu0*epsilon0)
-    k2_intrinsic = calc_wavenumber(omega, sigma, sqrt=False)
+    imp_freespace = np.sqrt(lambda2[None, :] - omega[:,None]**2 * mu0*epsilon0)/(1j*omega[:, None]*epsilon0)
     
-    for i in range(n_layers):
-        imp_intrinsic[i] = np.sqrt(lambda2[None, :] - (calc_wavenumber(omega, sigma[i])**2)[:, None])/(1j*(epsilon[i]*omega[:,None]+sigma[i]))#(1j*omega[:, None]*epsilon[i])
-    
-    
+    k2 = calc_wavenumber(sigma[:, None], omega[None, :], sqrt=False)[:, :, None]
+    yn = calc_zy(sigma[:, None], omega[None,:], mu=mu[:, None], epsilon=epsilon[:, None])[1][:, :, None]
+
+    imp_intrinsic = np.sqrt(lambda2[None, None, :] - k2) / yn
+    tanh_un_thick = np.tanh(imp_intrinsic[:-1]*thickness[:, None, None]*yn[:-1])
     imp_boundary[-1] = imp_intrinsic[-1]*1.
-    tanh_un_thick = np.tanh(imp_intrinsic[:-1]*thickness[:, None, None]*(1j*omega[None, :, None]*epsilon[:-1, None, None]))
+    
     for i in range(n_layers-2, -1, -1):
         imp_boundary[i] = imp_intrinsic[i] \
                         *(imp_boundary[i+1] + imp_intrinsic[i]*tanh_un_thick[i]) \
                         /(imp_intrinsic[i]  + imp_boundary[i+1]*tanh_un_thick[i])
-    rtm = (imp_freespace-imp_boundary[0]) / (imp_freespace + imp_boundary[0])
+
+    rtm = (imp_freespace - imp_boundary[0]) / (imp_freespace + imp_boundary[0])
     return rtm
 
 
