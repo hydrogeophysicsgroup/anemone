@@ -84,3 +84,63 @@ class Loop:
 
     def __len__(self):
         return np.size(self.x)
+    
+    def s_of_r(self, xyz, R):
+        dR = np.gradient(R)
+        
+        s = np.zeros_like(R)
+
+        lp_xyz = self.xyz - xyz[None, :]
+
+        for i in range(len(self)-1):
+            Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
+            p1 = np.einsum('...i,...i->...', Rz, lp_xyz[i])
+            p2 = np.einsum('...i,...i->...', Rz, lp_xyz[i+1])
+
+            r_perp = p1[1]
+            interval = box_filter(R, np.abs(r_perp), p2[0])-box_filter(R, np.abs(r_perp), p1[0])
+
+            ds = np.nan_to_num(interval*R*dR/np.sqrt(R**2 - r_perp**2))
+            ds *= np.abs(p2[0]-p1[0])/np.abs(ds.sum())
+            s += np.sign(r_perp)*ds
+        return s     
+    
+def perp_distance_to_line(x,y, line_points):
+	((x1,y1), (x2,y2)) = line_points
+	numerator = np.abs((x2-x1)*(y1-y) - (x1-x)*(y2-y1))
+	denominator = np.sqrt((x2-x1)**2 + (y2-y1)**2)
+	return numerator / denominator
+
+def perp_distance_to_line(x,y, line_points):
+	((x1,y1), (x2,y2)) = line_points
+	numerator = np.abs((x2-x1)*(y1-y) - (x1-x)*(y2-y1))
+	denominator = np.sqrt((x2-x1)**2 + (y2-y1)**2)
+	return numerator / denominator
+
+def box_filter(r, r_min, r_par_max):
+    r_max = np.sqrt(r_min**2 + r_par_max**2)
+    y = np.ones_like(r)
+    y[r<r_min]=0
+    y[r>r_max]=0
+    if np.all(y==0):
+         ir = np.searchsorted(r, r_min)
+         y[ir-1] = 0.5
+         y[ir] = 0.5
+    y *= np.sign(r_par_max)
+    return y
+
+def getRz(P,Q):
+    QP = Q-P
+    mQP = np.linalg.norm(QP, axis=-1)
+    cos_theta = QP[..., 0] / mQP
+    sin_theta = QP[..., 1] / mQP
+
+    Rz = np.zeros(QP.shape+(3,))
+
+    Rz[..., 0,0] = cos_theta
+    Rz[..., 1,1] = cos_theta
+    Rz[..., 0,1] = sin_theta
+    Rz[..., 1,0] = -sin_theta
+    Rz[..., 2,2] = 1.
+    
+    return Rz, Rz.swapaxes(-1, -2)
