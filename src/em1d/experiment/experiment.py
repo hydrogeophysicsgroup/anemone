@@ -69,7 +69,7 @@ class Loop:
             line_dist = v1x*v2x + v1y*v2y
             
             # conditional to check to ensure rx points lies between the two end points.
-            if np.any(0 < line_dist < v2r):
+            if ((0 < line_dist)*(line_dist<v2r)).any():
                 numerator = np.abs(v1x*v2y-v2x*v1y)
                 cmin = np.min(numerator/np.sqrt(v2r))
                 if cmin < overall_min: overall_min = cmin*1
