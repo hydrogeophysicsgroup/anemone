@@ -74,7 +74,7 @@ def freespace_u0(omega, wave_length, sqrt=True):
     """
     k2 = mu0*epsilon0*omega**2
     u02 = wave_length**2 - k2
-    if sqrt: u02=np.sqrt(u02)
+    if sqrt: u02=np.sqrt(u02+0j)
     return u02
 
 
@@ -105,7 +105,7 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     
     adm_boundary  = np.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=complex)
     
-    adm_freespace = np.sqrt(lambda2 - omega**2 * mu0*epsilon0)/(1j*omega*mu0)
+    adm_freespace = np.sqrt(lambda2 - omega**2 * mu0*epsilon0 + 0j)/(1j*omega*mu0)
     
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
