@@ -106,27 +106,41 @@ class Loop:
         #     s +=  ds
         # return np.nan_to_num(s)
         dR_alpha = np.sqrt(R[1]/R[0])
-        R_edge1 = R/dR_alpha
-        R_edge2 = R*dR_alpha
+        R_edge1 = (R/dR_alpha)**2
+        R_edge2 = (R*dR_alpha)**2
 
         
         s = np.zeros_like(R)
 
         lp_xyz = self.xyz - rx.xyz[None, :]
-        rmax = self.max_horizontal_distance(rx)
-        rmin = self.min_horizontal_distance(rx)
-
-
         for i in range(len(self)-1):
             Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
             p1 = np.einsum('...i,...i->...', Rz, lp_xyz[i])
             p2 = np.einsum('...i,...i->...', Rz, lp_xyz[i+1])
+            y2 = p1[1]**2
+
+            x1,x2 = min(np.abs(p1[0]), np.abs(p2[0])), max(np.abs(p1[0]), np.abs(p2[0]))
+            r1 = x1**2 + y2
+            r2 = x2**2 + y2
+
+            ds = np.nan_to_num(np.sqrt(R_edge2 - y2) - np.sqrt(R_edge1 - y2))
+
+            ds1,ds2 = ds*1., ds*1.
             
-            r_perp = p1[1]
-            interval = box_filter(R_edge2, np.abs(r_perp), p2[0])-box_filter(R_edge1, np.abs(r_perp), p1[0])
-            ds = 2*np.nan_to_num(np.sqrt(R_edge2**2 - r_perp**2) - np.sqrt(R_edge1**2 - r_perp**2))
-            ds *= interval
-            s += r_perp*ds/R
+            i_s = np.searchsorted(R_edge1, r1)-1
+            ds1[i_s] = np.sqrt(r1 -y2) - np.sqrt(R_edge1[i_s] -y2)
+            
+            ds1[i_s+1:] = 0
+
+            i_s = np.searchsorted(R_edge1, r2)-1
+            ds2[i_s] = np.sqrt(r2 -y2) - np.sqrt(R_edge1[i_s] -y2)
+            ds2[i_s+1:] = 0
+            
+            sign = np.sign(p1[0])*np.sign(p2[0])
+            ds = np.nan_to_num(ds2) - np.nan_to_num(sign*ds1)
+            
+            s += 2*p1[1]*ds/R
+
         return s        
     
 def perp_distance_to_line(x,y, line_points):
