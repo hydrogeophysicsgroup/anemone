@@ -214,8 +214,28 @@ class Hankel:
         i_offset = int(np.round(self.smp_per_decade*np.log10(r)))
         if i_offset==0:
             return np.einsum('...i,...i->...', self.F, self.fc)/r
-        else:
+        elif i_offset>0:
             return np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])/r
+        else:
+            i_offset *= -1
+            return np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])/r
+        
+    def range(self, rmin, rmax):
+        imin = int(np.floor(self.smp_per_decade*np.log10(rmin))-1)
+        imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
+        i_offsets = np.arange(imin, imax)
+        rout = 10**(i_offsets/self.smp_per_decade)
+        HR = np.zeros(rout.shape, dtype=complex)
+        for i,i_offset in enumerate(i_offsets):
+            if i_offset==0:
+                HR[i] = np.einsum('...i,...i->...', self.F, self.fc)
+            elif i_offset>0:
+                HR[i] = np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
+            else:
+                i_offset *= -1
+                HR[i] = np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+        return rout, HR/rout
+
         
         
 # instead of giving hz(t) from Hz(f) this is giving d Hz / dt (t)

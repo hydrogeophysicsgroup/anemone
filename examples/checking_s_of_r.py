@@ -3,17 +3,17 @@ import numpy as np
 
 from em1d.experiment import Receiver, Loop
 
-lp = Loop.square(25)
+lp = Loop.square(500)
 
-x = np.linspace(-50, 50, 101)
-rx = Receiver(x=x, y=x)
+rx = Receiver()
 rmax = lp.max_horizontal_distance(rx)
 rmin = lp.min_horizontal_distance(rx)
 
-r = np.geomspace(0.02, 120, 51)
-s = lp.s_of_r(rx.xyz, r)
+
+r = np.geomspace(rmin, rmax, 50)
+s = lp.s_of_r(np.zeros(3), r)
 
 plt.figure()
-plt.plot(s[0,0])
-plt.plot(s[-1, -1])
+plt.plot(r, s, '.-')
+# plt.xscale('log')
 plt.show()

@@ -85,25 +85,49 @@ class Loop:
     def __len__(self):
         return np.size(self.x)
     
-    def s_of_r(self, xyz, R):
-        dR = np.gradient(R)
+    def s_of_r(self, rx, R):
+        # dR = np.gradient(R)
+        
+        # s = np.zeros_like(R)
+
+        # lp_xyz = self.xyz - xyz[None, ...]
+
+        # for i in range(len(self)-1):
+        #     Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
+        #     p1 = np.einsum('...i,...i->...', Rz, lp_xyz[i])
+        #     p2 = np.einsum('...i,...i->...', Rz, lp_xyz[i+1])
+
+        #     r_perp = p1[1]
+        #     interval = box_filter(R, np.abs(r_perp), p2[0])-box_filter(R, np.abs(r_perp), p1[0])
+
+        #     ds = np.nan_to_num(interval*R*dR/np.sqrt(R**2 - r_perp**2))
+        #     ds *= np.abs(p2[0]-p1[0])/np.abs(np.nansum(ds))
+        #     ds *= r_perp
+        #     s +=  ds
+        # return np.nan_to_num(s)
+        dR_alpha = np.sqrt(R[1]/R[0])
+        R_edge1 = R/dR_alpha
+        R_edge2 = R*dR_alpha
+
         
         s = np.zeros_like(R)
 
-        lp_xyz = self.xyz - xyz[None, :]
+        lp_xyz = self.xyz - rx.xyz[None, :]
+        rmax = self.max_horizontal_distance(rx)
+        rmin = self.min_horizontal_distance(rx)
+
 
         for i in range(len(self)-1):
             Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
             p1 = np.einsum('...i,...i->...', Rz, lp_xyz[i])
             p2 = np.einsum('...i,...i->...', Rz, lp_xyz[i+1])
-
+            
             r_perp = p1[1]
-            interval = box_filter(R, np.abs(r_perp), p2[0])-box_filter(R, np.abs(r_perp), p1[0])
-
-            ds = np.nan_to_num(interval*R*dR/np.sqrt(R**2 - r_perp**2))
-            ds *= np.abs(p2[0]-p1[0])/np.abs(ds.sum())
-            s += np.sign(r_perp)*ds
-        return s     
+            interval = box_filter(R_edge2, np.abs(r_perp), p2[0])-box_filter(R_edge1, np.abs(r_perp), p1[0])
+            ds = 2*np.nan_to_num(np.sqrt(R_edge2**2 - r_perp**2) - np.sqrt(R_edge1**2 - r_perp**2))
+            ds *= interval
+            s += r_perp*ds/R
+        return s        
     
 def perp_distance_to_line(x,y, line_points):
 	((x1,y1), (x2,y2)) = line_points
@@ -111,21 +135,16 @@ def perp_distance_to_line(x,y, line_points):
 	denominator = np.sqrt((x2-x1)**2 + (y2-y1)**2)
 	return numerator / denominator
 
-def perp_distance_to_line(x,y, line_points):
-	((x1,y1), (x2,y2)) = line_points
-	numerator = np.abs((x2-x1)*(y1-y) - (x1-x)*(y2-y1))
-	denominator = np.sqrt((x2-x1)**2 + (y2-y1)**2)
-	return numerator / denominator
 
 def box_filter(r, r_min, r_par_max):
     r_max = np.sqrt(r_min**2 + r_par_max**2)
     y = np.ones_like(r)
     y[r<r_min]=0
     y[r>r_max]=0
-    if np.all(y==0):
-         ir = np.searchsorted(r, r_min)
-         y[ir-1] = 0.5
-         y[ir] = 0.5
+    # if np.all(y==0):
+    #      ir = np.searchsorted(r, r_min)
+    #      y[ir] = 0.5
+    #      y[ir+1] = 0.5
     y *= np.sign(r_par_max)
     return y
 
