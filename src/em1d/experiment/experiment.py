@@ -123,23 +123,27 @@ class Loop:
             r1 = x1**2 + y2
             r2 = x2**2 + y2
 
-            ds = np.nan_to_num(np.sqrt(R_edge2 - y2) - np.sqrt(R_edge1 - y2))
+            ds = np.nan_to_num(np.sqrt(R_edge2 - y2)) - np.nan_to_num(np.sqrt(R_edge1 - y2))
 
             ds1,ds2 = ds*1., ds*1.
             
             i_s = np.searchsorted(R_edge1, r1)-1
-            ds1[i_s] = np.sqrt(r1 -y2) - np.sqrt(R_edge1[i_s] -y2)
+            ds1[i_s] = np.nan_to_num(np.sqrt(r1 -y2)) - np.nan_to_num(np.sqrt(R_edge1[i_s] -y2))
             
             ds1[i_s+1:] = 0
 
             i_s = np.searchsorted(R_edge1, r2)-1
-            ds2[i_s] = np.sqrt(r2 -y2) - np.sqrt(R_edge1[i_s] -y2)
+            ds2[i_s] = np.nan_to_num(np.sqrt(r2 -y2)) - np.nan_to_num(np.sqrt(R_edge1[i_s] -y2))
             ds2[i_s+1:] = 0
             
             sign = np.sign(p1[0])*np.sign(p2[0])
-            ds = np.nan_to_num(ds2) - np.nan_to_num(sign*ds1)
+            # if np.sign(p1[0])==np.sign(p2[0]): multiplier = 1
+            # else: multiplier = 2
             
-            s += 2*p1[1]*ds/R
+            ds = np.nan_to_num(ds2) - np.nan_to_num(sign*ds1)
+            ds *= np.abs(p2[0]-p1[0])/np.nansum(ds)
+            
+            s += p1[1]*ds/R
 
         return s        
     

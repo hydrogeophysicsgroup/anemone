@@ -54,7 +54,7 @@ def integrate_around_loop(lp, rx, hr):
 
         while cdist < tdist:
             cR = norm(cp)
-            ds = cR/15.
+            ds = cR/15
             if cdist+ds > tdist:
                 ds = tdist-cdist
                 cdist += cR/15
@@ -85,7 +85,7 @@ rxall = Receiver(x=xy, y=xy)
 rmin = lp.min_horizontal_distance(rxall)
 rmax = lp.max_horizontal_distance(rxall)
 print(rmin, rmax)
-hkl = Hankel(integrand, 1, smp_per_decade=10)
+hkl = Hankel(integrand, 1, smp_per_decade=25)
 r, hr = hkl.range(rmin, rmax)
 int_hr = interp1d(r, hr)
 
@@ -112,25 +112,24 @@ for i in range(len(xy)):
     for j in range(len(xy)):
         rx = Receiver(x=xy[i], y=xy[j])
         s = lp.s_of_r(rx, r)
-        s = np.convolve(s, np.array([2, 8, 1])/11, mode='same')+0j
-        #hrs = np.convolve(hr*s, np.array([2, 8, 1])/11, mode='same'); HZ[i,j] = np.sum(hrs)
+        #s = np.convolve(s/r, np.array([2, 4, 1])/7, mode='same')+0j
         HZ[i,j] = hr.dot(s)
-fig,ax = plt.subplots()
-# plt.plot(r, s, '.-')
-# plt.plot(r, hr.real, '.-')
-# plt.plot(r, hr.imag, '.-')
-plt.plot(r, (s).real)
-plt.plot(r, (s).imag)
-plt.xscale('log')
+#        hrs = np.convolve(hr*s/r, np.array([2, 4, 1])/7, mode='same'); HZ[i,j] = np.sum(hrs*r)
+        
+
+
 fig,axs = plt.subplots(1,2, sharex=True, sharey=True)
 pcm = axs[0].pcolor(xy, xy, HZ.real, vmin=-3, vmax=3, cmap='seismic')
 pcm = axs[1].pcolor(xy, xy, HZ2.real, vmin=-3, vmax=3, cmap='seismic')
-plt.colorbar(pcm)
+plt.colorbar(pcm, ax=axs)
 fig,axs = plt.subplots(1,3, sharex=True, sharey=True, figsize=(9,4))
-pcm = axs[0].pcolor(xy, xy, np.log10(np.abs(HZ)), vmin=-6, vmax=2)
-pcm = axs[1].pcolor(xy, xy, np.log10(np.abs(HZ2)), vmin=-6, vmax=2)
-pcm=axs[2].pcolor(xy, xy, np.abs((HZ2-HZ)/HZ2), vmin=0, vmax=1)
-plt.colorbar(pcm)
+pcm = axs[0].pcolor(xy, xy, np.log10(np.abs(HZ)), vmin=-6, vmax=1)
+pcm = axs[1].pcolor(xy, xy, np.log10(np.abs(HZ2)), vmin=-6, vmax=1)
+pcm=axs[2].pcolor(xy, xy, np.abs((HZ2-HZ)/HZ2), vmin=0, vmax=0.1)
+plt.colorbar(pcm, ax=axs)
+
+for ax in axs:
+    ax.plot(lp.x, lp.y, 'r')
 
 fig,axs = plt.subplots(1,2)
 axs[0].plot(np.abs(HZ2.flatten().real), np.abs(HZ.flatten().real), '.')
@@ -139,7 +138,7 @@ axs[0].plot([0,20], [0, 20], 'k--')
 axs[0].set_yscale('log')
 axs[0].set_xscale('log')
 
-axs[1].hist(np.abs((HZ2-HZ)/HZ2).flatten())
+axs[1].hist(np.abs((HZ2-HZ)/HZ2).flatten(), bins=np.linspace(0, 0.5, 25))
 
 
 plt.show()
