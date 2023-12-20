@@ -1,5 +1,6 @@
 from scipy.special import gamma
 import numpy as np
+import torch
 
 pi = np.pi
 
@@ -199,48 +200,48 @@ class Hankel:
         self.n_decades = log10max-log10min
         self.lamda = 10**(np.arange(log10min*self.smp_per_decade, log10max*self.smp_per_decade+1)*self.delta)
         self.v     = np.log(self.lamda)
-        self.fc=self.calc_coefficients()
+        self.fc=torch.tensor(self.calc_coefficients(), dtype=torch.complex64)
         self.filter_i0 = np.searchsorted(self.v, 0)
-        self.F = self.func(self.lamda)
+        self.F = self.func(torch.tensor(self.lamda, dtype=torch.complex64))
     
     @property
     def delta(self):
         return 1./self.smp_per_decade
     
     def calc_coefficients(self):
-        return optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4., nu=self.nu, smp_per_decade=self.smp_per_decade)
+        return optimized_coefficients_christensen1990(self.v, omega_0=torch.pi/4., nu=self.nu, smp_per_decade=self.smp_per_decade)
     
     def __call__(self, r):
-        i_offset = int(np.round(self.smp_per_decade*np.log10(r)))
+        i_offset = int(torch.round(self.smp_per_decade*torch.log10(r)))
         if i_offset==0:
-            return np.einsum('...i,...i->...', self.F, self.fc)/r
+            return torch.einsum('...i,...i->...', self.F, self.fc)/r
         elif i_offset>0:
-            return np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])/r
+            return torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])/r
         else:
             i_offset *= -1
-            return np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])/r
+            return torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])/r
         
     def range(self, rmin, rmax):
         imin = int(np.floor(self.smp_per_decade*np.log10(rmin))-1)
         imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
         i_offsets = np.arange(imin, imax)
-        rout = 10**(i_offsets/self.smp_per_decade)
-        HR = np.zeros(rout.shape, dtype=complex)
+        rout = torch.tensor(10**(i_offsets/self.smp_per_decade), dtype=torch.complex64)
+        HR = torch.zeros(rout.shape, dtype=torch.complex64)
         for i,i_offset in enumerate(i_offsets):
             if i_offset==0:
-                HR[i] = np.einsum('...i,...i->...', self.F, self.fc)
+                HR[i] = torch.einsum('...i,...i->...', self.F, self.fc)
             elif i_offset>0:
-                HR[i] = np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
+                HR[i] = torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
             else:
                 i_offset *= -1
-                HR[i] = np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+                HR[i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
         return rout, HR/rout
 
         
         
 # instead of giving hz(t) from Hz(f) this is giving d Hz / dt (t)
-twopi = np.pi*2.
-twopi_sqrt = np.sqrt(2*np.pi)
+twopi = torch.tensor([torch.pi*2.])
+twopi_sqrt = torch.sqrt(twopi)
 
 
 class Fourier:
@@ -248,21 +249,21 @@ class Fourier:
         self.func = func
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
-        self.lamda = 10**(np.arange(log10min*smp_per_decade,
+        self.lamda = 10**(torch.arange(log10min*smp_per_decade,
                           log10max*smp_per_decade+1)*self.delta)
-        self.v = np.log(self.lamda)
-        self.fc = optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=-0.5, smp_per_decade=self.smp_per_decade) \
-                  +1j*optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=0.5, smp_per_decade=self.smp_per_decade)
-        self.F = self.func(self.lamda)*np.sqrt(self.lamda)
+        self.v = torch.log(self.lamda)
+        self.fc = optimized_coefficients_christensen1990(self.v, omega_0=torch.pi/4, nu=-0.5, smp_per_decade=self.smp_per_decade) \
+                  +1j*optimized_coefficients_christensen1990(self.v, omega_0=torch.pi/4, nu=0.5, smp_per_decade=self.smp_per_decade)
+        self.F = self.func(self.lamda)*torch.sqrt(self.lamda)
 
     @property
     def delta(self):
         return 1./self.smp_per_decade
 
     def __call__(self, r):
-        i_offset = int(np.round(self.smp_per_decade*np.log10(r)))
+        i_offset = int(torch.round(self.smp_per_decade*torch.log10(r)))
         r_offset = 10**(i_offset*self.delta)
         if i_offset == 0:
-            return self.F.dot(self.fc)/np.sqrt(r_offset)/twopi_sqrt
+            return self.F.dot(self.fc)/torch.sqrt(r_offset)/twopi_sqrt
         else:
-            return self.F[-i_offset:].dot(self.fc[:i_offset])/np.sqrt(r_offset)/twopi_sqrt
+            return self.F[-i_offset:].dot(self.fc[:i_offset])/torch.sqrt(r_offset)/twopi_sqrt
