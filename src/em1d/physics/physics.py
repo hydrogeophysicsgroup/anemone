@@ -5,9 +5,14 @@
 # we assume the physical properties of the earth only change with depth, i.e. the earth is 1D.
 # the order of arguments will be sigma, omega, wavelength
 
-import torch
+import numpy as nt
+import torch as nt
 
-mu0 = torch.pi*4e-7
+# print('this is the physics submodule, the next print has the globals')
+# print(globals().keys())
+# print(globals()['__spec__'])
+
+mu0 = nt.pi*4e-7
 epsilon0 = 8.854187817e-12
 
 def calc_zy(sigma, omega, epsilon=epsilon0, mu=mu0):
@@ -24,7 +29,7 @@ def calc_wavenumber(sigma, omega, mu=mu0, epsilon=epsilon0, sqrt=True):
        see equation 4.30 in ward in hohmann (pg 207)
     """
     k = mu*omega*(epsilon*omega - 1j*sigma)
-    if sqrt: k = torch.sqrt(k)
+    if sqrt: k = nt.sqrt(k)
     return k
 
 def halfspace_vmd(sigma, omega, r):
@@ -40,8 +45,8 @@ def halfspace_vmd(sigma, omega, r):
             z-component of the magnetic field
     """
     k = calc_wavenumber(sigma, omega)
-    Hz = 9 - (9 + 9j*k*r - 4*k**2 * r**2 -1j*k**3*r**3)*torch.exp(-1j*k*r)
-    Hz /= (2*torch.pi*k**2 * r**5)
+    Hz = 9 - (9 + 9j*k*r - 4*k**2 * r**2 -1j*k**3*r**3)*nt.exp(-1j*k*r)
+    Hz /= (2*nt.pi*k**2 * r**5)
     return Hz
 
 def halfspace_center_circle_loop(omega, sigma, r, I=1.):
@@ -56,7 +61,7 @@ def halfspace_center_circle_loop(omega, sigma, r, I=1.):
     """
     k = calc_wavenumber(omega, sigma)
 
-    Hz = 3-(3+3j*k*r - (r*k)**2)*torch.exp(-1j*k*r)
+    Hz = 3-(3+3j*k*r - (r*k)**2)*nt.exp(-1j*k*r)
     Hz *= -I / (k**2 * r**3)
     return Hz
 
@@ -66,15 +71,15 @@ def freespace_u0(omega, wave_length, sqrt=True):
     """compute the vertical component of the wavenumber in freespace.
        this function automatically handles the broadcasting to get all combinations of wave_lengths and frequencies.     
     Args:
-        omega       (1d-array): angular frequency
-        wave_length (1d-array): wavelength
+        omega       (nd-array): angular frequency
+        wave_length (nd-array): wavelength
 
     Returns:
-        u0 (squeezed 2d-array): vertical wavenumber with shape = omega.shape+wave_length.shape
+        u0: vertical wavenumber with shape = omega.shape+wave_length.shape
     """
     k2 = mu0*epsilon0*omega**2
     u02 = wave_length**2 - k2
-    if sqrt: u02=torch.sqrt(u02+0j)
+    if sqrt: u02=nt.sqrt(u02+0j)
     return u02
 
 
@@ -95,23 +100,23 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
         reflection coefficients for transverse electric mode
     """
     if isinstance(mu, float):
-        mu = torch.ones_like(sigma, dtype=torch.complex64)*mu
+        mu = nt.ones_like(sigma, dtype=nt.complex64)*mu
     if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma, dtype=torch.complex64)*epsilon
+        epsilon = nt.ones_like(sigma, dtype=nt.complex64)*epsilon
 
     n_layers=len(sigma)
 
     lambda2 = wave_length**2
     
-    adm_boundary  = torch.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=torch.complex64)
+    adm_boundary  = nt.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=nt.complex64)
     
-    adm_freespace = torch.sqrt(lambda2 - omega**2 * mu0*epsilon0 + 0j)/(1j*omega*mu0)
+    adm_freespace = nt.sqrt(lambda2 - omega**2 * mu0*epsilon0 + 0j)/(1j*omega*mu0)
     
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
 
-    adm_intrinsic = torch.sqrt(lambda2 - k2) / zn
-    tanh_un_thick = torch.tanh(adm_intrinsic[:-1]*thickness*zn[:-1])
+    adm_intrinsic = nt.sqrt(lambda2 - k2) / zn
+    tanh_un_thick = nt.tanh(adm_intrinsic[:-1]*thickness*zn[:-1])
     adm_boundary[-1] = adm_intrinsic[-1]*1.
     
     for i in range(n_layers-2, -1, -1):
@@ -139,23 +144,23 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
         reflection coefficients for transverse magnetic mode
     """
     if isinstance(mu, float):
-        mu = torch.ones_like(sigma, dtype=torch.complex64)*mu
+        mu = nt.ones_like(sigma, dtype=nt.complex64)*mu
     if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma, dtype=torch.complex64)*epsilon
+        epsilon = nt.ones_like(sigma, dtype=nt.complex64)*epsilon
 
     n_layers=len(sigma)
 
     lambda2 = wave_length**2
     
-    imp_boundary  = torch.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=complex)
+    imp_boundary  = nt.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=complex)
     
-    imp_freespace = torch.sqrt(lambda2 - omega**2 * mu0*epsilon0)/(1j*omega*epsilon0)
+    imp_freespace = nt.sqrt(lambda2 - omega**2 * mu0*epsilon0)/(1j*omega*epsilon0)
     
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     yn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[1]
 
-    imp_intrinsic = torch.sqrt(lambda2 - k2) / yn
-    tanh_un_thick = torch.tanh(imp_intrinsic[:-1]*thickness*yn[:-1])
+    imp_intrinsic = nt.sqrt(lambda2 - k2) / yn
+    tanh_un_thick = nt.tanh(imp_intrinsic[:-1]*thickness*yn[:-1])
     imp_boundary[-1] = imp_intrinsic[-1]*1.
     
     for i in range(n_layers-2, -1, -1):

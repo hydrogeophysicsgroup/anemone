@@ -1,6 +1,7 @@
 # import warnings
 # warnings.filterwarnings('error')
 
+global torch
 import torch
 
 import numpy as np
