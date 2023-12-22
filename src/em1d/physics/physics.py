@@ -108,14 +108,14 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
 
     lambda2 = wave_length**2
     
-    adm_boundary  = nt.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=nt.complex64)
-    
     adm_freespace = nt.sqrt(lambda2 - omega**2 * mu0*epsilon0 + 0j)/(1j*omega*mu0)
     
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
 
     adm_intrinsic = nt.sqrt(lambda2 - k2) / zn
+    adm_boundary  = nt.zeros_like(adm_intrinsic)
+
     tanh_un_thick = nt.tanh(adm_intrinsic[:-1]*thickness*zn[:-1])
     adm_boundary[-1] = adm_intrinsic[-1]*1.
     

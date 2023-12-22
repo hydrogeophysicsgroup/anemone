@@ -226,7 +226,7 @@ class Hankel:
         imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
         i_offsets = np.arange(imin, imax)
         rout = torch.tensor(10**(i_offsets/self.smp_per_decade), dtype=torch.complex64)
-        HR = torch.zeros(rout.shape, dtype=torch.complex64)
+        HR = torch.zeros(rout.shape+self.F.shape[:-1], dtype=torch.complex64)
         for i,i_offset in enumerate(i_offsets):
             if i_offset==0:
                 HR[i] = torch.einsum('...i,...i->...', self.F, self.fc)
@@ -235,7 +235,7 @@ class Hankel:
             else:
                 i_offset *= -1
                 HR[i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
-        return rout, HR/rout
+        return rout, HR/rout[:,None]
 
         
         
