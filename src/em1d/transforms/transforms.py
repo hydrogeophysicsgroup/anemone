@@ -225,7 +225,7 @@ class Hankel:
         imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
         i_offsets = np.arange(imin, imax)
         rout = 10**(i_offsets/self.smp_per_decade)
-        HR = np.zeros(rout.shape, dtype=complex)
+        HR = np.zeros(rout.shape+self.F.shape[:-1], dtype=complex)
         for i,i_offset in enumerate(i_offsets):
             if i_offset==0:
                 HR[i] = np.einsum('...i,...i->...', self.F, self.fc)
@@ -234,7 +234,7 @@ class Hankel:
             else:
                 i_offset *= -1
                 HR[i] = np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
-        return rout, HR/rout
+        return rout, HR/rout[:,None]
 
         
         

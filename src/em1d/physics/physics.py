@@ -102,8 +102,8 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     n_layers=len(sigma)
 
     lambda2 = wave_length**2
-    
-    adm_boundary  = np.zeros(sigma.shape+omega.shape+wave_length.shape, dtype=complex)
+
+    adm_boundary  = np.zeros((np.size(sigma), np.size(omega), np.size(wave_length)), dtype=complex)
     
     adm_freespace = np.sqrt(lambda2 - omega**2 * mu0*epsilon0 + 0j)/(1j*omega*mu0)
     
