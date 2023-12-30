@@ -266,3 +266,19 @@ class Fourier:
             return self.F.dot(self.fc)/np.sqrt(r_offset)/twopi_sqrt
         else:
             return self.F[-i_offset:].dot(self.fc[:i_offset])/np.sqrt(r_offset)/twopi_sqrt
+        
+    def range(self, tmin, tmax):
+        imin = int(np.floor(self.smp_per_decade*np.log10(tmin))-1)
+        imax = int(np.ceil(self.smp_per_decade*np.log10(tmax))+1)
+        i_offsets = np.arange(imin, imax)
+        tout = 10**(i_offsets/self.smp_per_decade)
+        Ht = np.zeros(tout.shape, dtype=complex)
+        for i,i_offset in enumerate(i_offsets):
+            if i_offset==0:
+                Ht[i] = np.einsum('...i,...i->...', self.F, self.fc)
+            elif i_offset>0:
+                Ht[i] = np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
+            else:
+                i_offset *= -1
+                Ht[i] = np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+        return tout, Ht/np.sqrt(tout)/twopi_sqrt
