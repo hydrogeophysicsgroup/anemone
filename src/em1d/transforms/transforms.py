@@ -67,7 +67,7 @@ def johansen1979_Hhat_nu(s, nu=0):
 
 def christensen1990_eq16(v, sc, nu=0, a=0.1, term_max=50, convergence_threshold=1e-9):
     """this equation is for v<ln(2)"""
-    assert np.all(v<np.log(2)), "positive value of v will not converge"
+    # assert np.all(v<np.log(2)), "positive value of v will not converge"
     delta = 1./(2*sc)
 
     n = 0
@@ -200,16 +200,17 @@ class Hankel:
         self.n_decades = log10max-log10min
         self.lamda = 10**(np.arange(log10min*self.smp_per_decade, log10max*self.smp_per_decade+1)*self.delta)
         self.v     = np.log(self.lamda)
-        self.fc=torch.tensor(self.calc_coefficients(), dtype=torch.complex64)
+        self.fc=torch.tensor(self.calc_coefficients(), dtype=torch.complex128)
         self.filter_i0 = np.searchsorted(self.v, 0)
-        self.F = self.func(torch.tensor(self.lamda, dtype=torch.complex64))
+        # self.F = torch.tensor(self.func(torch.tensor(self.lamda, dtype=torch.complex128)), dtype=torch.complex128)
+        self.F = self.func(torch.tensor(self.lamda, dtype=torch.complex128))
     
     @property
     def delta(self):
         return 1./self.smp_per_decade
     
     def calc_coefficients(self):
-        return optimized_coefficients_christensen1990(self.v, omega_0=torch.pi/4., nu=self.nu, smp_per_decade=self.smp_per_decade)
+        return optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4., nu=self.nu, smp_per_decade=self.smp_per_decade)
     
     def __call__(self, r):
         i_offset = int(torch.round(self.smp_per_decade*torch.log10(r)))
@@ -225,8 +226,8 @@ class Hankel:
         imin = int(np.floor(self.smp_per_decade*np.log10(rmin))-1)
         imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
         i_offsets = np.arange(imin, imax)
-        rout = torch.tensor(10**(i_offsets/self.smp_per_decade), dtype=torch.complex64)
-        HR = torch.zeros(rout.shape+self.F.shape[:-1], dtype=torch.complex64)
+        rout = torch.tensor(10**(i_offsets/self.smp_per_decade), dtype=torch.complex128)
+        HR = torch.zeros(rout.shape+self.F.shape[:-1], dtype=torch.complex128)
         for i,i_offset in enumerate(i_offsets):
             if i_offset==0:
                 HR[i] = torch.einsum('...i,...i->...', self.F, self.fc)
@@ -249,12 +250,13 @@ class Fourier:
         self.func = func
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
-        self.lamda = 10**(torch.arange(log10min*smp_per_decade,
+        self.lamda = 10**(np.arange(log10min*smp_per_decade,
                           log10max*smp_per_decade+1)*self.delta)
-        self.v = torch.log(self.lamda)
-        self.fc = optimized_coefficients_christensen1990(self.v, omega_0=torch.pi/4, nu=-0.5, smp_per_decade=self.smp_per_decade) \
-                  +1j*optimized_coefficients_christensen1990(self.v, omega_0=torch.pi/4, nu=0.5, smp_per_decade=self.smp_per_decade)
-        self.F = self.func(self.lamda)*torch.sqrt(self.lamda)
+        self.v = np.log(self.lamda)
+        self.fc = optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=-0.5, smp_per_decade=self.smp_per_decade) \
+                  +1j*optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=0.5, smp_per_decade=self.smp_per_decade)
+        self.fc  = torch.tensor(self.fc, dtype=torch.complex128)
+        self.F = self.func(self.lamda)*torch.sqrt(torch.tensor(self.lamda, dtype=torch.complex128))
 
     @property
     def delta(self):
@@ -267,3 +269,19 @@ class Fourier:
             return self.F.dot(self.fc)/torch.sqrt(r_offset)/twopi_sqrt
         else:
             return self.F[-i_offset:].dot(self.fc[:i_offset])/torch.sqrt(r_offset)/twopi_sqrt
+        
+    def range(self, tmin, tmax):
+        imin = int(np.floor(self.smp_per_decade*np.log10(tmin))-1)
+        imax = int(np.ceil(self.smp_per_decade*np.log10(tmax))+1)
+        i_offsets = np.arange(imin, imax)
+        tout = torch.tensor(10**(i_offsets/self.smp_per_decade))
+        Ht = torch.zeros(tout.shape, dtype=torch.complex128)
+        for i,i_offset in enumerate(i_offsets):
+            if i_offset==0:
+                Ht[i] = torch.einsum('...i,...i->...', self.F, self.fc)
+            elif i_offset>0:
+                Ht[i] = torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
+            else:
+                i_offset *= -1
+                Ht[i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+        return tout, Ht/torch.sqrt(tout)/twopi_sqrt

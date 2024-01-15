@@ -100,9 +100,9 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
         reflection coefficients for transverse electric mode
     """
     if isinstance(mu, float):
-        mu = nt.ones_like(sigma, dtype=nt.complex64)*mu
+        mu = nt.ones_like(sigma, dtype=nt.complex128)*mu
     if isinstance(epsilon, float):
-        epsilon = nt.ones_like(sigma, dtype=nt.complex64)*epsilon
+        epsilon = nt.ones_like(sigma, dtype=nt.complex128)*epsilon
 
     n_layers=len(sigma)
 
@@ -144,9 +144,9 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
         reflection coefficients for transverse magnetic mode
     """
     if isinstance(mu, float):
-        mu = nt.ones_like(sigma, dtype=nt.complex64)*mu
+        mu = nt.ones_like(sigma, dtype=nt.complex128)*mu
     if isinstance(epsilon, float):
-        epsilon = nt.ones_like(sigma, dtype=nt.complex64)*epsilon
+        epsilon = nt.ones_like(sigma, dtype=nt.complex128)*epsilon
 
     n_layers=len(sigma)
 
