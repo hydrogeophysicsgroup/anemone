@@ -82,14 +82,17 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     """ rte = (Y_0 - hat Y_1)/(Y_0 + hat Y_1) - W&H eq 4.19 (pg 205)
         where Y_0 is the intrinsic admittance
         and hat Y_1 is the surface or boundary admittance
+        
+        assumes nd-arrays have been appropriately broadcasted with axis ordered as:
+        sigma, omega, wave_length
 
     Args:
-        sigma       (1d-array): conductivity of each layer
-        thickness   (1d-array): thickness of each layer
-        wave_length (1d-array): wave_length (lambda)
-        omega       (1d-array): angular frequency
-        mu             (float): _description_. Defaults to mu0.
-        epsilon        (float): _description_. Defaults to epsilon0.
+        sigma         (nd-array): conductivity of each layer
+        thickness     (nd-array): thickness of each layer
+        omega         (nd-array): angular frequency
+        wave_length   (nd-array): wave_length (lambda)
+        mu      (float/nd-array): Defaults to mu0.
+        epsilon (float/nd-array): Defaults to epsilon0.
 
     Returns:
         reflection coefficients for transverse electric mode
@@ -104,7 +107,7 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     lambda2 = wave_length**2
 
     adm_boundary  = np.zeros((np.size(sigma), np.size(omega), np.size(wave_length)), dtype=complex)
-    
+
     adm_freespace = np.sqrt(lambda2 - omega**2 * mu0*epsilon0 + 0j)/(1j*omega*mu0)
     
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
@@ -127,13 +130,16 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
         where Z_0 is the intrinsic impedance
         and hat Z_1 is the surface or boundary impedance
 
+        assumes nd-arrays have been appropriately broadcasted with axis ordered as:
+        sigma, omega, wave_length
+        
     Args:
-        sigma (1d-array): conductivity of each layer
-        thickness (1d-array): thickness of each layer
-        wave_length (1d-array): wave_length (lambda)
-        omega (1d-array): angular frequency
-        mu (_type_, optional): _description_. Defaults to mu0.
-        epsilon (_type_, optional): _description_. Defaults to epsilon0.
+        sigma         (nd-array): conductivity of each layer
+        thickness     (nd-array): thickness of each layer
+        omega         (nd-array): angular frequency
+        wave_length   (nd-array): wave_length (lambda)
+        mu      (float/nd-array): Defaults to mu0.
+        epsilon (float/nd-array): Defaults to epsilon0.
 
     Returns:
         reflection coefficients for transverse magnetic mode
