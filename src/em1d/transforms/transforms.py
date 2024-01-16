@@ -190,7 +190,6 @@ def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=1
 
     return np.real(Hnustar)
 
-
 class Hankel:
     def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10):
         self.func    = func
@@ -227,16 +226,16 @@ class Hankel:
         rout = 10**(i_offsets/self.smp_per_decade)
         HR = np.zeros(rout.shape+self.F.shape[:-1], dtype=complex)
         for i,i_offset in enumerate(i_offsets):
-            if i_offset==0:
-                HR[i] = np.einsum('...i,...i->...', self.F, self.fc)
-            elif i_offset>0:
+            
+            if i_offset>0:
                 HR[i] = np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
-            else:
+            elif i_offset<0:
                 i_offset *= -1
                 HR[i] = np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+            else:
+                HR[i] = np.einsum('...i,...i->...', self.F, self.fc)
         return rout, HR/rout[:,None]
 
-        
         
 # instead of giving hz(t) from Hz(f) this is giving d Hz / dt (t)
 twopi = np.pi*2.
@@ -244,7 +243,7 @@ twopi_sqrt = np.sqrt(2*np.pi)
 
 
 class Fourier:
-    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=20):
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=15):
         self.func = func
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
@@ -274,11 +273,15 @@ class Fourier:
         tout = 10**(i_offsets/self.smp_per_decade)
         Ht = np.zeros(tout.shape, dtype=complex)
         for i,i_offset in enumerate(i_offsets):
-            if i_offset==0:
-                Ht[i] = np.einsum('...i,...i->...', self.F, self.fc)
-            elif i_offset>0:
+            if i_offset>0:
                 Ht[i] = np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
-            else:
+            elif i_offset<0:
                 i_offset *= -1
                 Ht[i] = np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+            else:
+                Ht[i] = np.einsum('...i,...i->...', self.F, self.fc)
         return tout, Ht/np.sqrt(tout)/twopi_sqrt
+    
+defHankel0 = Hankel(lambda x:x, 0)
+defHankel1 = Hankel(lambda x:x, 1)
+defFourier = Fourier(lambda x:x)
