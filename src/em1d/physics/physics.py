@@ -113,8 +113,10 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
 
-    adm_intrinsic = np.sqrt(lambda2 - k2) / zn
-    tanh_un_thick = np.tanh(adm_intrinsic[:-1]*thickness*zn[:-1])
+    adm_intrinsic = np.sqrt(lambda2 - k2)# / zn
+    tanh_un_thick = np.tanh(adm_intrinsic[:-1]*thickness)
+    adm_intrinsic /= zn
+    
     adm_boundary[-1] = adm_intrinsic[-1]*1.
     
     for i in range(n_layers-2, -1, -1):
@@ -160,8 +162,10 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     yn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[1]
 
-    imp_intrinsic = np.sqrt(lambda2 - k2) / yn
-    tanh_un_thick = np.tanh(imp_intrinsic[:-1]*thickness*yn[:-1])
+    imp_intrinsic = np.sqrt(lambda2 - k2)
+    tanh_un_thick = np.tanh(imp_intrinsic[:-1]*thickness)
+    imp_intrinsic /= yn
+    
     imp_boundary[-1] = imp_intrinsic[-1]*1.
     
     for i in range(n_layers-2, -1, -1):
