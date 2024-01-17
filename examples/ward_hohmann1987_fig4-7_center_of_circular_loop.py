@@ -29,6 +29,7 @@ hz_analytical = physics.halfspace_center_circle_loop(omega, sigma, 50)
 transforms.plot_loglog(frqs, hz_analytical, ax=axs[0])
 axs[0].set_title('analytic solution')
 
+omega = omega[:, None]
 
 
 def circle_halfspace(omega, sigma, wave_length, epsilon=None, mu=None):
@@ -41,10 +42,11 @@ def circle_halfspace(omega, sigma, wave_length, epsilon=None, mu=None):
     K1_sqrd     = mu*omega*(epsilon*omega-1j*sigma)
     u1          = np.sqrt(lambda_sqrd[None,:]-K1_sqrd[:, None])
     rte         = lambda_sqrd[None,:]/(wave_length[None,:]+u1)
-    return rte
+    return np.squeeze(rte)
 
 def hankel_integrand(wave_length):
-    return circle_halfspace(omega, sigma, wave_length)
+    lmb = wave_length[None,:]
+    return np.squeeze(circle_halfspace(omega, sigma, lmb))
 
 hkl_rte1 = transforms.Hankel(hankel_integrand, 1, smp_per_decade=20)
 hz_circle = rho*hkl_rte1(rho)
@@ -59,7 +61,7 @@ def hankel_integrand(wave_length):
 
 hkl_rte1 = transforms.Hankel(hankel_integrand, 1, smp_per_decade=20)
 hz_circle = 2*np.pi*rho*hkl_rte1(rho)/(4*np.pi)
-transforms.plot_loglog(frqs, hz_circle, ax=axs[2])
+transforms.plot_loglog(frqs, hz_circle[-1], ax=axs[2])
 axs[2].set_title('numerical integral - full integrand')
 
 for ax in axs:
