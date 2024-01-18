@@ -213,7 +213,9 @@ class Hankel:
         return optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4., nu=self.nu, smp_per_decade=self.smp_per_decade)
     
     def __call__(self, r):
-        i_offset = int(torch.round(self.smp_per_decade*torch.log10(r)))
+        from math import log10
+        i_offset = int(round(self.smp_per_decade*log10(r)))
+        
         if i_offset==0:
             return torch.einsum('...i,...i->...', self.F, self.fc)/r
         elif i_offset>0:
