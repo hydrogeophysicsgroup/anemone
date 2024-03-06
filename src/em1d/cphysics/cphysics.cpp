@@ -41,7 +41,7 @@ torch::Tensor refl_transverse_electric(const torch::Tensor& sigma, const torch::
 
     torch::Tensor lambda2 = wave_length.pow(2);
 
-    torch::Tensor adm_boundary = torch::zeros({ sigma.numel(), omega.numel(), wave_length.numel() }, torch::kComplexDouble);
+    torch::Tensor adm_boundary = torch::zeros({omega.numel(), wave_length.numel() }, torch::kComplexDouble);
 
     torch::Tensor adm_freespace = torch::sqrt(lambda2 - omega.pow(2) * mu0 * epsilon0) / (one_j * omega * mu0);
 
@@ -52,14 +52,14 @@ torch::Tensor refl_transverse_electric(const torch::Tensor& sigma, const torch::
     torch::Tensor tanh_un_thick = torch::tanh(adm_intrinsic.slice(0, 0, n_layers - 1) * thickness);
     adm_intrinsic /= zn;
 
-    adm_boundary[n_layers-1] = adm_intrinsic[n_layers-1];
+    adm_boundary = adm_intrinsic[n_layers-1];
 
     for (int i = n_layers - 2; i >= 0; --i) {
-        adm_boundary[i] = adm_intrinsic[i] * (adm_boundary[i + 1] + adm_intrinsic[i] * tanh_un_thick[i]) /
-                          (adm_intrinsic[i] + adm_boundary[i + 1] * tanh_un_thick[i]);
+        adm_boundary = adm_intrinsic[i] * (adm_boundary + adm_intrinsic[i] * tanh_un_thick[i]) /
+                          (adm_intrinsic[i] + adm_boundary * tanh_un_thick[i]);
     }
 
-    torch::Tensor rte = (adm_freespace - adm_boundary[0]) / (adm_freespace + adm_boundary[0]);
+    torch::Tensor rte = (adm_freespace - adm_boundary) / (adm_freespace + adm_boundary);
     return rte;
 }
 

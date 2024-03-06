@@ -1,4 +1,9 @@
 import torch
+
+print(f'default number of threads {torch.get_num_threads()}')
+print(f'default number of interop threads {torch.get_num_interop_threads()}')
+torch.set_num_interop_threads(16)
+
 from em1d.experiment import Loop, Receiver
 from em1d.transforms import Hankel, Fourier, plot_loglog
 from em1d.physics import refl_transverse_electric as rte, freespace_u0 as u0
@@ -16,9 +21,8 @@ sigma = torch.tensor([100,200], dtype=torch.complex128)[:,None,None]
 thick = torch.tensor([50], dtype=torch.complex128)[:,None,None]
 
 
-
+@torch.jit.script
 def frq_integrand(omega):
-    print(len(omega))
     f = omega[None,:,None]
     def integrand(wave_length):
         lmb = wave_length[None, None, :]
@@ -30,9 +34,16 @@ def frq_integrand(omega):
     res = hr.T@s
     return torch.squeeze(res)*omega
 
-
 from time import perf_counter as timer
-bt = timer()
-f_t = Fourier(frq_integrand)
-t,dbdt = f_t.range(1e-5, 1e-1)
-print(f'dipole time: {timer()-bt} s')
+
+for i in range(5):
+    num_threads = 2**i
+    torch.set_num_threads(num_threads)
+
+    f_t = Fourier(frq_integrand)
+    t,dbdt = f_t.range(1e-5, 1e-1)
+
+    bt = timer()
+    f_t = Fourier(frq_integrand)
+    t,dbdt = f_t.range(1e-5, 1e-1)
+    print(f'{num_threads} threads, dipole time: {timer()-bt} s')

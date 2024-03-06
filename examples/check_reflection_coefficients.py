@@ -28,7 +28,7 @@ rtm_halfspace = ((u0 - y0*u1/y1) / (u0 + y0*u1/y1)).numpy()
 fig,axs = plt.subplots(2,1, sharex=True)
 
 labels=[]
-for iz,thickness in enumerate(np.geomspace(1e-4, 1e-3, 5)):
+for iz,thickness in enumerate(np.geomspace(1e-4, 1e3, 5)):
     thick = torch.tensor([thickness, 10], dtype=torch.complex128)
     c_rte = torch.squeeze(physics.refl_transverse_electric(sigma[:,None,None], thick[:, None,None], omega[None,:,None], wave_length[None,None,:])).numpy()
     axs[0].loglog(wave_length, np.abs(c_rte.real), color=f'C{iz}')

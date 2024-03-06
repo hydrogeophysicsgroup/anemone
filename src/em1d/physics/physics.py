@@ -6,7 +6,7 @@
 # the order of arguments will be sigma, omega, wavelength
 
 import numpy as nt
-import torch as nt
+# import torch as nt
 
 # print('this is the physics submodule, the next print has the globals')
 # print(globals().keys())
@@ -114,19 +114,77 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
 
     adm_intrinsic = nt.sqrt(lambda2 - k2)
+    # un_thick     = adm_intrinsic[:-1]*thickness
+    # e_unthk_p = nt.exp(un_thick)
+    # e_unthk_m = nt.exp(-un_thick)
+    # tanh_un_thick = (e_unthk_p-e_unthk_m)/(e_unthk_p+e_unthk_m)
+
     tanh_un_thick = nt.tanh(adm_intrinsic[:-1]*thickness)
+    
     adm_intrinsic/= zn
     
-    adm_boundary  = nt.zeros_like(adm_intrinsic)
-    adm_boundary[-1] = adm_intrinsic[-1]*1.
+    # adm_boundary  = nt.empty_like(adm_intrinsic[0])
+    adm_boundary = adm_intrinsic[-1]*1.
     
     for i in range(n_layers-2, -1, -1):
-        adm_boundary[i] = adm_intrinsic[i] \
-                        *(adm_boundary[i+1] + adm_intrinsic[i]*tanh_un_thick[i]) \
-                        /(adm_intrinsic[i]  + adm_boundary[i+1]*tanh_un_thick[i])
+        adm_boundary = adm_intrinsic[i] \
+                        *(adm_boundary + adm_intrinsic[i]*tanh_un_thick[i]) \
+                        /(adm_intrinsic[i]  + adm_boundary*tanh_un_thick[i])
+
+    rte = (adm_freespace - adm_boundary) / (adm_freespace + adm_boundary)
+    return rte
+
+def refl_transverse_electric3(sigma, thickness, omega, wave_length, mu=mu0, epsilon=epsilon0):
+    """ rte = (Y_0 - hat Y_1)/(Y_0 + hat Y_1) - W&H eq 4.19 (pg 205)
+        where Y_0 is the intrinsic admittance
+        and hat Y_1 is the surface or boundary admittance
+
+    Args:
+        sigma       (nd-array): conductivity of each layer
+        thickness   (nd-array): thickness of each layer
+        wave_length (nd-array): wave_length (lambda)
+        omega       (nd-array): angular frequency
+        mu             (float): _description_. Defaults to mu0.
+        epsilon        (float): _description_. Defaults to epsilon0.
+
+    Returns:
+        reflection coefficients for transverse electric mode
+    """
+    if isinstance(mu, float):
+        mu = nt.ones_like(sigma, dtype=nt.complex128)*mu
+    if isinstance(epsilon, float):
+        epsilon = nt.ones_like(sigma, dtype=nt.complex128)*epsilon
+
+    n_layers=sigma.numel()
+
+    lambda2 = wave_length**2
+    
+    adm_freespace = nt.sqrt(lambda2 - omega**2 * mu0*epsilon0 + 0j)/(1j*omega*mu0)
+    
+    k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
+    zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
+
+    adm_intrinsic = nt.sqrt(lambda2 - k2)
+    # un_thick     = adm_intrinsic[:-1]*thickness
+    # e_unthk_p = nt.exp(un_thick)
+    # e_unthk_m = nt.exp(-un_thick)
+    # tanh_un_thick = (e_unthk_p-e_unthk_m)/(e_unthk_p+e_unthk_m)
+
+    tanh_un_thick = nt.tanh(adm_intrinsic[..., :-1]*thickness)
+    
+    adm_intrinsic/= zn
+    
+    # adm_boundary  = nt.empty_like(adm_intrinsic)
+    adm_boundary = adm_intrinsic[..., -1]*1.
+    
+
+    for i in range(n_layers-2, -1, -1):
+        adm_boundary = adm_intrinsic[..., i] \
+                        *(adm_boundary + adm_intrinsic[..., i]*tanh_un_thick[..., i]) \
+                        /(adm_intrinsic[..., i]  + adm_boundary*tanh_un_thick[..., i])
 
     rte = (adm_freespace - adm_boundary[0]) / (adm_freespace + adm_boundary[0])
-    return rte
+    return rte    
 
 def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsilon=epsilon0):
     """ rtm = (Z_0 - hat Z_1)/(Z_0 + hat Z_1) - W&H eq 4.20 (pg 206)
