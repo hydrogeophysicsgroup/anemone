@@ -251,7 +251,7 @@ class OptimizedHankel:
 
         cs = np.cumsum(np.abs(self.fc)[i_sort])
         cs /= cs.max()
-        one_percent = (cs>0.000001)
+        one_percent = (cs>1e-6)
 
         subset = one_percent[i_unsort]
         
@@ -259,6 +259,10 @@ class OptimizedHankel:
         imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
         buffer = max(abs(imin), abs(imax))
         self.subset = np.convolve(subset, np.ones(buffer+1), mode='same').astype(bool)
+
+        print(f'hankel save: {self.subset.sum() / len(self.subset)}')
+
+
         self.F = self.func(self.lamda[self.subset])
         self.fc = self.fc[self.subset]
 
@@ -365,6 +369,9 @@ class OptimizedFourier:
         imax = int(np.ceil(self.smp_per_decade*np.log10(tmax))+1)
         buffer = max(abs(imin), abs(imax))
         self.subset = np.convolve(subset, np.ones(buffer+1), mode='same').astype(bool)
+        print(self.subset.sum() / len(self.subset))
+        
+        # self.subset = np.ones_like(self.lamda, dtype=bool)
 
         self.fc = self.fc[self.subset]
         self.F = self.func(self.lamda[self.subset])*np.sqrt(self.lamda[self.subset])
@@ -377,9 +384,9 @@ class OptimizedFourier:
         i_offset = int(np.round(self.smp_per_decade*np.log10(r)))
         r_offset = 10**(i_offset*self.delta)
         if i_offset == 0:
-            return self.F.dot(self.fc)/np.sqrt(r_offset)/twopi_sqrt
+            return self.F.dot(self.fc)/np.sqrt(r_offset)/twopi
         else:
-            return self.F[-i_offset:].dot(self.fc[:i_offset])/np.sqrt(r_offset)/twopi_sqrt
+            return self.F[-i_offset:].dot(self.fc[:i_offset])/np.sqrt(r_offset)/twopi
         
     def range(self, tmin, tmax):
         imin = int(np.floor(self.smp_per_decade*np.log10(tmin))-1)
@@ -395,9 +402,9 @@ class OptimizedFourier:
                 Ht[i] = np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
             else:
                 Ht[i] = np.einsum('...i,...i->...', self.F, self.fc)
-        return tout, Ht/np.sqrt(tout)/twopi_sqrt
+        return tout, Ht/np.sqrt(tout)/twopi
 
 
 defHankel0 = OptimizedHankel(lambda x:x, 0, 5,7)
 defHankel1 = OptimizedHankel(lambda x:x, 1, 5,7)
-defFourier = OptimizedFourier(lambda x:x, 1e-5, 1e-2)
+defFourier = OptimizedFourier(lambda x:x, 1e-6, 1e-3)

@@ -136,23 +136,24 @@ plt.gca().invert_yaxis()
 #
 
 # Define the simulation
+
+
+# import cProfile
+# cProfile.run('simulation.dpred(model)', 'restats')
+# import pstats
+# from pstats import SortKey
+# p = pstats.Stats('restats')
+# p.sort_stats(SortKey.CUMULATIVE)
+# p.print_stats()
+
+# Predict data for a given model
+from time import perf_counter as timer
+bt = timer()
 simulation = tdem.Simulation1DLayered(
     survey=survey,
     thicknesses=thicknesses,
     sigmaMap=model_mapping,
 )
-
-import cProfile
-cProfile.run('simulation.dpred(model)', 'restats')
-import pstats
-from pstats import SortKey
-p = pstats.Stats('restats')
-p.sort_stats(SortKey.CUMULATIVE)
-p.print_stats()
-
-# Predict data for a given model
-from time import perf_counter as timer
-bt = timer()
 dpred = simulation.dpred(model)
 print(f'simpeg single forward time: {timer()-bt} s')
 
@@ -164,17 +165,32 @@ from em1d.transforms import *
 from em1d.physics import refl_transverse_electric as rte, freespace_u0 as u0
 
 # first lets compute Hz(R)
-lp = Loop.square(10)
+# side = np.sqrt(np.pi*source_radius**2)
+side = 2*np.pi*source_radius / 4.
+print(side)
+
+lp = Loop.square(side)
+
+
 rx = Receiver()
 rmin = lp.min_horizontal_distance(rx)
 rmax = lp.max_horizontal_distance(rx)
+
 
 sigma = np.array([0.1, 1, 0.1])[:,None,None]
 thick = np.array([40, 40])[:,None,None]
 
 
+from scipy.interpolate import interp1d
 
 hkl = defHankel1
+
+r,_ = hkl.range(rmin, rmax)
+s = lp.s_of_r(rx, r)
+
+
+
+
 f_t = defFourier
 
 def frq_integrand(omega):
@@ -182,26 +198,36 @@ def frq_integrand(omega):
     def integrand(wave_length):
         lmb = wave_length[None, None, :]
         tmp_u0 = u0(omega, lmb)
-        intg = (np.exp(-tmp_u0*40)*rte(sigma, thick, omega, lmb))*lmb**2 / tmp_u0
+        intg = (np.exp(-tmp_u0*40.)*rte(sigma, thick, omega, lmb))*lmb**2 / tmp_u0
         return np.squeeze(intg/(1j*omega))
     hkl.func = integrand
     hkl.F = integrand(hkl.lamda[hkl.subset])
-    r,hr = hkl.range(5, 7)
+    #hr = hkl(6)
+    
+    r, hr = hkl.range(rmin, rmax)
+    hr /= r[:, None]
 
-    hr /= r[:,None]
-    s = np.zeros_like(r)
-    s[np.searchsorted(r, 6)] = 2*np.pi*6
+    # hr_int = interp1d(r, hr.T, kind='cubic', fill_value='extrapolate')
+    
+    # print(r)
+    # # 
+    # s = np.zeros_like(r)
+    # s[2] = 0.25*np.pi
+    # s[3] = 1.75*np.pi
 
-    print(r[np.searchsorted(r,6)-1])
-    res = hr.T.dot(s)#/f
-    return -np.squeeze(res)
+    res = hr.T.dot(s)
+    return res
+
+    #return hkl(6)*2*np.pi
+    #return hr_int(6)*2*np.pi#*6
 
 
 from time import perf_counter as timer
 bt = timer()
-f_t = Fourier(frq_integrand)
+# f_t = Fourier(frq_integrand, smp_per_decade=10)
+f_t.func = frq_integrand
+f_t.F = frq_integrand(f_t.lamda[f_t.subset])*np.sqrt(f_t.lamda[f_t.subset])
 t,dbdt = f_t.range(1e-5, 1e-2)
-print(len(t))
 print(f'dipole default time: {timer()-bt} s')
 
 
@@ -210,36 +236,10 @@ print(f'dipole default time: {timer()-bt} s')
 # Plot sounding
 fig = plt.figure(figsize=(6, 6))
 ax = fig.add_axes([0.2, 0.15, 0.75, 0.78])
-ax.loglog(times, dpred*795774.71545947673925, "k-o", lw=2)
-ax.loglog(t, np.abs(dbdt.real))
+ax.loglog(times, dpred, "k-o", lw=2)
+ax.loglog(t, np.abs(dbdt.real)/795774.71545947673925, 'r.-')
 ax.set_xlabel("Times (s)")
 ax.set_ylabel("|H| (A/m)")
 ax.set_title("Magnetic Flux")
 
-# fig = plt.figure(figsize=(6, 6))
-# ax = fig.add_axes([0.2, 0.15, 0.75, 0.78])
-# ax.loglog(times, dpred*795774.71545947673925, "k-o", lw=2)
-# ax.loglog(t, np.abs(dbdt.real))
-# ax.set_xlabel("Times (s)")
-# ax.set_ylabel("|H| (A/m)")
-# ax.set_title("Magnetic Flux")
 plt.show()
-
-##################################################
-# Write Output (Optional)
-# -----------------------
-#
-
-if write_output:
-    dir_path = os.path.dirname(__file__).split(os.path.sep)
-    dir_path.extend(["outputs"])
-    dir_path = os.path.sep.join(dir_path) + os.path.sep
-
-    if not os.path.exists(dir_path):
-        os.mkdir(dir_path)
-
-    np.random.seed(347)
-    noise = 0.05 * np.abs(dpred) * np.random.rand(len(dpred))
-    dpred += noise
-    fname = dir_path + "em1dtm_data.txt"
-    np.savetxt(fname, np.c_[times, dpred], fmt="%.4e", header="TIME BZ")
