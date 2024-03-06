@@ -5,8 +5,8 @@
 # we assume the physical properties of the earth only change with depth, i.e. the earth is 1D.
 # the order of arguments will be sigma, omega, wavelength
 
-import numpy as nt
-# import torch as nt
+#import numpy as nt
+import torch as nt
 
 # print('this is the physics submodule, the next print has the globals')
 # print(globals().keys())
@@ -159,7 +159,7 @@ def refl_transverse_electric3(sigma, thickness, omega, wave_length, mu=mu0, epsi
 
     lambda2 = wave_length**2
     
-    adm_freespace = nt.sqrt(lambda2 - omega**2 * mu0*epsilon0 + 0j)/(1j*omega*mu0)
+    adm_freespace = nt.sqrt(lambda2 - omega**2 * mu0*epsilon0)/(1j*omega*mu0)
     
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
@@ -170,7 +170,7 @@ def refl_transverse_electric3(sigma, thickness, omega, wave_length, mu=mu0, epsi
     # e_unthk_m = nt.exp(-un_thick)
     # tanh_un_thick = (e_unthk_p-e_unthk_m)/(e_unthk_p+e_unthk_m)
 
-    tanh_un_thick = nt.tanh(adm_intrinsic[..., :-1]*thickness)
+    tanh_un_thick = nt.tanh(adm_intrinsic[:-1]*thickness)
     
     adm_intrinsic/= zn
     

@@ -192,7 +192,7 @@ def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=1
     return np.real(Hnustar)
 
 
-class Hankel:
+class BaseHankel:
     def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10):
         self.func    = func
         self.nu    = order
@@ -202,8 +202,9 @@ class Hankel:
         self.v     = np.log(self.lamda)
         self.fc=torch.tensor(self.calc_coefficients(), dtype=torch.complex128)
         self.filter_i0 = np.searchsorted(self.v, 0)
+        self.lamda = torch.tensor(self.lamda, dtype=torch.complex128)
         # self.F = torch.tensor(self.func(torch.tensor(self.lamda, dtype=torch.complex128)), dtype=torch.complex128)
-        self.F = self.func(torch.tensor(self.lamda, dtype=torch.complex128))
+        self.F = self.func(self.lamda)
     
     @property
     def delta(self):
@@ -247,18 +248,19 @@ twopi = torch.tensor([torch.pi*2.])
 twopi_sqrt = torch.sqrt(twopi)
 
 
-class Fourier:
-    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=20):
+class BaseFourier:
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=10):
         self.func = func
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
         self.lamda = 10**(np.arange(log10min*smp_per_decade,
                           log10max*smp_per_decade+1)*self.delta)
         self.v = np.log(self.lamda)
+        self.lamda = torch.tensor(self.lamda, dtype=torch.complex128)
         self.fc = optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=-0.5, smp_per_decade=self.smp_per_decade) \
                   +1j*optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=0.5, smp_per_decade=self.smp_per_decade)
         self.fc  = torch.tensor(self.fc, dtype=torch.complex128)
-        self.F = self.func(self.lamda)*torch.sqrt(torch.tensor(self.lamda, dtype=torch.complex128))
+        self.F = self.func(self.lamda)*torch.sqrt(self.lamda)
 
     @property
     def delta(self):
@@ -268,9 +270,9 @@ class Fourier:
         i_offset = int(torch.round(self.smp_per_decade*torch.log10(r)))
         r_offset = 10**(i_offset*self.delta)
         if i_offset == 0:
-            return self.F.dot(self.fc)/torch.sqrt(r_offset)/twopi_sqrt
+            return self.F.dot(self.fc)/torch.sqrt(r_offset)/twopi
         else:
-            return self.F[-i_offset:].dot(self.fc[:i_offset])/torch.sqrt(r_offset)/twopi_sqrt
+            return self.F[-i_offset:].dot(self.fc[:i_offset])/torch.sqrt(r_offset)/twopi
         
     def range(self, tmin, tmax):
         imin = int(np.floor(self.smp_per_decade*np.log10(tmin))-1)
@@ -286,4 +288,24 @@ class Fourier:
             else:
                 i_offset *= -1
                 Ht[i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
-        return tout, Ht/torch.sqrt(tout)/twopi_sqrt
+        return tout, Ht/torch.sqrt(tout)/twopi
+
+import copy
+_precalcHankel0 =  BaseHankel(lambda x:x, 0)
+_precalcHankel1 =  BaseHankel(lambda x:x, 1)
+_precalcFourier = BaseFourier(lambda x:x)
+
+def Hankel(func, order):
+    if order==0:
+        self = copy.deepcopy(_precalcHankel0)
+    elif order==1:
+        self = copy.deepcopy(_precalcHankel1)
+    self.func = func
+    self.F = self.func(self.lamda)
+    return self
+
+def Fourier(func):
+    self = copy.deepcopy(_precalcFourier)
+    self.func = func
+    self.F = self.func(self.lamda)*torch.sqrt(self.lamda)
+    return self
