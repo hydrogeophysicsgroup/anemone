@@ -40,10 +40,10 @@ def test_transforms_varying_samples_per_decades():
         wave_length = wave_length[None, :]
         return calc_rte_halfspace(sigma, omega, wave_length)*wave_length**3
 
-    Hkl_rte1 = transforms.Hankel(rte1, 0)
+    Hkl_rte1 = transforms.BaseHankel(rte1, 0)
     hz1 = Hkl_rte1(rho)/(2*torch.pi)
 
-    Hkl_rte2 = transforms.Hankel(rte1, 0, smp_per_decade=20)
+    Hkl_rte2 = transforms.BaseHankel(rte1, 0, smp_per_decade=20)
     hz2 = Hkl_rte2(rho)/(2*torch.pi)
 
 

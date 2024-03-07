@@ -276,7 +276,7 @@ class BaseFourier:
         
     def range(self, tmin, tmax):
         imin = int(np.floor(self.smp_per_decade*np.log10(tmin))-1)
-        imax = int(np.ceil(self.smp_per_decade*np.log10(tmax))+1)
+        imax = int(np.ceil(self.smp_per_decade*np.log10(tmax))+2)
         i_offsets = np.arange(imin, imax)
         tout = torch.tensor(10**(i_offsets/self.smp_per_decade))
         Ht = torch.zeros(tout.shape, dtype=torch.complex128)
@@ -291,21 +291,21 @@ class BaseFourier:
         return tout, Ht/torch.sqrt(tout)/twopi
 
 import copy
-_precalcHankel0 =  BaseHankel(lambda x:x, 0)
-_precalcHankel1 =  BaseHankel(lambda x:x, 1)
-_precalcFourier = BaseFourier(lambda x:x)
+precalcHankel0 =  BaseHankel(lambda x:x, 0, smp_per_decade=4)
+precalcHankel1 =  BaseHankel(lambda x:x, 1, smp_per_decade=4)
+precalcFourier = BaseFourier(lambda x:x, smp_per_decade=4)
 
 def Hankel(func, order):
     if order==0:
-        self = copy.deepcopy(_precalcHankel0)
+        self = copy.deepcopy(precalcHankel0)
     elif order==1:
-        self = copy.deepcopy(_precalcHankel1)
+        self = copy.deepcopy(precalcHankel1)
     self.func = func
     self.F = self.func(self.lamda)
     return self
 
 def Fourier(func):
-    self = copy.deepcopy(_precalcFourier)
+    self = copy.deepcopy(precalcFourier)
     self.func = func
     self.F = self.func(self.lamda)*torch.sqrt(self.lamda)
     return self
