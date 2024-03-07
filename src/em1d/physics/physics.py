@@ -15,6 +15,8 @@ import torch as nt
 mu0 = nt.pi*4e-7
 epsilon0 = 8.854187817e-12
 
+
+
 def calc_zy(sigma, omega, epsilon=epsilon0, mu=mu0):
     """compute the impedivity (zhat) and admittivity (yhat)
        see W&H between eq. 1.15->1.16, reference to harrington, 1961
@@ -234,11 +236,3 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
 
     rtm = (imp_freespace - imp_boundary[0]) / (imp_freespace + imp_boundary[0])
     return rtm
-
-
-class Dipole:
-    def __init__(self, rte_func, rtm_func):
-        pass
-
-    def __call__(self, sigma, thickness, h=0.):
-        pass
