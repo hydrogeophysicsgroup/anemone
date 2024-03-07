@@ -52,7 +52,7 @@ source_current = 1.0  # maximum on-time current
 source_radius = 6.0  # source loop radius
 
 # Receiver properties
-receiver_location = np.array([0.0, 0.0, 20.0])
+receiver_location = np.array([0.0, 0., 20.0])
 receiver_orientation = "z"  # "x", "y" or "z"
 times = np.logspace(-5, -2, 31)  # time channels (s)
 
@@ -164,18 +164,23 @@ torch.set_num_threads(4)
 from em1d.physics import mu0
 from em1d.experiment import Loop, Receiver
 from em1d.transforms import *
+# from em1d.transforms import _precalcHankel1
 
 from em1d.physics import refl_transverse_electric as rte, freespace_u0 as u0
 
 # first lets compute Hz(R)
-side = np.sqrt(np.pi*source_radius**2)
-#side = 2*np.pi*source_radius / 4.
+#side = np.sqrt(np.pi*source_radius**2)
+side = 2*np.pi*source_radius / 4.
 print(side)
 
-lp = Loop.square(side)
+lp = Loop.circle(6)
+lp.z += 20
+
+#lp = Loop.square(side)
 
 
 rx = Receiver()
+rx.z += 20
 rmin = lp.min_horizontal_distance(rx)
 rmax = lp.max_horizontal_distance(rx)
 
@@ -183,7 +188,8 @@ rmax = lp.max_horizontal_distance(rx)
 sigma = torch.tensor([0.1, 1, 0.1], dtype=torch.complex128)[:,None,None]
 thick = torch.tensor([40, 40], dtype=torch.complex128)[:,None,None]
 
-
+r,hr = precalcHankel1.range(rmin, rmax)
+s = torch.tensor(lp.s_of_r(rx, r.numpy()), dtype=torch.complex128)
 
 
 def frq_integrand(omega):
@@ -195,10 +201,8 @@ def frq_integrand(omega):
         return torch.squeeze(intg/(1j*omega))
     hkl = Hankel(integrand, 1)
     
-    # r, hr = hkl.range(rmin, rmax)
-    # s = torch.tensor(lp.s_of_r(rx, r.numpy()), dtype=torch.complex128)
-
-    # hr /= r[:, None]
+    r, hr = hkl.range(rmin, rmax)
+    hr /= r[:, None]
 
     # # hr_int = interp1d(r, hr.T, kind='cubic', fill_value='extrapolate')
     
@@ -208,11 +212,8 @@ def frq_integrand(omega):
     # # s[2] = 0.25*np.pi
     # # s[3] = 1.75*np.pi
 
-    # res = hr.T@s
-    return hkl(6)*2*torch.pi
-
-    #return hkl(6)*2*np.pi
-    #return hr_int(6)*2*np.pi#*6
+    res = hr.T@s
+    return res# hkl(6)*2*torch.pi
 
 
 from time import perf_counter as timer
@@ -229,10 +230,10 @@ print(f'dipole default time: {timer()-bt} s')
 # Plot sounding
 fig = plt.figure(figsize=(6, 6))
 ax = fig.add_axes([0.2, 0.15, 0.75, 0.78])
-ax.loglog(times, dpred, "k-o", lw=2)
-ax.loglog(t.numpy(), np.abs(dbdt.numpy().real)/795774.71545947673925, 'r.-')
+ax.loglog(times, dpred, "k-o", lw=2, label='simpeg')
+ax.loglog(t.numpy(), np.abs(dbdt.numpy().real)/795774.71545947673925, 'r.-', label='pytorch')
 ax.set_xlabel("Times (s)")
 ax.set_ylabel("|H| (A/m)")
 ax.set_title("Magnetic Flux")
-
+ax.legend()
 plt.show()
