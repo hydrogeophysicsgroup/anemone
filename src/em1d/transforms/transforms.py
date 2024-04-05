@@ -193,7 +193,7 @@ def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=1
 
 
 class BaseHankel:
-    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10):
+    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10, device=None):
         self.func    = func
         self.nu    = order
         self.smp_per_decade = smp_per_decade
@@ -203,6 +203,10 @@ class BaseHankel:
         self.fc=torch.tensor(self.calc_coefficients(), dtype=torch.complex128)
         self.filter_i0 = np.searchsorted(self.v, 0)
         self.lamda = torch.tensor(self.lamda, dtype=torch.complex128)
+        if device is not None:
+            self.fc=self.fc.to(device)
+            self.lamda=self.lamda.to(device)
+        self.device=device
         # self.F = torch.tensor(self.func(torch.tensor(self.lamda, dtype=torch.complex128)), dtype=torch.complex128)
         self.F = self.func(self.lamda)
     
@@ -228,9 +232,15 @@ class BaseHankel:
     def range(self, rmin, rmax):
         imin = int(np.floor(self.smp_per_decade*np.log10(rmin))-1)
         imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
-        i_offsets = np.arange(imin, imax)
+        i_offsets = torch.tensor(np.arange(imin, imax))
         rout = torch.tensor(10**(i_offsets/self.smp_per_decade), dtype=torch.complex128)
         HR = torch.zeros(rout.shape+self.F.shape[:-1], dtype=torch.complex128)
+        if self.device is not None:
+            rout=rout.to(self.device)
+            HR=HR.to(self.device)
+            i_offsets=i_offsets.to(self.device)
+
+
         for i,i_offset in enumerate(i_offsets):
             if i_offset==0:
                 HR[i] = torch.einsum('...i,...i->...', self.F, self.fc)
@@ -244,12 +254,12 @@ class BaseHankel:
         
         
 # instead of giving hz(t) from Hz(f) this is giving d Hz / dt (t)
-twopi = torch.tensor([torch.pi*2.])
-twopi_sqrt = torch.sqrt(twopi)
+twopi = torch.pi*2.
+twopi_sqrt = twopi**(1/2)
 
 
 class BaseFourier:
-    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=10):
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=10, device=None):
         self.func = func
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
@@ -257,9 +267,15 @@ class BaseFourier:
                           log10max*smp_per_decade+1)*self.delta)
         self.v = np.log(self.lamda)
         self.lamda = torch.tensor(self.lamda, dtype=torch.complex128)
+
         self.fc = optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=-0.5, smp_per_decade=self.smp_per_decade) \
                   +1j*optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=0.5, smp_per_decade=self.smp_per_decade)
         self.fc  = torch.tensor(self.fc, dtype=torch.complex128)
+
+        if device is not None:
+            self.fc=self.fc.to(device)
+            self.lamda=self.lamda.to(device)
+        self.device = device 
         self.F = self.func(self.lamda)*torch.sqrt(self.lamda)
 
     @property
@@ -277,9 +293,15 @@ class BaseFourier:
     def range(self, tmin, tmax):
         imin = int(np.floor(self.smp_per_decade*np.log10(tmin))-1)
         imax = int(np.ceil(self.smp_per_decade*np.log10(tmax))+2)
-        i_offsets = np.arange(imin, imax)
+        i_offsets = torch.tensor(np.arange(imin, imax))
         tout = torch.tensor(10**(i_offsets/self.smp_per_decade))
         Ht = torch.zeros(tout.shape+self.F.shape[:-1], dtype=torch.complex128)
+        
+        if self.device is not None:
+            tout=tout.to(self.device)
+            Ht=Ht.to(self.device)
+            i_offsets=i_offsets.to(self.device)
+
         for i,i_offset in enumerate(i_offsets):
             if i_offset==0:
                 Ht[i] = torch.einsum('...i,...i->...', self.F, self.fc)
@@ -293,7 +315,7 @@ class BaseFourier:
 import copy
 precalcHankel0 =  BaseHankel(lambda x:x, 0, smp_per_decade=4)
 precalcHankel1 =  BaseHankel(lambda x:x, 1, smp_per_decade=4)
-precalcFourier = BaseFourier(lambda x:x, smp_per_decade=10)
+precalcFourier =  BaseFourier(lambda x:x, smp_per_decade=10)
 
 def Hankel(func, order):
     if order==0:
