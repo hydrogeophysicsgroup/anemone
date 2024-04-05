@@ -216,23 +216,23 @@ class Forward:
                 return torch.squeeze(intg/(1j*omega))
             hkl = Hankel(integrand, 1)
             r, hr = hkl.range(self.rmin, self.rmax)
-            hr /= r[:, None]
+            hr /= r[:,None,None]
             return hr.T@self.sofr
         f_t=Fourier(frq_integrand)
         t,dbdt = f_t.range(self.times[0], self.times[-1])
-        lgdbdt = torch.log(dbdt)
-        lgt = torch.log(t)
+        return t, dbdt
+        # lgdbdt = torch.log(dbdt)
+        # lgt = torch.log(t)
 
-        #return t, dbdt
-        i_t1 = torch.searchsorted(lgt, self.lgtimes)
-        i_t2 = i_t1+1
-        y1 = lgdbdt[i_t1]
-        y2 = lgdbdt[i_t2]
-        x1 = lgt[i_t1]
-        x2 = lgt[i_t2]
-        return self.times, torch.exp((y1 + (y2-y1)*(self.lgtimes-x1)/(x2-x1)))
+        # i_t1 = torch.searchsorted(lgt, self.lgtimes)
+        # i_t2 = i_t1+1
+        # y1 = lgdbdt[i_t1]
+        # y2 = lgdbdt[i_t2]
+        # x1 = lgt[i_t1]
+        # x2 = lgt[i_t2]
+        # return self.times, torch.exp((y1 + (y2-y1)*(self.lgtimes-x1)/(x2-x1)))
 
     def __call__(self, sigma, thickness):
-        self.sigma = torch.tensor(sigma, dtype=torch.complex128)[:,None,None]
-        self.thick = torch.tensor(thickness, dtype=torch.complex128)[:,None,None]
+        self.sigma = torch.tensor(sigma, dtype=torch.complex128)[...,None,None]
+        self.thick = torch.tensor(thickness, dtype=torch.complex128)[...,None,None]
         return self.forward()

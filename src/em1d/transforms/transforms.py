@@ -239,7 +239,7 @@ class BaseHankel:
             else:
                 i_offset *= -1
                 HR[i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
-        return rout, HR/rout[:,None]
+        return rout, HR/rout[:,None,None]
 
         
         
@@ -279,7 +279,7 @@ class BaseFourier:
         imax = int(np.ceil(self.smp_per_decade*np.log10(tmax))+2)
         i_offsets = np.arange(imin, imax)
         tout = torch.tensor(10**(i_offsets/self.smp_per_decade))
-        Ht = torch.zeros(tout.shape, dtype=torch.complex128)
+        Ht = torch.zeros(tout.shape+self.F.shape[:-1], dtype=torch.complex128)
         for i,i_offset in enumerate(i_offsets):
             if i_offset==0:
                 Ht[i] = torch.einsum('...i,...i->...', self.F, self.fc)
@@ -288,12 +288,12 @@ class BaseFourier:
             else:
                 i_offset *= -1
                 Ht[i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
-        return tout, Ht/torch.sqrt(tout)/twopi
+        return tout, Ht/torch.sqrt(tout[:,None])/twopi
 
 import copy
 precalcHankel0 =  BaseHankel(lambda x:x, 0, smp_per_decade=4)
 precalcHankel1 =  BaseHankel(lambda x:x, 1, smp_per_decade=4)
-precalcFourier = BaseFourier(lambda x:x, smp_per_decade=4)
+precalcFourier = BaseFourier(lambda x:x, smp_per_decade=10)
 
 def Hankel(func, order):
     if order==0:
@@ -307,5 +307,5 @@ def Hankel(func, order):
 def Fourier(func):
     self = copy.deepcopy(precalcFourier)
     self.func = func
-    self.F = self.func(self.lamda)*torch.sqrt(self.lamda)
+    self.F = self.func(self.lamda).T*torch.sqrt(self.lamda)
     return self

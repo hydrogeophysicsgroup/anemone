@@ -103,6 +103,14 @@ lp = Loop.square(6, z=20)
 # Define the survey
 survey = tdem.Survey(source_list)
 
+# Emerald forward setup...
+# tdem.sources.MagDipole(
+#                 [tdem.receivers.PointMagneticFluxTimeDerivative(
+#                     receiver_location, times[0], self.rx_orientation)],
+#                 location=location,
+#                 waveform=waveform_lm,
+#                 orientation=self.tx_orientation,
+#                 i_sounding=idx),
 
 ###############################################
 # Defining a 1D Layered Earth Model
@@ -148,7 +156,7 @@ simulation = tdem.Simulation1DLayered(
 )
 
 
-n_forwards=1
+n_forwards=10
 from time import perf_counter as timer
 bt = timer()
 dpred = simulation.dpred(model)
@@ -160,12 +168,10 @@ import torch
 from em1d.experiment import Loop, Receiver, Forward
 
 lp = Loop.circle(6, z=20)
-
 rx = Receiver(z=20)
 
-sigma = torch.tensor([0.1, 1, 0.1])#, dtype=torch.complex128)[:,None,None]
-thick = torch.tensor([40, 40])#, dtype=torch.complex128)[:,None,None]
-
+sigma = torch.tensor([0.1, 1, 0.1])
+thick = torch.tensor([40, 40])
 fwr = Forward(lp, rx, torch.tensor(times))
 
 
