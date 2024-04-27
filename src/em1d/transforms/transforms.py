@@ -1,5 +1,6 @@
 from scipy.special import gamma
 import numpy as np
+import torch
 
 pi = np.pi
 
@@ -66,7 +67,7 @@ def johansen1979_Hhat_nu(s, nu=0):
 
 def christensen1990_eq16(v, sc, nu=0, a=0.1, term_max=50, convergence_threshold=1e-9):
     """this equation is for v<ln(2)"""
-    assert np.all(v<np.log(2)), "positive value of v will not converge"
+    # assert np.all(v<np.log(2)), "positive value of v will not converge"
     delta = 1./(2*sc)
 
     n = 0
@@ -190,16 +191,23 @@ def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=1
 
     return np.real(Hnustar)
 
-class Hankel:
-    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10):
+
+class BaseHankel:
+    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10, device=None):
         self.func    = func
         self.nu    = order
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
         self.lamda = 10**(np.arange(log10min*self.smp_per_decade, log10max*self.smp_per_decade+1)*self.delta)
         self.v     = np.log(self.lamda)
-        self.fc=self.calc_coefficients()
+        self.fc=torch.tensor(self.calc_coefficients(), dtype=torch.complex128)
         self.filter_i0 = np.searchsorted(self.v, 0)
+        self.lamda = torch.tensor(self.lamda, dtype=torch.complex128)
+        if device is not None:
+            self.fc=self.fc.to(device)
+            self.lamda=self.lamda.to(device)
+        self.device=device
+        # self.F = torch.tensor(self.func(torch.tensor(self.lamda, dtype=torch.complex128)), dtype=torch.complex128)
         self.F = self.func(self.lamda)
     
     @property
@@ -210,204 +218,119 @@ class Hankel:
         return optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4., nu=self.nu, smp_per_decade=self.smp_per_decade)
     
     def __call__(self, r):
-        i_offset = int(np.round(self.smp_per_decade*np.log10(r)))
+        from math import log10
+        i_offset = int(round(self.smp_per_decade*log10(r)))
+        
         if i_offset==0:
-            return np.einsum('...i,...i->...', self.F, self.fc)/r
+            return torch.einsum('...i,...i->...', self.F, self.fc)/r
         elif i_offset>0:
-            return np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])/r
+            return torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])/r
         else:
             i_offset *= -1
-            return np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])/r
+            return torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])/r
         
     def range(self, rmin, rmax):
         imin = int(np.floor(self.smp_per_decade*np.log10(rmin))-1)
         imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
-        i_offsets = np.arange(imin, imax)
-        rout = 10**(i_offsets/self.smp_per_decade)
-        HR = np.zeros(rout.shape+self.F.shape[:-1], dtype=complex)
+        i_offsets = torch.tensor(np.arange(imin, imax))
+        rout = torch.tensor(10**(i_offsets/self.smp_per_decade), dtype=torch.complex128)
+        HR = torch.zeros(rout.shape+self.F.shape[:-1], dtype=torch.complex128)
+        if self.device is not None:
+            rout=rout.to(self.device)
+            HR=HR.to(self.device)
+            i_offsets=i_offsets.to(self.device)
+
+
         for i,i_offset in enumerate(i_offsets):
-            
-            if i_offset>0:
-                HR[i] = np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
-            elif i_offset<0:
-                i_offset *= -1
-                HR[i] = np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+            if i_offset==0:
+                HR[i] = torch.einsum('...i,...i->...', self.F, self.fc)
+            elif i_offset>0:
+                HR[i] = torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
             else:
-                HR[i] = np.einsum('...i,...i->...', self.F, self.fc)
-        return rout, HR/rout[:,None]
-
-class OptimizedHankel:
-    def __init__(self, func, order, rmin, rmax, log10min=-20, log10max=10, smp_per_decade=10):
-        self.func    = func
-        self.nu    = order
-        self.smp_per_decade = smp_per_decade
-        self.n_decades = log10max-log10min
-        self.lamda = 10**(np.arange(log10min*self.smp_per_decade, log10max*self.smp_per_decade+1)*self.delta)
-        self.v     = np.log(self.lamda)
-        self.fc=self.calc_coefficients()
-        i_sort      = np.argsort(np.abs(self.fc))
-        i_unsort = np.zeros(len(i_sort), dtype=int)
-        i_unsort[i_sort] = np.arange(len(i_sort))
-
-        cs = np.cumsum(np.abs(self.fc)[i_sort])
-        cs /= cs.max()
-        one_percent = (cs>1e-6)
-
-        subset = one_percent[i_unsort]
-        
-        imin = int(np.floor(self.smp_per_decade*np.log10(rmin))-1)
-        imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
-        buffer = max(abs(imin), abs(imax))
-        self.subset = np.convolve(subset, np.ones(buffer+1), mode='same').astype(bool)
-
-        print(f'hankel save: {self.subset.sum() / len(self.subset)}')
-
-
-        self.F = self.func(self.lamda[self.subset])
-        self.fc = self.fc[self.subset]
-
-    @property
-    def delta(self):
-        return 1./self.smp_per_decade
-    
-    def calc_coefficients(self):
-        return optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4., nu=self.nu, smp_per_decade=self.smp_per_decade)
-    
-    def __call__(self, r):
-        i_offset = int(np.round(self.smp_per_decade*np.log10(r)))
-        if i_offset==0:
-            return np.einsum('...i,...i->...', self.F, self.fc)/r
-        elif i_offset>0:
-            return np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])/r
-        else:
-            i_offset *= -1
-            return np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])/r
-        
-    def range(self, rmin, rmax):
-        imin = int(np.floor(self.smp_per_decade*np.log10(rmin))-1)
-        imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
-        i_offsets = np.arange(imin, imax)
-        rout = 10**(i_offsets/self.smp_per_decade)
-        HR = np.zeros(rout.shape+self.F.shape[:-1], dtype=complex)
-        for i,i_offset in enumerate(i_offsets):
-            
-            if i_offset>0:
-                HR[i] = np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
-            elif i_offset<0:
                 i_offset *= -1
-                HR[i] = np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
-            else:
-                HR[i] = np.einsum('...i,...i->...', self.F, self.fc)
-        return rout, HR/rout[:,None]
+                HR[i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+        return rout, HR/rout[:,None,None]
 
+        
+        
 # instead of giving hz(t) from Hz(f) this is giving d Hz / dt (t)
-twopi = np.pi*2.
-twopi_sqrt = np.sqrt(2*np.pi)
+twopi = torch.pi*2.
+twopi_sqrt = twopi**(1/2)
 
 
-class Fourier:
-    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=15):
+class BaseFourier:
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=10, device=None):
         self.func = func
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
         self.lamda = 10**(np.arange(log10min*smp_per_decade,
                           log10max*smp_per_decade+1)*self.delta)
         self.v = np.log(self.lamda)
+        self.lamda = torch.tensor(self.lamda, dtype=torch.complex128)
+
         self.fc = optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=-0.5, smp_per_decade=self.smp_per_decade) \
                   +1j*optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=0.5, smp_per_decade=self.smp_per_decade)
-        self.F = self.func(self.lamda)*np.sqrt(self.lamda)
+        self.fc  = torch.tensor(self.fc, dtype=torch.complex128)
+
+        if device is not None:
+            self.fc=self.fc.to(device)
+            self.lamda=self.lamda.to(device)
+        self.device = device 
+        self.F = self.func(self.lamda)*torch.sqrt(self.lamda)
 
     @property
     def delta(self):
         return 1./self.smp_per_decade
 
     def __call__(self, r):
-        i_offset = int(np.round(self.smp_per_decade*np.log10(r)))
+        i_offset = int(torch.round(self.smp_per_decade*torch.log10(r)))
         r_offset = 10**(i_offset*self.delta)
         if i_offset == 0:
-            return self.F.dot(self.fc)/np.sqrt(r_offset)/twopi_sqrt
+            return self.F.dot(self.fc)/torch.sqrt(r_offset)/twopi
         else:
-            return self.F[-i_offset:].dot(self.fc[:i_offset])/np.sqrt(r_offset)/twopi_sqrt
+            return self.F[-i_offset:].dot(self.fc[:i_offset])/torch.sqrt(r_offset)/twopi
         
     def range(self, tmin, tmax):
         imin = int(np.floor(self.smp_per_decade*np.log10(tmin))-1)
-        imax = int(np.ceil(self.smp_per_decade*np.log10(tmax))+1)
-        i_offsets = np.arange(imin, imax)
-        tout = 10**(i_offsets/self.smp_per_decade)
-        Ht = np.zeros(tout.shape, dtype=complex)
+        imax = int(np.ceil(self.smp_per_decade*np.log10(tmax))+2)
+        i_offsets = torch.tensor(np.arange(imin, imax))
+        tout = torch.tensor(10**(i_offsets/self.smp_per_decade))
+        Ht = torch.zeros(tout.shape+self.F.shape[:-1], dtype=torch.complex128)
+        
+        if self.device is not None:
+            tout=tout.to(self.device)
+            Ht=Ht.to(self.device)
+            i_offsets=i_offsets.to(self.device)
+
         for i,i_offset in enumerate(i_offsets):
-            if i_offset>0:
-                Ht[i] = np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
-            elif i_offset<0:
-                i_offset *= -1
-                Ht[i] = np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+            if i_offset==0:
+                Ht[i] = torch.einsum('...i,...i->...', self.F, self.fc)
+            elif i_offset>0:
+                Ht[i] = torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
             else:
-                Ht[i] = np.einsum('...i,...i->...', self.F, self.fc)
-        return tout, Ht/np.sqrt(tout)/twopi
-
-class OptimizedFourier:
-    def __init__(self, func, tmin, tmax, log10min=-20, log10max=10, smp_per_decade=10):
-        self.func    = func
-        self.smp_per_decade = smp_per_decade
-        self.n_decades = log10max-log10min
-        self.lamda = 10**(np.arange(log10min*self.smp_per_decade, log10max*self.smp_per_decade+1)*self.delta)
-        self.v     = np.log(self.lamda)
-        self.fc = optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=-0.5, smp_per_decade=self.smp_per_decade) \
-                  +1j*optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=0.5, smp_per_decade=self.smp_per_decade)
-        
-        i_sort      = np.argsort(np.abs(self.fc))
-        i_unsort = np.zeros(len(i_sort), dtype=int)
-        i_unsort[i_sort] = np.arange(len(i_sort))
-
-        cs = np.cumsum(np.abs(self.fc)[i_sort])
-        cs /= cs.max()
-        one_percent = (cs>1e-10)
-
-        subset = one_percent[i_unsort]
-        
-        imin = int(np.floor(self.smp_per_decade*np.log10(tmin))-1)
-        imax = int(np.ceil(self.smp_per_decade*np.log10(tmax))+1)
-        buffer = max(abs(imin), abs(imax))
-        self.subset = np.convolve(subset, np.ones(buffer+1), mode='same').astype(bool)
-        print(self.subset.sum() / len(self.subset))
-        
-        # self.subset = np.ones_like(self.lamda, dtype=bool)
-
-        self.fc = self.fc[self.subset]
-        self.F = self.func(self.lamda[self.subset])*np.sqrt(self.lamda[self.subset])
-
-    @property
-    def delta(self):
-        return 1./self.smp_per_decade
-
-    def __call__(self, r):
-        i_offset = int(np.round(self.smp_per_decade*np.log10(r)))
-        r_offset = 10**(i_offset*self.delta)
-        if i_offset == 0:
-            return self.F.dot(self.fc)/np.sqrt(r_offset)/twopi
-        else:
-            return self.F[-i_offset:].dot(self.fc[:i_offset])/np.sqrt(r_offset)/twopi
-        
-    def range(self, tmin, tmax):
-        imin = int(np.floor(self.smp_per_decade*np.log10(tmin))-1)
-        imax = int(np.ceil(self.smp_per_decade*np.log10(tmax))+1)
-        i_offsets = np.arange(imin, imax)
-        tout = 10**(i_offsets/self.smp_per_decade)
-        Ht = np.zeros(tout.shape, dtype=complex)
-        for i,i_offset in enumerate(i_offsets):
-            if i_offset>0:
-                Ht[i] = np.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
-            elif i_offset<0:
                 i_offset *= -1
-                Ht[i] = np.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
-            else:
-                Ht[i] = np.einsum('...i,...i->...', self.F, self.fc)
-        return tout, Ht/np.sqrt(tout)/twopi
+                Ht[i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+        return tout, Ht/torch.sqrt(tout[:,None])/twopi
 
+import copy
+precalcHankel0 =  BaseHankel(lambda x:x, 0, smp_per_decade=4)
+precalcHankel1 =  BaseHankel(lambda x:x, 1, smp_per_decade=4)
+precalcFourier =  BaseFourier(lambda x:x, smp_per_decade=10)
 
-defHankel0 = OptimizedHankel(lambda x:x, 0, 5,7)
-defHankel1 = OptimizedHankel(lambda x:x, 1, 5,7)
-defFourier = OptimizedFourier(lambda x:x, 1e-6, 1e-3)
+def Hankel(func, order):
+    if order==0:
+        self = copy.deepcopy(precalcHankel0)
+    elif order==1:
+        self = copy.deepcopy(precalcHankel1)
+    self.func = func
+    self.F = self.func(self.lamda)
+    return self
+
+def Fourier(func):
+    self = copy.deepcopy(precalcFourier)
+    self.func = func
+    self.F = self.func(self.lamda).T*torch.sqrt(self.lamda)
+    return self
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -432,14 +355,14 @@ class CubicSpline:
         # !.....Set up tridiagonal system.........................................
         # !.    b=diagonal, d=offdiagonal, c=right-hand side
 
-        b = np.zeros(y.shape, dtype=y.dtype)
-        c = np.zeros(y.shape, dtype=y.dtype)
-        d = np.zeros(y.shape, dtype=y.dtype)
+        b = torch.zeros(y.shape, dtype=y.dtype, device=y.device)
+        c = torch.zeros(y.shape, dtype=y.dtype, device=y.device)
+        d = torch.zeros(y.shape, dtype=y.dtype, device=y.device)
 
-        d[:-1] = np.diff(x)[:, ..., None]
+        d[:-1] = torch.diff(x)[:, ..., None]
         b[1:]  = 2*(d[:-1]+d[1:])
-        c[1:]  = np.diff(y, axis=0)/d[:-1]
-        c[:-1] = np.diff(c, axis=0)
+        c[1:]  = torch.diff(y, axis=0)/d[:-1]
+        c[:-1] = torch.diff(c, axis=0)
 
         b[0]=-d[0]
         b[n]=-d[n-1]
@@ -484,7 +407,7 @@ class CubicSpline:
     
     def __call__(self, xnew):
         xt = self.transform(xnew)
-        ix = np.searchsorted(self.x, xt, side='right')-1
+        ix = torch.searchsorted(self.x, xt, side='right')-1
         dx = (xt-self.x[ix])[:, None]
         return self.a[ix] + self.b[ix]*dx + self.c[ix]*dx*dx + self.d[ix]*dx**3
     

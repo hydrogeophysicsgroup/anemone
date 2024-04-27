@@ -1,6 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
-
+import torch as tc
 
 class Receiver:
     def __init__(self, x=0., y=0., z=0., grid=True) -> None:
@@ -38,14 +38,20 @@ class Loop:
         self.z = np.array(z)
         if not np.all(self.z == self.z[0]): raise NotImplemented('current implementation only supports horizontal transmitter loops; all z values must be equal.')
 
-
+    @classmethod
+    def circle(cls, radius, n=40, **kwargs):
+        t = np.linspace(0, 2*np.pi, n)
+        x = radius*np.cos(t)
+        y = radius*np.sin(t)
+        z = np.ones_like(x)*kwargs.get('z', 0.)
+        return cls(x, y, z)
 
     @classmethod
     def square(cls, side, **kwargs):
         half = side / 2.
         x = np.array([-half,  half, half, -half, -half])
         y = np.array([-half, -half, half,  half, -half])
-        z = np.zeros_like(x)
+        z = np.ones_like(x)*kwargs.get('z', 0.)
         return cls(x, y, z)
 
     @classmethod
@@ -53,7 +59,7 @@ class Loop:
         half = side / 2.
         x = np.array([-side, 0, 0, side, side, 0, 0, -side, -side])
         y = np.array([-half, -half, half, half, -half, -half, half, half, -half])
-        z = np.zeros_like(x)
+        z = np.ones_like(x)*kwargs.get('z', 0.)
         return cls(x, y, z)
 
     @property
@@ -181,3 +187,52 @@ def getRz(P,Q):
     Rz[..., 2,2] = 1.
     
     return Rz, Rz.swapaxes(-1, -2)
+
+
+from ..transforms import precalcHankel1, Hankel, Fourier
+from ..physics import refl_transverse_electric as rte, freespace_u0 as u0
+import torch
+
+class Forward:
+    def __init__(self, source, receiver, times=tc.logspace(1e-5, 1e-2, 31)):
+        self.source = source
+        self.receiver = receiver
+        self.times = torch.tensor(times)
+        self.lgtimes = torch.log(self.times)
+
+        self.rmin = self.source.min_horizontal_distance(self.receiver)
+        self.rmax = self.source.max_horizontal_distance(self.receiver)
+        self.r = precalcHankel1.range(self.rmin, self.rmax)[0].numpy()
+        self.sofr = torch.tensor(self.source.s_of_r(self.receiver, self.r), dtype=torch.complex128)
+        self.dz = torch.tensor(self.receiver.z+self.source.z[0])# tentative solution
+
+    def forward(self):
+        def frq_integrand(omega):
+            omega = omega[None,:,None]
+            def integrand(wave_length):
+                lmb = wave_length[None, None, :]
+                tmp_u0 = u0(omega, lmb)
+                intg = (torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb))*lmb**2 / tmp_u0
+                return torch.squeeze(intg/(1j*omega))
+            hkl = Hankel(integrand, 1)
+            r, hr = hkl.range(self.rmin, self.rmax)
+            hr /= r[:,None,None]
+            return hr.T@self.sofr
+        f_t=Fourier(frq_integrand)
+        t,dbdt = f_t.range(self.times[0], self.times[-1])
+        return t, dbdt
+        # lgdbdt = torch.log(dbdt)
+        # lgt = torch.log(t)
+
+        # i_t1 = torch.searchsorted(lgt, self.lgtimes)
+        # i_t2 = i_t1+1
+        # y1 = lgdbdt[i_t1]
+        # y2 = lgdbdt[i_t2]
+        # x1 = lgt[i_t1]
+        # x2 = lgt[i_t2]
+        # return self.times, torch.exp((y1 + (y2-y1)*(self.lgtimes-x1)/(x2-x1)))
+
+    def __call__(self, sigma, thickness):
+        self.sigma = torch.tensor(sigma, dtype=torch.complex128)[...,None,None]
+        self.thick = torch.tensor(thickness, dtype=torch.complex128)[...,None,None]
+        return self.forward()

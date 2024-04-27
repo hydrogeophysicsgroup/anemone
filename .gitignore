@@ -1,6 +1,5 @@
 */*.egg-info/*
 *.pyc
 .vscode/*
-examples/forward_speed_test.py
-*.pyd
 build/*
+*.pyd
