@@ -9,7 +9,6 @@ def calc_rte_halfspace(omega, sigma, wave_length):
     K1_sqrd     = physics.calc_wavenumber(omega, sigma)**2
     u1          = np.sqrt(lambda_sqrd[None,:]-K1_sqrd[:,None])
     rte         = 1./(wave_length+u1)
-#    rte =(wave_length-u1)/(wave_length+u1)
     return np.squeeze(rte)
 
 
@@ -45,6 +44,23 @@ def test_transforms_varying_samples_per_decades():
 
     assert np.allclose(hz1, hz2), "changing the number of decades is changing the results of the transform"
 
+def test_spline():
+    x = np.linspace(0, 10, 4*80+1)
+    xs = x[::4]
+
+    f = lambda x: 1+x**2 + 2*x**3
+
+    ys = f(xs)
+    ys = ys[None, :] + np.arange(650)[:, None]
+
+    y = f(x)
+    y = y[None, :] + np.arange(650)[:, None]
+
+    cspl = transforms.CubicSpline(xs,ys.T)
+    y2 = cspl(x).T
+    assert np.allclose(y, y2), "cubic spline interpolation on cubic function is giving non-exact results"
+
 
 if __name__ == '__main__':
     test_frequency_response()
+    test_spline()

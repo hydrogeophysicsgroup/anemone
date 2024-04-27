@@ -408,3 +408,83 @@ class OptimizedFourier:
 defHankel0 = OptimizedHankel(lambda x:x, 0, 5,7)
 defHankel1 = OptimizedHankel(lambda x:x, 1, 5,7)
 defFourier = OptimizedFourier(lambda x:x, 1e-6, 1e-3)
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+def passthrough(x):
+    return x
+
+class CubicSpline:
+    def __init__(self, x, y, transform=passthrough):
+        self.x = transform(x)
+        self.y = y
+        self.compute_coefficients()
+        self.transform = transform
+
+
+    def compute_coefficients(self):
+        x = self.x
+        y = self.y
+
+        n = len(x)-1
+
+        # !.....Set up tridiagonal system.........................................
+        # !.    b=diagonal, d=offdiagonal, c=right-hand side
+
+        b = np.zeros(y.shape, dtype=y.dtype)
+        c = np.zeros(y.shape, dtype=y.dtype)
+        d = np.zeros(y.shape, dtype=y.dtype)
+
+        d[:-1] = np.diff(x)[:, ..., None]
+        b[1:]  = 2*(d[:-1]+d[1:])
+        c[1:]  = np.diff(y, axis=0)/d[:-1]
+        c[:-1] = np.diff(c, axis=0)
+
+        b[0]=-d[0]
+        b[n]=-d[n-1]
+        c[0]=0
+        c[n]=0
+        if n>3:
+            c[0]=c[2]/(x[3]-x[1])-c[1]/(x[2]-x[0])
+            c[n]=c[n-1]/(x[n]-x[n-2])-c[n-2]/(x[n-1]-x[n-3])
+            c[0]=c[0]*d[0]*d[0]/(x[3]-x[0])
+            c[n]=-c[n]*d[n-1]*d[n-1]/(x[n]-x[n-3])
+
+        for k in range(1, n+1):#    ! forward elimination
+            t=d[k-1]/b[k-1]
+            b[k]=b[k]-t*d[k-1]
+            c[k]=c[k]-t*c[k-1]
+
+        c[n]=c[n]/b[n]#   ! back substitution [ makes c the sigma of text]
+        for k in range(n-1, -1, -1):
+            c[k]=(c[k]-d[k]*c[k+1])/b[k]
+
+    # !.....Compute polynomial coefficients...................................
+        b[n]=(y[n]-y[n-1])/d[n-1]+d[n-1]*(c[n-1]+c[n]+c[n])
+        #DO k=1,n-1
+        for k in range(n):
+            b[k]=(y[k+1]-y[k])/d[k]-d[k]*(c[k+1]+c[k]+c[k])
+            d[k]=(c[k+1]-c[k])/d[k]
+            c[k]=3*c[k]
+        c[n]=3*c[n]
+        d[n]=d[n-1]
+
+        self.a = y
+        self.b = b
+        self.c = c
+        self.d = d
+
+    def integrate(self, x_lower, x_upper):
+        # pseudocode
+
+        res = self.a*dx + 0.25*self.d*dx**4 + (1/3)*self.c*dx**3 + (1/2)*self.b*dx**2
+
+        raise NotImplemented
+    
+    def __call__(self, xnew):
+        xt = self.transform(xnew)
+        ix = np.searchsorted(self.x, xt, side='right')-1
+        dx = (xt-self.x[ix])[:, None]
+        return self.a[ix] + self.b[ix]*dx + self.c[ix]*dx*dx + self.d[ix]*dx**3
+    
