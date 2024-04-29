@@ -234,7 +234,7 @@ class BaseHankel:
         imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
         i_offsets = torch.tensor(np.arange(imin, imax))
         rout = torch.tensor(10**(i_offsets/self.smp_per_decade), dtype=torch.complex128)
-        HR = torch.zeros(rout.shape+self.F.shape[:-1], dtype=torch.complex128)
+        HR = torch.zeros(self.F.shape[:-1]+rout.shape, dtype=torch.complex128)
         if self.device is not None:
             rout=rout.to(self.device)
             HR=HR.to(self.device)
@@ -243,13 +243,13 @@ class BaseHankel:
 
         for i,i_offset in enumerate(i_offsets):
             if i_offset==0:
-                HR[i] = torch.einsum('...i,...i->...', self.F, self.fc)
+                HR[..., i] = torch.einsum('...i,...i->...', self.F, self.fc)
             elif i_offset>0:
-                HR[i] = torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
+                HR[..., i] = torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
             else:
                 i_offset *= -1
-                HR[i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
-        return rout, HR/rout[:,None,None]
+                HR[..., i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+        return rout, HR/rout
 
         
         
@@ -259,7 +259,7 @@ twopi_sqrt = twopi**(1/2)
 
 
 class BaseFourier:
-    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=10, device=None):
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None):
         self.func = func
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
@@ -286,16 +286,16 @@ class BaseFourier:
         i_offset = int(torch.round(self.smp_per_decade*torch.log10(r)))
         r_offset = 10**(i_offset*self.delta)
         if i_offset == 0:
-            return self.F.dot(self.fc)/torch.sqrt(r_offset)/twopi
+            return twopi_sqrt*self.F.dot(self.fc)/torch.sqrt(r_offset)
         else:
-            return self.F[-i_offset:].dot(self.fc[:i_offset])/torch.sqrt(r_offset)/twopi
+            return twopi_sqrt*self.F[-i_offset:].dot(self.fc[:i_offset])/torch.sqrt(r_offset)
         
     def range(self, tmin, tmax):
         imin = int(np.floor(self.smp_per_decade*np.log10(tmin))-1)
         imax = int(np.ceil(self.smp_per_decade*np.log10(tmax))+2)
         i_offsets = torch.tensor(np.arange(imin, imax))
         tout = torch.tensor(10**(i_offsets/self.smp_per_decade))
-        Ht = torch.zeros(tout.shape+self.F.shape[:-1], dtype=torch.complex128)
+        Ht = torch.zeros(self.F.shape[:-1]+tout.shape, dtype=torch.complex128)
         
         if self.device is not None:
             tout=tout.to(self.device)
@@ -304,18 +304,18 @@ class BaseFourier:
 
         for i,i_offset in enumerate(i_offsets):
             if i_offset==0:
-                Ht[i] = torch.einsum('...i,...i->...', self.F, self.fc)
+                Ht[..., i] = torch.einsum('...i,...i->...', self.F, self.fc)
             elif i_offset>0:
-                Ht[i] = torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
+                Ht[..., i] = torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
             else:
                 i_offset *= -1
-                Ht[i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
-        return tout, Ht/torch.sqrt(tout[:,None])/twopi
+                Ht[..., i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+        return tout, twopi_sqrt*Ht/torch.sqrt(tout)
 
 import copy
-precalcHankel0 =  BaseHankel(lambda x:x, 0, smp_per_decade=4)
-precalcHankel1 =  BaseHankel(lambda x:x, 1, smp_per_decade=4)
-precalcFourier =  BaseFourier(lambda x:x, smp_per_decade=10)
+precalcHankel0 =  BaseHankel(lambda x:x, 0, smp_per_decade=10)
+precalcHankel1 =  BaseHankel(lambda x:x, 1, smp_per_decade=10)
+precalcFourier =  BaseFourier(lambda x:x, smp_per_decade=30)
 
 def Hankel(func, order):
     if order==0:
@@ -359,7 +359,7 @@ class CubicSpline:
         c = torch.zeros(y.shape, dtype=y.dtype, device=y.device)
         d = torch.zeros(y.shape, dtype=y.dtype, device=y.device)
 
-        d[:-1] = torch.diff(x)[:, ..., None]
+        d[:-1] = torch.diff(x, axis=0)#[:, ..., None]
         b[1:]  = 2*(d[:-1]+d[1:])
         c[1:]  = torch.diff(y, axis=0)/d[:-1]
         c[:-1] = torch.diff(c, axis=0)
@@ -408,6 +408,6 @@ class CubicSpline:
     def __call__(self, xnew):
         xt = self.transform(xnew)
         ix = torch.searchsorted(self.x, xt, side='right')-1
-        dx = (xt-self.x[ix])[:, None]
+        dx = (xt-self.x[ix])#[:, None]
         return self.a[ix] + self.b[ix]*dx + self.c[ix]*dx*dx + self.d[ix]*dx**3
     

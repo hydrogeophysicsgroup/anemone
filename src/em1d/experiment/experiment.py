@@ -44,7 +44,9 @@ class Loop:
         x = radius*np.cos(t)
         y = radius*np.sin(t)
         z = np.ones_like(x)*kwargs.get('z', 0.)
-        return cls(x, y, z)
+        lp = cls(x, y, z)
+        lp.area = np.pi*radius**2
+        return lp
 
     @classmethod
     def square(cls, side, **kwargs):
@@ -52,7 +54,9 @@ class Loop:
         x = np.array([-half,  half, half, -half, -half])
         y = np.array([-half, -half, half,  half, -half])
         z = np.ones_like(x)*kwargs.get('z', 0.)
-        return cls(x, y, z)
+        lp = cls(x, y, z)
+        lp.area = side*side
+        return lp
 
     @classmethod
     def fig8(cls, side, **kwargs):
@@ -189,7 +193,7 @@ def getRz(P,Q):
     return Rz, Rz.swapaxes(-1, -2)
 
 
-from ..transforms import precalcHankel1, Hankel, Fourier
+from ..transforms import precalcHankel1, Hankel, Fourier, CubicSpline
 from ..physics import refl_transverse_electric as rte, freespace_u0 as u0
 import torch
 
@@ -213,24 +217,16 @@ class Forward:
                 lmb = wave_length[None, None, :]
                 tmp_u0 = u0(omega, lmb)
                 intg = (torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb))*lmb**2 / tmp_u0
-                return torch.squeeze(intg/(1j*omega))
+                return intg
             hkl = Hankel(integrand, 1)
             r, hr = hkl.range(self.rmin, self.rmax)
             hr /= r[:,None,None]
             return hr.T@self.sofr
         f_t=Fourier(frq_integrand)
         t,dbdt = f_t.range(self.times[0], self.times[-1])
-        return t, dbdt
-        # lgdbdt = torch.log(dbdt)
-        # lgt = torch.log(t)
+        cbs = CubicSpline(t, dbdt)
+        return cbs(self.times)
 
-        # i_t1 = torch.searchsorted(lgt, self.lgtimes)
-        # i_t2 = i_t1+1
-        # y1 = lgdbdt[i_t1]
-        # y2 = lgdbdt[i_t2]
-        # x1 = lgt[i_t1]
-        # x2 = lgt[i_t2]
-        # return self.times, torch.exp((y1 + (y2-y1)*(self.lgtimes-x1)/(x2-x1)))
 
     def __call__(self, sigma, thickness):
         self.sigma = torch.tensor(sigma, dtype=torch.complex128)[...,None,None]
