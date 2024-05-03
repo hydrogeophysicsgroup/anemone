@@ -359,7 +359,11 @@ class CubicSpline:
         c = torch.zeros(y.shape, dtype=y.dtype, device=y.device)
         d = torch.zeros(y.shape, dtype=y.dtype, device=y.device)
 
-        d[:-1] = torch.diff(x, axis=0)#[:, ..., None]
+        dx = torch.diff(x, axis=0)
+        if len(y.shape)>1:
+            dx = dx[:, None]
+
+        d[:-1] = dx
         b[1:]  = 2*(d[:-1]+d[1:])
         c[1:]  = torch.diff(y, axis=0)/d[:-1]
         c[:-1] = torch.diff(c, axis=0)
