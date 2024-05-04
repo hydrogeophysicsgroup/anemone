@@ -63,6 +63,10 @@ def hz_halfspace_center_circle_loop(omega, sigma, r, I=1.):
     Hz *= -I / (k**2 * r**3)
     return Hz
 
+def hzdt_halfspace_center_circle_loop(times, sigma, r, I=1.):
+    theta = tc.sqrt(0.25*mu0*sigma / times)
+    dhdt = 1./(mu0*sigma*r**3)*(3*tc.erf(theta*r)-2*theta*r*(3+2*theta**2*r**2)*tc.exp(-theta**2*r**2)/sqrt_pi)
+    return dhdt
 
 
 def freespace_u0(omega, wave_length, sqrt=True):
