@@ -5,16 +5,12 @@
 # we assume the physical properties of the earth only change with depth, i.e. the earth is 1D.
 # the order of arguments will be sigma, omega, wavelength
 
-#import numpy as nt
-import torch as nt
+import torch as tc
 
-# print('this is the physics submodule, the next print has the globals')
-# print(globals().keys())
-# print(globals()['__spec__'])
 
-mu0 = nt.pi*4e-7
+mu0 = tc.pi*4e-7
 epsilon0 = 8.854187817e-12
-
+sqrt_pi = tc.sqrt(tc.tensor(tc.pi))
 
 
 def calc_zy(sigma, omega, epsilon=epsilon0, mu=mu0):
@@ -31,7 +27,7 @@ def calc_wavenumber(sigma, omega, mu=mu0, epsilon=epsilon0, sqrt=True):
        see equation 4.30 in ward in hohmann (pg 207)
     """
     k = mu*omega*(epsilon*omega - 1j*sigma)
-    if sqrt: k = nt.sqrt(k)
+    if sqrt: k = tc.sqrt(k)
     return k
 
 def halfspace_vmd(sigma, omega, r):
@@ -47,11 +43,11 @@ def halfspace_vmd(sigma, omega, r):
             z-component of the magnetic field
     """
     k = calc_wavenumber(sigma, omega)
-    Hz = 9 - (9 + 9j*k*r - 4*k**2 * r**2 -1j*k**3*r**3)*nt.exp(-1j*k*r)
-    Hz /= (2*nt.pi*k**2 * r**5)
+    Hz = 9 - (9 + 9j*k*r - 4*k**2 * r**2 -1j*k**3*r**3)*tc.exp(-1j*k*r)
+    Hz /= (2*tc.pi*k**2 * r**5)
     return Hz
 
-def halfspace_center_circle_loop(omega, sigma, r, I=1.):
+def hz_halfspace_center_circle_loop(omega, sigma, r, I=1.):
     """ get the vertical component of the response at the center of a circular loop on the earth's surface.
         see equation 4.94 of ward and hohmann (pg. 220)
         Args:
@@ -63,10 +59,14 @@ def halfspace_center_circle_loop(omega, sigma, r, I=1.):
     """
     k = calc_wavenumber(omega, sigma)
 
-    Hz = 3-(3+3j*k*r - (r*k)**2)*nt.exp(-1j*k*r)
+    Hz = 3-(3+3j*k*r - (r*k)**2)*tc.exp(-1j*k*r)
     Hz *= -I / (k**2 * r**3)
     return Hz
 
+def hzdt_halfspace_center_circle_loop(times, sigma, r, I=1.):
+    theta = tc.sqrt(0.25*mu0*sigma / times)
+    dhdt = 1./(mu0*sigma*r**3)*(3*tc.erf(theta*r)-2*theta*r*(3+2*theta**2*r**2)*tc.exp(-theta**2*r**2)/sqrt_pi)
+    return dhdt
 
 
 def freespace_u0(omega, wave_length, sqrt=True):
@@ -81,7 +81,7 @@ def freespace_u0(omega, wave_length, sqrt=True):
     """
     k2 = mu0*epsilon0*omega**2
     u02 = wave_length**2 - k2
-    if sqrt: u02=nt.sqrt(u02+0j)
+    if sqrt: u02=tc.sqrt(u02+0j)
     return u02
 
 
@@ -105,21 +105,21 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
         reflection coefficients for transverse electric mode
     """
     if isinstance(mu, float):
-        mu = nt.ones_like(sigma, dtype=nt.complex128, device=sigma.device)*mu
+        mu = tc.ones_like(sigma, dtype=tc.complex128, device=sigma.device)*mu
     if isinstance(epsilon, float):
-        epsilon = nt.ones_like(sigma, dtype=nt.complex128, device=sigma.device)*epsilon
+        epsilon = tc.ones_like(sigma, dtype=tc.complex128, device=sigma.device)*epsilon
 
     n_layers=len(sigma)
 
     lambda2 = wave_length**2
     
-    adm_freespace = nt.sqrt(lambda2 - omega**2 * mu0*epsilon0 + 0j)/(1j*omega*mu0)
+    adm_freespace = tc.sqrt(lambda2 - omega**2 * mu0*epsilon0 + 0j)/(1j*omega*mu0)
     
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
 
-    adm_intrinsic = nt.sqrt(lambda2 - k2)
-    tanh_un_thick = nt.tanh(adm_intrinsic[:-1]*thickness)
+    adm_intrinsic = tc.sqrt(lambda2 - k2)
+    tanh_un_thick = tc.tanh(adm_intrinsic[:-1]*thickness)
     adm_intrinsic/= zn
     
     adm_boundary = adm_intrinsic[-1]*1.
@@ -152,9 +152,9 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
         reflection coefficients for transverse magnetic mode
     """
     if isinstance(mu, float):
-        mu = nt.ones_like(sigma, dtype=nt.complex128)*mu
+        mu = tc.ones_like(sigma, dtype=tc.complex128)*mu
     if isinstance(epsilon, float):
-        epsilon = nt.ones_like(sigma, dtype=nt.complex128)*epsilon
+        epsilon = tc.ones_like(sigma, dtype=tc.complex128)*epsilon
 
     n_layers=len(sigma)
 
@@ -162,16 +162,16 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
     
 
     
-    imp_freespace = nt.sqrt(lambda2 - omega**2 * mu0*epsilon0)/(1j*omega*epsilon0)
+    imp_freespace = tc.sqrt(lambda2 - omega**2 * mu0*epsilon0)/(1j*omega*epsilon0)
     
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     yn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[1]
 
-    imp_intrinsic  = nt.sqrt(lambda2 - k2)
-    tanh_un_thick  = nt.tanh(imp_intrinsic[:-1]*thickness)
+    imp_intrinsic  = tc.sqrt(lambda2 - k2)
+    tanh_un_thick  = tc.tanh(imp_intrinsic[:-1]*thickness)
     imp_intrinsic /=  yn
 
-    imp_boundary  = nt.zeros_like(imp_intrinsic)
+    imp_boundary  = tc.zeros_like(imp_intrinsic)
     imp_boundary[-1] = imp_intrinsic[-1]*1.
 
         
