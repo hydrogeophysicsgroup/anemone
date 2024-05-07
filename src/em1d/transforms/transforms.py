@@ -131,7 +131,7 @@ def christensen1990_eq41(v, delta, Delta1, a, sc, nu=0, smp_per_decade=10,term_m
 
 
 
-def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=10,  term_max=50, convergence_threshold=1e-16):
+def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=10,  term_max=50, convergence_threshold=1e-12):
     delta = np.log(10)/smp_per_decade
     sc = 1./(2*delta)
     # sc = 1.25
@@ -164,34 +164,41 @@ def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=1
     return np.real(Hnustar)
 
 
-class BaseHankel:
-    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10, device=None):
+from functools import cache
+@cache
+def hankel_coefficients(order, log10min, log10max, smp_per_decade):
+    """the reason from wrapping this is to make the inputs hashable and therefore cachable"""
+    lamda = 10**(np.arange(log10min*smp_per_decade, log10max*smp_per_decade+1)/smp_per_decade)
+    v = np.log(lamda)
+    fc = optimized_coefficients_christensen1990(v.astype(float), omega_0=np.pi/4, nu=order, smp_per_decade=smp_per_decade).astype(complex)
+    return torch.from_numpy(lamda), torch.from_numpy(fc)
+
+class Hankel:
+    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10, device=None, range=None):
         self.func    = func
         self.nu    = order
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
-        self.lamda = 10**(np.arange(log10min*self.smp_per_decade, log10max*self.smp_per_decade+1)*self.delta)
-        self.v     = np.log(self.lamda)
-        self.fc=torch.tensor(self.calc_coefficients(), dtype=torch.complex128)
-        self.filter_i0 = np.searchsorted(self.v, 0)
-        self.lamda = torch.tensor(self.lamda, dtype=torch.complex128)
+        hkl = hankel_coefficients(order, log10min, log10max, smp_per_decade)
+        self.lamda = torch.clone(hkl[0])
+        self.fc = torch.clone(hkl[1])
         if device is not None:
             self.fc=self.fc.to(device)
             self.lamda=self.lamda.to(device)
         self.device=device
         self.F = self.func(self.lamda)
+        if not range is None:
+            self.r,self.resp = self.range(*range)
+            self.interpfunc = CubicSpline(self.r, self.resp)
     
     @property
     def delta(self):
         return 1./self.smp_per_decade
-    
-    def calc_coefficients(self):
-        return optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=self.nu, smp_per_decade=self.smp_per_decade)
-           
+               
     def range(self, rmin, rmax):
         imin = int(np.floor(self.smp_per_decade*np.log10(rmin))-1)
         imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
-        i_offsets = torch.tensor(np.arange(imin, imax))
+        i_offsets = torch.arange(imin, imax)
         rout = 10**(i_offsets/self.smp_per_decade)
         HR = torch.zeros(self.F.shape[:-1]+rout.shape, dtype=torch.complex128)
         if self.device is not None:
@@ -210,6 +217,15 @@ class BaseHankel:
                 HR[..., i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
         
         return rout, HR/rout
+    
+    def __call__(self, r):
+        if not 'interpfunc' in dir(self):
+            rmax = r*(self.delta)**3
+            rmin = r/(self.delta**2)
+            self.r, self.resp = self.range(rmin, rmax)
+            self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log)
+        return self.interpfunc(r)
+            
 
         
         
@@ -217,47 +233,33 @@ class BaseHankel:
 twopi = torch.pi*2.
 twopi_sqrt = twopi**(1/2)
 
-class Fourier(BaseHankel):
-    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None):
+class Fourier(Hankel):
+    """ A fourier transform for logarithmically sampled data. The implementation uses hankel transforms at the base.
+        See Johansen and Sorensen 1979 - Fast Hankel Transforms eq.  87 + 88
+    """
+        
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None, range=None):
         def f1(lamda):
             return func(lamda/twopi_sqrt)*torch.sqrt(lamda)
         super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device)
-        self.fc += -1j*torch.from_numpy(optimized_coefficients_christensen1990(self.v, omega_0=np.pi/4, nu=0.5, smp_per_decade=self.smp_per_decade))
-       
+        _, imagfc = hankel_coefficients(0.5, log10min, log10max, smp_per_decade)
+        self.fc += -1j*imagfc
+
     def range(self, fmin, fmax):
         rout, Resp = super().range(fmin*twopi_sqrt, fmax*twopi_sqrt)
-        return rout/twopi_sqrt, Resp*torch.sqrt(rout)
+        return rout/twopi_sqrt, Resp*torch.sqrt(rout)       
+
 
     def __repr__(self) -> str:
         return 'x(t)->X(f)'
 
 class invFourier(Fourier):
-    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=20, device=None):
-        super().__init__(func, log10min, log10max, smp_per_decade, device)
-        self.fc = self.fc.real -1j*self.fc.imag
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=20, device=None, range=None):
+        super().__init__(func, log10min, log10max, smp_per_decade, device, range)
+        self.fc = self.fc.real - 1j*self.fc.imag
     
     def __repr__(self) -> str:
         return 'X(f)->x(t)'
-
-import copy
-precalcHankel0 =  BaseHankel(lambda x:x, 0, smp_per_decade=10)
-precalcHankel1 =  BaseHankel(lambda x:x, 1, smp_per_decade=10)
-# precalcFourier =  BaseFourier(lambda x:x, smp_per_decade=30)
-
-def Hankel(func, order):
-    if order==0:
-        self = copy.deepcopy(precalcHankel0)
-    elif order==1:
-        self = copy.deepcopy(precalcHankel1)
-    self.func = func
-    self.F = self.func(self.lamda)
-    return self
-
-# def Fourier(func):
-#     self = copy.deepcopy(precalcFourier)
-#     self.func = func
-#     self.F = self.func(self.lamda).T*torch.sqrt(self.lamda)
-#     return self
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -323,11 +325,17 @@ class CubicSpline:
         self.d = d
 
     def integrate(self, x_lower, x_upper):
-        # pseudocode
+        xt = self.transform(x_lower)
+        ix = torch.searchsorted(self.x, xt, side='right')-1
+        dx = xt-self.x[ix]
 
-        res = self.a*dx + 0.25*self.d*dx**4 + (1/3)*self.c*dx**3 + (1/2)*self.b*dx**2
-
-        raise NotImplemented
+        res_lb = self.a[..., ix]*dx + 0.5*self.b[..., ix]*dx**2 + (1./3.)*self.c[..., ix]*dx**3 + self.d[..., ix]*dx**4
+        
+        xt = self.transform(x_upper)
+        ix = torch.searchsorted(self.x, xt, side='right')-1
+        dx = xt-self.x[ix]
+        res_ub = self.a[..., ix]*dx + 0.5*self.b[..., ix]*dx**2 + (1./3.)*self.c[..., ix]*dx**3 + self.d[..., ix]*dx**4
+        return res_ub-res_lb
     
     def __call__(self, xnew):
         xt = self.transform(xnew)
