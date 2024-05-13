@@ -255,7 +255,7 @@ class Waveform:
         self.d2wdt2[-1] = -slope[-1]
 
 class Forward:
-    def __init__(self, source, receiver, times, waveform=None):
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None):
         self.source = source
         self.receiver = receiver
         self.times = torch.tensor(times)
@@ -268,20 +268,22 @@ class Forward:
         if waveform is not None:
             self.tmin += -self.waveform.time.max()
             self.tmax += -self.waveform.time.min()
+        self.filterfunc = filterfunc
 
 
     def forward(self):
         def frq_integrand(f):
             omega = c.twopi*f[None,:,None]
             def wvlngth_integrand(wave_length):
-                """ Hz from horizontal electric dipole.
-                see equation """
+                """ Hz from horizontal electric dipole. """
                 lmb = wave_length[None, None, :]
                 tmp_u0 = u0(omega, lmb)
                 if self.waveform is not None:
                     tmp_u0 *= -1j*omega
-                intg = torch.squeeze((torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb))*lmb**2 / tmp_u0)
-                return intg/c.fourpi
+                intg = (torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb))*lmb**2 / tmp_u0
+                if self.filtfunc is not None:
+                    intg *= self.filtfunc.omega_filter(omega)
+                return torch.squeeze(intg/c.fourpi)
             
             hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=20, range=(self.rmin, self.rmax))
             return integrate_around_loop(self.source, self.receiver, hkl1)
@@ -299,3 +301,33 @@ class Forward:
         self.sigma = torch.tensor(sigma,     dtype=torch.complex128)[...,None,None]
         self.thick = torch.tensor(thickness, dtype=torch.complex128)[...,None,None]
         return self.forward()*c.mu0
+    
+
+class ButterworthFilter:
+    def __init__(self, fcut, order=1):
+        self.fcut = fcut
+        self.order = order
+
+    def omega_filter(self, omega):
+        return self.__call__(omega/c.twopi)
+    
+    def __call__(self, f):
+        s = 1j*f/self.fcut
+        if   self.order==1: recip_resp = (s+1)
+        elif self.order==2: recip_resp = (s**2 + s*2**(1/2) + 1)
+        elif self.order==3: recip_resp = (s**2 + s + 1)*(1+s)
+        elif self.order==4: recip_resp = (s**2 + 1.84776*s+1)*(s**2 + 0.76537*s+1)
+        return 1./recip_resp
+    
+class FilterChain:
+    def __init__(self, filters):
+        self.filters = filters
+    
+    def omega_filter(self, omega):
+        return self.__call__(omega/c.twopi)
+    
+    def __call__(self, f):
+        resp = self.filters[0](f)
+        for i in range(1, len(self.filters)):
+            resp *= self.filters[i](f)
+        return resp
