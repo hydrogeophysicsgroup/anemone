@@ -2,7 +2,6 @@ from em1d.experiment import Loop, Receiver, Forward
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from em1d import constants as c
 
 
 ainv_dbdt=np.array([2.749861e-04, 1.753167e-04, 1.011688e-04, 6.031561e-05,
@@ -27,12 +26,12 @@ fwr = Forward(lp, rx, times)
 dbdt = fwr(sigma, thick);
 
 fig,ax = plt.subplots(1,2, sharex=True)
-ax[0].loglog(fwr.times.numpy(), c.mu0*dbdt.real, label='mforward')
+ax[0].loglog(fwr.times.numpy(), dbdt.real, label='mforward')
 ax[0].loglog(times,      ainv_dbdt, '--', label='AarhusInv')
 ax[0].legend()
 ax[0].set_aspect('equal')
 
-ax[1].semilogx(times, 100*np.abs(c.mu0*dbdt.real-ainv_dbdt)/np.abs(ainv_dbdt))
+ax[1].semilogx(times, 100*np.abs(dbdt.real-ainv_dbdt)/np.abs(ainv_dbdt))
 ax[1].set_ylabel('relative difference [%]')
 
 plt.show()
