@@ -251,8 +251,11 @@ class Hankel:
         else:
             i_offset *= -1
             return torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:]) / r
-
+    
     def range(self, rmin, rmax):
+        return self._range(rmin, rmax)
+
+    def _range(self, rmin, rmax):
         """
         Compute the range of values between `rmin` and `rmax`.
 
@@ -265,11 +268,11 @@ class Hankel:
         - HR (torch.Tensor): The computed values based on the range.
 
         """
-        imin = int(np.floor(self.smp_per_decade * np.log10(rmin)) - 2)
-        imax = int(np.ceil(self.smp_per_decade * np.log10(rmax)) + 2)
+        imin = int(torch.floor(self.smp_per_decade * torch.log10(rmin)) - 2)
+        imax = int(torch.ceil(self.smp_per_decade * torch.log10(rmax)) + 2)
         i_offsets = torch.arange(imin, imax)
         rout = 10 ** (i_offsets / self.smp_per_decade)
-        HR = torch.zeros(self.F.shape[:-1] + rout.shape, dtype=torch.complex128)
+        HR = torch.zeros(self.F.shape[:-1] + rout.shape, dtype=torch.complex128, device=self.device)
         if self.device is not None:
             rout = rout.to(self.device)
             HR = HR.to(self.device)
@@ -292,7 +295,8 @@ class Hankel:
             rmin = r/(self.delta**2)
             self.r, self.resp = self.range(rmin, rmax)
             self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log)
-        return self.interpfunc(r)
+        r = r if isinstance(r, torch.Tensor) else torch.tensor(r, device=self.device)
+        return self.interpfunc(r).to(self.device)
             
 
         
@@ -300,6 +304,7 @@ class Hankel:
 # instead of giving hz(t) from Hz(f) this is giving d Hz / dt (t)
 twopi = torch.pi*2.
 twopi_sqrt = twopi**(1/2)
+from em1d import constants as c
 
 class Fourier(Hankel):
     """ A fourier transform for logarithmically sampled data. The implementation uses hankel transforms at the base.
@@ -311,12 +316,12 @@ class Fourier(Hankel):
             return func(lamda/twopi_sqrt)*torch.sqrt(lamda)
         super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device)
         _, imagfc = hankel_coefficients(0.5, log10min, log10max, smp_per_decade)
+        imagfc = imagfc.to(self.fc.device)
         self.fc += -1j*imagfc
 
     def range(self, fmin, fmax):
-        rout, Resp = super().range(fmin*twopi_sqrt, fmax*twopi_sqrt)
-        return rout/twopi_sqrt, Resp*torch.sqrt(rout)       
-
+        rout, Resp = self._range(fmin*c.sqrt_twopi, fmax*c.sqrt_twopi)
+        return rout/c.sqrt_twopi, Resp*torch.sqrt(rout)       
 
     def __repr__(self) -> str:
         return 'x(t)->X(f)'
@@ -337,7 +342,7 @@ def passthrough(x):
 
 class CubicSpline:
     def __init__(self, x, y, transform=passthrough):
-        self.x = transform(x)
+        self.x = transform(x.to(y.device))
         self.y = y
         self.compute_coefficients()
         self.transform = transform
@@ -406,8 +411,8 @@ class CubicSpline:
         return res_ub-res_lb
     
     def __call__(self, xnew):
-        if isinstance(xnew, float): xtmp = torch.tensor(xnew)
-        else: xtmp = xnew
+        if isinstance(xnew, float): xtmp = torch.tensor(xnew, device=self.y.device)
+        else: xtmp = xnew.to(self.y.device)
         xt = self.transform(xtmp)
         ix = torch.searchsorted(self.x, xt, side='right')-1
         dx = (xt-self.x[ix])#[:, None]

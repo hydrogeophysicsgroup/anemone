@@ -258,10 +258,10 @@ class Forward:
     def __init__(self, source, receiver, times, waveform=None, filterfunc=None):
         self.source = source
         self.receiver = receiver
-        self.times = torch.tensor(times)
-        self.rmin = self.source.min_horizontal_distance(self.receiver)
-        self.rmax = self.source.max_horizontal_distance(self.receiver)
-        self.dz = torch.tensor(self.receiver.z+self.source.z[0])
+        self.times = times if isinstance(times, torch.Tensor) else torch.tensor(times)
+        self.rmin = self.source.min_horizontal_distance(self.receiver).to(times.device)
+        self.rmax = self.source.max_horizontal_distance(self.receiver).to(times.device)
+        self.dz = torch.tensor(self.receiver.z+self.source.z[0], device=times.device)
         self.waveform = waveform
         self.tmin = self.times.min()
         self.tmax = self.times.max()
@@ -269,6 +269,7 @@ class Forward:
             self.tmin += -self.waveform.time.max()
             self.tmax += -self.waveform.time.min()
         self.filterfunc = filterfunc
+        self.device = times.device
 
 
     def forward(self):
@@ -285,9 +286,9 @@ class Forward:
                     intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
             
-            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=20, range=(self.rmin, self.rmax))
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=6, range=(self.rmin, self.rmax), device=self.device)
             return integrate_around_loop(self.source, self.receiver, hkl1)
-        ift=invFourier(frq_integrand, smp_per_decade=20)
+        ift=invFourier(frq_integrand, smp_per_decade=20, device=self.device)
         cbft = CubicSpline(*ift.range(self.tmin, self.tmax), transform=torch.log10)
         if self.waveform is None:
             return cbft(self.times)
@@ -298,8 +299,8 @@ class Forward:
 
 
     def __call__(self, sigma, thickness):
-        self.sigma = torch.tensor(sigma,     dtype=torch.complex128)[...,None,None]
-        self.thick = torch.tensor(thickness, dtype=torch.complex128)[...,None,None]
+        self.sigma = torch.tensor(sigma,     device=self.device, dtype=torch.complex128)[...,None,None]
+        self.thick = torch.tensor(thickness, device=self.device, dtype=torch.complex128)[...,None,None]
         return self.forward()*c.mu0
     
 
