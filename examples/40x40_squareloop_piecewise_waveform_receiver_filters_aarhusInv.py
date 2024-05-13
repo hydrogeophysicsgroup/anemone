@@ -32,13 +32,8 @@ thick = torch.tensor([10])
 fwr = Forward(lp, rx, times, waveform=waveform, filterfunc=recfilter)
 dbdt = fwr(sigma, thick);
 
-fwr1 = Forward(lp, rx, times, waveform=waveform)
-dbdt1 = fwr1(sigma, thick);
-
-
 fig,ax = plt.subplots(1,2, sharex=True)
 ax[0].loglog(fwr.times.numpy(), dbdt.real, label='mforward')
-ax[0].loglog(fwr.times.numpy(), dbdt1.real, label='mforward nofilter')
 ax[0].loglog(times,      ainv_dbdt, '--', label='AarhusInv')
 ax[0].legend()
 ax[0].set_aspect('equal')
