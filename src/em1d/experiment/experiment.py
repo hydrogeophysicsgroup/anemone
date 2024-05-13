@@ -236,42 +236,38 @@ def integrate_around_loop(lp, rx, hr):
 
     return HR
 
-from ..transforms import Hankel, Fourier, CubicSpline
+from ..transforms import Hankel, invFourier, CubicSpline
 from ..physics import refl_transverse_electric as rte, freespace_u0 as u0
+from .. import constants as c
 import torch
 
+
 class Forward:
-    def __init__(self, source, receiver, times=tc.logspace(1e-5, 1e-2, 31)):
+    def __init__(self, source, receiver, times):
         self.source = source
         self.receiver = receiver
         self.times = torch.tensor(times)
-        self.lgtimes = torch.log(self.times)
-
         self.rmin = self.source.min_horizontal_distance(self.receiver)
         self.rmax = self.source.max_horizontal_distance(self.receiver)
-        self.r = precalcHankel1.range(self.rmin, self.rmax)[0].numpy()
-        self.sofr = torch.tensor(self.source.s_of_r(self.receiver, self.r), dtype=torch.complex128)
-        self.dz = torch.tensor(self.receiver.z+self.source.z[0])# tentative solution
+        self.dz = torch.tensor(self.receiver.z+self.source.z[0])
 
     def forward(self):
-        def frq_integrand(omega):
-            omega = omega[None,:,None]
-            def integrand(wave_length):
+        def frq_integrand(f):
+            omega = c.twopi*f[None,:,None]
+            def wvlngth_integrand(wave_length):
+                """ Hz from horizontal electric dipole.
+                see equation """
                 lmb = wave_length[None, None, :]
                 tmp_u0 = u0(omega, lmb)
-                intg = (torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb))*lmb**2 / tmp_u0
-                return intg
-            hkl = Hankel(integrand, 1)
-            r, hr = hkl.range(self.rmin, self.rmax)
-            hr /= r[:,None,None]
-            return hr.T@self.sofr
-        f_t=Fourier(frq_integrand)
-        t,dbdt = f_t.range(self.times[0], self.times[-1])
-        cbs = CubicSpline(t, dbdt)
-        return cbs(self.times)
-
+                intg = torch.squeeze((torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb))*lmb**2 / tmp_u0)
+                return intg/c.fourpi
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=20, range=(self.rmin, self.rmax))
+            return integrate_around_loop(self.source, self.receiver, hkl1)
+        ift=invFourier(frq_integrand, smp_per_decade=20)
+        cbft = CubicSpline(*ift.range(self.times[0], self.times[-1]), transform=torch.log10)
+        return cbft(self.times)
 
     def __call__(self, sigma, thickness):
-        self.sigma = torch.tensor(sigma, dtype=torch.complex128)[...,None,None]
+        self.sigma = torch.tensor(sigma,     dtype=torch.complex128)[...,None,None]
         self.thick = torch.tensor(thickness, dtype=torch.complex128)[...,None,None]
-        return self.forward()
+        return self.forward()*c.mu0
