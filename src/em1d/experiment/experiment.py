@@ -222,11 +222,10 @@ def integrate_around_loop(lp, rx, hr):
 
         while cdist < tdist:
             cR = norm(cp)
-            print(cR)
-            ds = cR/25
+            ds = cR/15
             if cdist+ds > tdist:
                 ds = tdist-cdist
-                cdist += cR/25
+                cdist += cR/15
             else:
                 cdist += ds
             wire_length+=ds
@@ -234,8 +233,7 @@ def integrate_around_loop(lp, rx, hr):
             HR += -1*ds*cp[1]*resp/cR
             cp += ds*p12
             n_dipoles +=1
-    print('number of dipoles: ', n_dipoles)
-    print('wire length: ', wire_length)
+
     return HR
 
 from ..transforms import Hankel, Fourier, CubicSpline

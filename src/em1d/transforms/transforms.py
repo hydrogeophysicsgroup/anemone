@@ -189,15 +189,15 @@ class Hankel:
         self.F = self.func(self.lamda)
         if not range is None:
             self.r,self.resp = self.range(*range)
-            self.interpfunc = CubicSpline(self.r, self.resp)
+            self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log10)
     
     @property
     def delta(self):
         return 1./self.smp_per_decade
                
     def range(self, rmin, rmax):
-        imin = int(np.floor(self.smp_per_decade*np.log10(rmin))-1)
-        imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+1)
+        imin = int(np.floor(self.smp_per_decade*np.log10(rmin))-2)
+        imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+2)
         i_offsets = torch.arange(imin, imax)
         rout = 10**(i_offsets/self.smp_per_decade)
         HR = torch.zeros(self.F.shape[:-1]+rout.shape, dtype=torch.complex128)
@@ -338,7 +338,9 @@ class CubicSpline:
         return res_ub-res_lb
     
     def __call__(self, xnew):
-        xt = self.transform(xnew)
+        if isinstance(xnew, float): xtmp = torch.tensor(xnew)
+        else: xtmp = xnew
+        xt = self.transform(xtmp)
         ix = torch.searchsorted(self.x, xt, side='right')-1
         dx = (xt-self.x[ix])#[:, None]
         return self.a[..., ix] + self.b[..., ix]*dx + self.c[..., ix]*dx*dx + self.d[..., ix]*dx**3
