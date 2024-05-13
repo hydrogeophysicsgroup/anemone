@@ -1,8 +1,10 @@
 from em1d import transforms
 from em1d import physics
-from em1d import experiment
+from em1d import constants as c
 import numpy as np
 import torch
+
+running_as_main = __name__ == '__main__'
 
 def calc_rte_halfspace(sigma, omega, wave_length):
     lambda_sqrd = wave_length*wave_length
@@ -16,73 +18,155 @@ def test_frequency_response():
     rho = 100.                   # meters
     sigma = 1./100.            # 1/ohm-m
     frqs = torch.logspace(-6, 5, 501, dtype=torch.complex128)  # Hz
-    omega = 2*torch.pi*frqs
+    omega = c.twopi*frqs
     
-    hz_analytical = physics.halfspace_vmd(sigma, omega, rho).numpy()
+    hz_analytical = physics.halfspace_vmd(sigma, omega, rho)
+
     omega = omega[:, None]
 
     def rte1(wave_length):
         wave_length = wave_length[None, :]
         return calc_rte_halfspace(sigma, omega, wave_length)*wave_length**3
     Hkl_rte1 = transforms.Hankel(rte1, 0)
-    hz = (Hkl_rte1(rho)/(2*torch.pi)).numpy()
 
-    assert np.allclose(hz, hz_analytical), "hankel transform results do not match analytical solution"
+    r,resp = Hkl_rte1.range(90, 110)
+    cbResp = transforms.CubicSpline(r, resp)
+    hz = (cbResp(rho)/(c.twopi))
+    
+    assert torch.allclose(hz.real, hz_analytical.real), "hankel transform results do not match analytical solution"
+    assert torch.allclose(hz.imag, hz_analytical.imag), "hankel transform results do not match analytical solution"    
 
 
 def test_transforms_varying_samples_per_decades():
     rho = 100.                   # meters
     sigma = 1./100.            # 1/ohm-m
     frqs = torch.logspace(-6, 5, 501, dtype=torch.complex128)  # Hz
-    omega = 2*torch.pi*frqs[:, None]
+    omega = c.twopi*frqs[:, None]
 
     def rte1(wave_length):
         wave_length = wave_length[None, :]
         return calc_rte_halfspace(sigma, omega, wave_length)*wave_length**3
 
-    Hkl_rte1 = transforms.BaseHankel(rte1, 0)
-    hz1 = Hkl_rte1(rho)/(2*torch.pi)
+    Hkl_rte1 = transforms.Hankel(rte1, 0)
+    r,resp = Hkl_rte1.range(90, 110)
+    cbResp = transforms.CubicSpline(r, resp)
+    hz1 = (cbResp(rho)/(c.twopi))
 
-    Hkl_rte2 = transforms.BaseHankel(rte1, 0, smp_per_decade=20)
-    hz2 = Hkl_rte2(rho)/(2*torch.pi)
+    Hkl_rte2 = transforms.Hankel(rte1, 0, smp_per_decade=20)
+    r,resp = Hkl_rte2.range(90, 110)
+    cbResp = transforms.CubicSpline(r, resp)
+    hz2 = (cbResp(rho)/(c.twopi))
 
 
-    assert np.allclose(hz1.numpy(), hz2.numpy()), "changing the number of decades is changing the results of the transform"
+    assert np.allclose(hz1.real, hz2.real), "changing the number of decades is changing the results of the transform"
+    assert np.allclose(hz1.imag, hz2.imag), "changing the number of decades is changing the results of the transform"
 
 def test_spline():
-    x = np.linspace(0, 10, 4*80+1)
+    x = torch.linspace(0, 10, 4*80+1)
     xs = x[::4]
 
     f = lambda x: 1+x**2 + 2*x**3
 
     ys = f(xs)
-    ys = ys[None, :] + np.arange(650)[:, None]
+    ys = ys[None, :] + torch.arange(650)[:, None]
 
     y = f(x)
-    y = y[None, :] + np.arange(650)[:, None]
+    y1 = y[None, :] + torch.arange(650)[:, None]
 
-    cspl = transforms.CubicSpline(xs,ys.T)
-    y2 = cspl(x).T
-    assert np.allclose(y, y2), "cubic spline interpolation on cubic function is giving non-exact results"
+    cspl = transforms.CubicSpline(xs,ys)
+    y2 = cspl(x)
+    assert torch.allclose(y1, y2), "cubic spline interpolation on cubic function is giving non-exact results"
 
-def test_spline():
-    x = np.linspace(0, 10, 4*80+1)
-    xs = x[::4]
+    if running_as_main:
+        return x.numpy(), y1.numpy(), y2.numpy()
 
-    f = lambda x: 1+x**2 + 2*x**3
+def test_fourier():
+    from em1d.transforms import Fourier
 
-    ys = f(xs)
-    ys = ys[None, :] + np.arange(650)[:, None]
+    a = torch.tensor([1e-1], dtype=torch.complex128)
+    def f1(x):
+        return 1e6*torch.exp(-a*x**2)
 
-    y = f(x)
-    y = y[None, :] + np.arange(650)[:, None]
+    def F1(k):
+        return 1e6*torch.sqrt(c.pi/a)*torch.exp(-c.pi**2*k*k/a)
 
-    cspl = transforms.CubicSpline(xs,ys.T)
-    y2 = cspl(x).T
-    assert np.allclose(y, y2), "cubic spline interpolation on cubic function is giving non-exact results"
+    ft = Fourier(f1, smp_per_decade=12, range=(1e-6,1e2))
+    f,numeric = ft.r, ft.resp
+    analytic = F1(f)
 
+
+    if running_as_main:
+        f = f.numpy()
+        analytic = analytic.numpy()
+        numeric = numeric.numpy()
+        import matplotlib.pyplot as plt
+        fig,axs = plt.subplots(1,3)
+        axs[0].loglog(f, analytic)
+        axs[0].loglog(f, numeric, 'r--')
+        axs[1].semilogx(f, analytic)
+        axs[1].semilogx(f, numeric, 'r--')
+        axs[2].semilogx(f, analytic.real/numeric.real)
+        # axs[0].set_xlim(1e-1, 1e1)
+        axs[0].set_ylim(1e-16, None)
+        plt.show()
+    else:
+        assert torch.allclose(numeric.real, analytic.real), "Fourier transform is performing poorly on gaussian analytical example"
+
+
+def test_fourier_lowerfrequencies():
+    from em1d.transforms import Fourier
+
+    a = torch.tensor([1], dtype=torch.complex128)
+    def f1(x):
+        return 1e6*torch.exp(-a*x**2)
+
+    def F1(k):
+        return 1e6*torch.sqrt(c.pi/a)*torch.exp(-c.pi**2*k*k/a)
+
+    ft = Fourier(f1)
+    f,numeric = ft.range(1e-6,1e-1)
+    analytic = F1(f)
+
+    if running_as_main:
+        f = f.numpy()
+        analytic = analytic.numpy()
+        numeric = numeric.numpy()
+        import matplotlib.pyplot as plt
+        fig,axs = plt.subplots(1,3)
+        axs[0].loglog(f, analytic)
+        axs[0].loglog(f, numeric, 'r--')
+        axs[1].semilogx(f, analytic)
+        axs[1].semilogx(f, numeric, 'r--')
+        axs[2].semilogx(f, analytic.real/numeric.real)
+        axs[0].set_ylim(1e-16, None)
+        plt.show()
+    else:
+        assert torch.allclose(numeric.real, analytic.real), "Fourier transform is performing poorly on gaussian analytical example"
+
+
+def test_invfourier_earlytimes():
+    from em1d.transforms import invFourier
+
+    a = torch.tensor([1e-1], dtype=torch.complex128)
+    def f1(x):
+        return 1e6*torch.exp(-a*x**2)
+
+    def F1(k):
+        return 1e6*torch.sqrt(c.pi/a)*torch.exp(-c.pi**2*k*k/a)
+
+    ift = invFourier(F1)
+    t,y2 = ift.range(1e-6,1e-1)
+
+    y1 = f1(t)
+
+
+    assert torch.allclose(y1.real, y2.real), "inverse Fourier transform is performing poorly on gaussian analytical example"
+
+    if running_as_main:
+        return t.numpy(), y1.numpy(), y2.numpy()
 
 if __name__ == '__main__':
-    test_frequency_response()
-    test_spline()
-    test_transforms_varying_samples_per_decades()
+    # test_frequency_response()
+    # test_spline()
+    # test_transforms_varying_samples_per_decades()
+    test_fourier()

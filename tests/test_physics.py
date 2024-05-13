@@ -24,7 +24,9 @@ def test_frequency_response():
         wave_length = wave_length[None, :]
         return calc_rte_halfspace(sigma, omega, wave_length)*wave_length**3
     Hkl_rte1 = transforms.Hankel(rte1, 0)
-    hz = (Hkl_rte1(rho)/(2*torch.pi)).numpy()
+    r,resp = Hkl_rte1.range(90, 110)
+    cbResp = transforms.CubicSpline(r, resp)
+    hz = (cbResp(rho)/(2*torch.pi)).numpy()
 
     assert np.allclose(hz, hz_analytical), "hankel transform results do not match analytical solution"
 
@@ -58,7 +60,6 @@ def test_rte_convergence():
     assert np.allclose(rte_halfspace.numpy(), c_rte.numpy()), 'rte did not converge as expected'
 
 def test_rtm_convergence():
-    print('it would be wise to expand the range the frequencies or adjust the conductivity so that it does not converge so fast')
     sigma = torch.tensor([100, 0.5, 0.1], dtype=torch.complex128)
     omega = torch.tensor([1000], dtype=torch.complex128)*2*torch.pi
 
