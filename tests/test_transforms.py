@@ -90,7 +90,7 @@ def test_fourier():
     def F1(k):
         return 1e6*torch.sqrt(c.pi/a)*torch.exp(-c.pi**2*k*k/a)
 
-    ft = Fourier(f1, smp_per_decade=12, range=(1e-6,1e2))
+    ft = Fourier(f1, smp_per_decade=20, range=(1e-6,1e2))
     f,numeric = ft.r, ft.resp
     analytic = F1(f)
 

@@ -241,15 +241,34 @@ from ..physics import refl_transverse_electric as rte, freespace_u0 as u0
 from .. import constants as c
 import torch
 
+class Waveform:
+    def __init__(self, time, amplitude):
+        self.time      = time      if isinstance(time, torch.Tensor)      else torch.tensor(time)
+        self.amplitude = amplitude if isinstance(amplitude, torch.Tensor) else torch.tensor(amplitude)
+        self.calc_d2wdt2()
+
+    def calc_d2wdt2(self):
+        self.d2wdt2 = torch.zeros_like(self.time)
+        slope = torch.diff(self.amplitude)/torch.diff(self.time)
+        self.d2wdt2[1:-1] = torch.diff(slope)
+        self.d2wdt2[0] = slope[0]
+        self.d2wdt2[-1] = -slope[-1]
 
 class Forward:
-    def __init__(self, source, receiver, times):
+    def __init__(self, source, receiver, times, waveform=None):
         self.source = source
         self.receiver = receiver
         self.times = torch.tensor(times)
         self.rmin = self.source.min_horizontal_distance(self.receiver)
         self.rmax = self.source.max_horizontal_distance(self.receiver)
         self.dz = torch.tensor(self.receiver.z+self.source.z[0])
+        self.waveform = waveform
+        self.tmin = self.times.min()
+        self.tmax = self.times.max()
+        if waveform is not None:
+            self.tmin += -self.waveform.time.max()
+            self.tmax += -self.waveform.time.min()
+
 
     def forward(self):
         def frq_integrand(f):
@@ -259,13 +278,22 @@ class Forward:
                 see equation """
                 lmb = wave_length[None, None, :]
                 tmp_u0 = u0(omega, lmb)
+                if self.waveform is not None:
+                    tmp_u0 *= -1j*omega
                 intg = torch.squeeze((torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb))*lmb**2 / tmp_u0)
                 return intg/c.fourpi
+            
             hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=20, range=(self.rmin, self.rmax))
             return integrate_around_loop(self.source, self.receiver, hkl1)
         ift=invFourier(frq_integrand, smp_per_decade=20)
-        cbft = CubicSpline(*ift.range(self.times[0], self.times[-1]), transform=torch.log10)
-        return cbft(self.times)
+        cbft = CubicSpline(*ift.range(self.tmin, self.tmax), transform=torch.log10)
+        if self.waveform is None:
+            return cbft(self.times)
+        else:
+            t_eval = self.times[:, None] - self.waveform.time[None, :]
+            resp_step = cbft(t_eval).real
+            return resp_step @ self.waveform.d2wdt2
+
 
     def __call__(self, sigma, thickness):
         self.sigma = torch.tensor(sigma,     dtype=torch.complex128)[...,None,None]
