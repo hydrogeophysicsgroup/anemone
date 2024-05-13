@@ -281,8 +281,8 @@ class Forward:
                 if self.waveform is not None:
                     tmp_u0 *= -1j*omega
                 intg = (torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb))*lmb**2 / tmp_u0
-                if self.filtfunc is not None:
-                    intg *= self.filtfunc.omega_filter(omega)
+                if self.filterfunc is not None:
+                    intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
             
             hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=20, range=(self.rmin, self.rmax))
