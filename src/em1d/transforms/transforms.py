@@ -14,6 +14,16 @@ def christensen1990_calculate_smoothing(omega_0, sc):
     return 1. / (2*sc*omega_0)
 
 def christensen1990_p_hat(s, a):
+    """
+    Calculate the Christensen 1990 p-hat function.
+
+    Parameters:
+    s (float): The input value.
+    a (float): The parameter value.
+
+    Returns:
+    float: The calculated p-hat value.
+    """
     p1 = np.tanh(pi*(s+0.5)/a)
     p2 = np.tanh(pi*(s-0.5)/a)
     return 0.5*(p1-p2)
@@ -132,21 +142,28 @@ def christensen1990_eq41(v, delta, Delta1, a, sc, nu=0, smp_per_decade=10,term_m
 
 
 def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=10,  term_max=50, convergence_threshold=1e-12):
+    """
+    Calculate the optimized coefficients using the Christensen (1990) method.
+
+    Parameters:
+    v (array-like): Frequencies at which to calculate the coefficients.
+    omega_0 (float, optional): Reference frequency. Default is 0.
+    nu (int, optional): Smoothing parameter. Default is 0.
+    smp_per_decade (int, optional): Number of samples per decade. Default is 10.
+    term_max (int, optional): Maximum number of terms in the series. Default is 50.
+    convergence_threshold (float, optional): Threshold for convergence. Default is 1e-16.
+
+    Returns:
+    array-like: Optimized coefficients calculated using the Christensen (1990) method.
+    """
     delta = np.log(10)/smp_per_decade
     sc = 1./(2*delta)
-    # sc = 1.25
-    # delta = 1./(2*sc)
-    #if nu==0:
+
     v_minus = np.log(2) # from Christensen 1990;
     v_plus = 4.+0.1*sc   # from Christensen 1990; this will make the 
-#    error integral < 10^-16
-    # else:
-    #     v_minus=0
-    #     v_plus = 8
+    #    error integral < 10^-16
 
     Delta1 = 1./(v_plus-v_minus)# from Christensen 1990
-
-
 
     a = christensen1990_calculate_smoothing(omega_0, sc)
 
@@ -193,24 +210,75 @@ class Hankel:
     
     @property
     def delta(self):
-        return 1./self.smp_per_decade
-               
+        """
+        Calculate the delta value.
+
+        Returns:
+        - delta (float): The delta value.
+
+        """
+        return 1. / self.smp_per_decade
+
+    def calc_coefficients(self):
+        """
+        Calculate the coefficients.
+
+        Returns:
+        - coefficients (np.ndarray): The calculated coefficients.
+
+        """
+        return optimized_coefficients_christensen1990(self.v, omega_0=np.pi / 4., nu=self.nu,
+                                                     smp_per_decade=self.smp_per_decade)
+
+    def __call__(self, r):
+        """
+        Perform the Hankel transform.
+
+        Parameters:
+        - r (float): The radial distance.
+
+        Returns:
+        - result (torch.Tensor): The transformed result.
+
+        """
+        from math import log10
+        i_offset = int(round(self.smp_per_decade * log10(r)))
+
+        if i_offset == 0:
+            return torch.einsum('...i,...i->...', self.F, self.fc) / r
+        elif i_offset > 0:
+            return torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:]) / r
+        else:
+            i_offset *= -1
+            return torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:]) / r
+
     def range(self, rmin, rmax):
-        imin = int(np.floor(self.smp_per_decade*np.log10(rmin))-2)
-        imax = int(np.ceil(self.smp_per_decade*np.log10(rmax))+2)
+        """
+        Compute the range of values between `rmin` and `rmax`.
+
+        Parameters:
+        - rmin (float): The minimum value of the range.
+        - rmax (float): The maximum value of the range.
+
+        Returns:
+        - rout (torch.Tensor): The range of values between `rmin` and `rmax`.
+        - HR (torch.Tensor): The computed values based on the range.
+
+        """
+        imin = int(np.floor(self.smp_per_decade * np.log10(rmin)) - 2)
+        imax = int(np.ceil(self.smp_per_decade * np.log10(rmax)) + 2)
         i_offsets = torch.arange(imin, imax)
-        rout = 10**(i_offsets/self.smp_per_decade)
-        HR = torch.zeros(self.F.shape[:-1]+rout.shape, dtype=torch.complex128)
+        rout = 10 ** (i_offsets / self.smp_per_decade)
+        HR = torch.zeros(self.F.shape[:-1] + rout.shape, dtype=torch.complex128)
         if self.device is not None:
-            rout=rout.to(self.device)
-            HR=HR.to(self.device)
-            i_offsets=i_offsets.to(self.device)
+            rout = rout.to(self.device)
+            HR = HR.to(self.device)
+            i_offsets = i_offsets.to(self.device)
 
-
-        for i,i_offset in enumerate(i_offsets):
-            if i_offset==0:
+        for i, i_offset in enumerate(i_offsets):
+            if i_offset == 0:
                 HR[..., i] = torch.einsum('...i,...i->...', self.F, self.fc)
-            elif i_offset>0:
+            elif i_offset > 0:
                 HR[..., i] = torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
             else:
                 i_offset *= -1
