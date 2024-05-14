@@ -79,6 +79,28 @@ def test_spline():
 
     if running_as_main:
         return x.numpy(), y1.numpy(), y2.numpy()
+    
+def test_spline_integration():
+    x = torch.linspace(0, 10, 4*80+1)
+    xs = x[::4]
+
+    f = lambda x: 1+x**2 + 2*x**3
+    fint = lambda x: x + (1/3)*x**3 + (2/4)*x**4
+
+    ys = f(xs)
+
+    xlb, xub = torch.tensor([1,3,5]), torch.tensor([6, 4, 9])
+
+    y1 = fint(xub)-fint(xlb)
+
+    cspl = transforms.CubicSpline(xs,ys)
+    y2 = cspl.integrate(xlb, xub)
+    # print(y1)
+    # print(y2)
+    assert torch.allclose(y1, y2), "cubic spline interpolation on cubic function is giving non-exact results"
+
+    if running_as_main:
+        return x.numpy(), y1.numpy(), y2.numpy()    
 
 def test_fourier():
     from em1d.transforms import Fourier
@@ -169,4 +191,5 @@ if __name__ == '__main__':
     # test_frequency_response()
     # test_spline()
     # test_transforms_varying_samples_per_decades()
-    test_fourier()
+    # test_fourier()
+    test_spline_integration()

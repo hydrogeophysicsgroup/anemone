@@ -328,9 +328,10 @@ class CubicSpline:
         c = torch.zeros(y.shape, dtype=y.dtype, device=y.device)
         d = torch.zeros(y.shape, dtype=y.dtype, device=y.device)
 
-        dx = torch.diff(x, axis=0)
+        dx = torch.diff(x, prepend=torch.zeros(1), axis=0)
+        # dx[0] = dx[1]
 
-        d[..., :-1] = dx
+        d[..., :-1] = dx[1:]
         b[..., 1:]  = 2*(d[..., :-1]+d[..., 1:])
         c[..., 1:]  = torch.diff(y, axis=-1)/d[..., :-1]
         c[..., :-1] = torch.diff(c, axis=-1)
@@ -362,23 +363,29 @@ class CubicSpline:
         c[..., n]=3*c[..., n]
         d[..., n]=d[..., n-1]
 
+    
         self.a = y
         self.b = b
         self.c = c
         self.d = d
+        self.integrated = torch.cumsum(self.a*dx + 0.5*self.b*dx**2 + (1./3.)*self.c*dx**3 + 0.25*self.d*dx**4, axis=-1)
 
-    def integrate(self, x_lower, x_upper):
-        xt = self.transform(x_lower)
-        ix = torch.searchsorted(self.x, xt, side='right')-1
-        dx = xt-self.x[ix]
 
-        res_lb = self.a[..., ix]*dx + 0.5*self.b[..., ix]*dx**2 + (1./3.)*self.c[..., ix]*dx**3 + self.d[..., ix]*dx**4
+
+    def integrate(self, x_lower, x_upper, normalize=False):
+        xt1 = self.transform(x_lower)
+        ix1 = torch.searchsorted(self.x, xt1, side='right')-1
+        dx = xt1-self.x[ix1]
+        res_lb = self.a[..., ix1]*dx + 0.5*self.b[..., ix1]*dx**2 + (1./3.)*self.c[..., ix1]*dx**3 + 0.25*self.d[..., ix1]*dx**4
         
-        xt = self.transform(x_upper)
-        ix = torch.searchsorted(self.x, xt, side='right')-1
-        dx = xt-self.x[ix]
-        res_ub = self.a[..., ix]*dx + 0.5*self.b[..., ix]*dx**2 + (1./3.)*self.c[..., ix]*dx**3 + self.d[..., ix]*dx**4
-        return res_ub-res_lb
+        xt2 = self.transform(x_upper)
+        ix2 = torch.searchsorted(self.x, xt2, side='right')-1
+        dx = xt2-self.x[ix2]
+        res_ub = self.a[..., ix2]*dx + 0.5*self.b[..., ix2]*dx**2 + (1./3.)*self.c[..., ix2]*dx**3 + 0.25*self.d[..., ix2]*dx**4
+        integrand = (res_ub+self.integrated[..., ix2-1]-self.integrated[..., ix1-1]-res_lb)
+        if normalize:
+            integrand /= (xt2-xt1)
+        return integrand
     
     def __call__(self, xnew):
         if isinstance(xnew, float): xtmp = torch.tensor(xnew, device=self.y.device)
@@ -386,5 +393,5 @@ class CubicSpline:
         xt = self.transform(xtmp)
         ix = torch.searchsorted(self.x, xt, side='right')-1
         dx = (xt-self.x[ix])#[:, None]
-        return self.a[..., ix] + self.b[..., ix]*dx + self.c[..., ix]*dx*dx + self.d[..., ix]*dx**3
+        return self.a[..., ix] + self.b[..., ix]*dx + self.c[..., ix]*dx**2 + self.d[..., ix]*dx**3
     

@@ -276,18 +276,19 @@ class Forward:
         else:
             self.t_gatewidth=None
         if self.t_gatewidth is not None:
-            self.tmin = (self.times-t_gatewidth/2).min()
+            self.tmin = (self.times-t_gatewidth/2).min()/1.1
             self.tmax = (self.times+t_gatewidth/2).max()
         else:
             self.tmin = self.times.min()
             self.tmax = self.times.max()
-        if waveform is not None:
-            self.tmin += -self.waveform.time.max()
-            self.tmax += -self.waveform.time.min()
-        
+
+        print(self.tmin, self.tmax)
         self.filterfunc = filterfunc
         self.device = times.device
-
+        if waveform is not None:
+            if self.waveform.time.max()<self.tmin:
+                self.tmin += -self.waveform.time.max()
+            self.tmax += -self.waveform.time.min()
 
 
     def forward(self):
@@ -309,12 +310,23 @@ class Forward:
             return integrate_around_loop(self.source, self.receiver, hkl1)
         
         ift=invFourier(frq_integrand, smp_per_decade=16, device=self.device)
-        cbft = CubicSpline(*ift.range(self.tmin, self.tmax), transform=torch.log10)
+        t,dbdt=ift.range(self.tmin, self.tmax)
+        cbft = CubicSpline(t,dbdt, transform=torch.log10)
+
+        if self.t_gatewidth is None:
+            t = self.times
+
 
         if self.waveform is not None:
-            t_eval = self.times[:, None] - self.waveform.time[None, :]
+            t_eval = t[:, None] - self.waveform.time[None, :]
             resp_step = cbft(t_eval).real
-            return resp_step @ self.waveform.d2wdt2
+            dbdt = resp_step @ self.waveform.d2wdt2
+            if self.t_gatewidth is not None:
+                cbft = CubicSpline(t, dbdt, transform=torch.log10)
+            else:
+                return dbdt
+        if self.t_gatewidth is not None:
+            return cbft.integrate(self.t_st, self.t_end, normalize=True)
         else:
             return cbft(self.times)
 
