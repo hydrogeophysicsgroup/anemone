@@ -118,6 +118,7 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
 
+    # this is u_n (misnamed temporarily, will divide by zn soon.)
     adm_intrinsic = tc.sqrt(lambda2 - k2)
     tanh_un_thick = tc.tanh(adm_intrinsic[:-1]*thickness)
     adm_intrinsic/= zn

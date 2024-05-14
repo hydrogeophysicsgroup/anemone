@@ -51,6 +51,7 @@ class Loop:
         z = tc.ones_like(x)*kwargs.get('z', 0.)
         lp = cls(x, y, z)
         lp.area = tc.pi*radius**2
+        lp.radius = radius
         return lp
 
     @classmethod
@@ -203,38 +204,41 @@ def getRz(P,Q):
 
 
 def integrate_around_loop(lp, rx, hr):
+    if 'radius' in dir(lp):
+        return 2*c.pi*lp.radius*hr(lp.radius)
+    else:
 
-    lp_xyz = lp.xyz - rx.xyz[None, ...]
-    
-    HR = torch.zeros_like(hr(0.))
-    n_dipoles = 0
-    wire_length=0
-    for i in range(len(lp)-1):
-        Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
-        p1 = torch.einsum('...i,...i->...', Rz, lp_xyz[i])
-        p2 = torch.einsum('...i,...i->...', Rz, lp_xyz[i+1])
+        lp_xyz = lp.xyz - rx.xyz[None, ...]
+        
+        HR = torch.zeros_like(hr(0.))
+        n_dipoles = 0
+        wire_length=0
+        for i in range(len(lp)-1):
+            Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
+            p1 = torch.einsum('...i,...i->...', Rz, lp_xyz[i])
+            p2 = torch.einsum('...i,...i->...', Rz, lp_xyz[i+1])
 
-        p12 = p2-p1
-        tdist = norm(p12)
-        p12 /= tdist
-        cp = p1
-        cdist = 0
+            p12 = p2-p1
+            tdist = norm(p12)
+            p12 /= tdist
+            cp = p1
+            cdist = 0
 
-        while cdist < tdist:
-            cR = norm(cp)
-            ds = cR/15
-            if cdist+ds > tdist:
-                ds = tdist-cdist
-                cdist += cR/15
-            else:
-                cdist += ds
-            wire_length+=ds
-            resp = hr(cR)
-            HR += -1*ds*cp[1]*resp/cR
-            cp += ds*p12
-            n_dipoles +=1
+            while cdist < tdist:
+                cR = norm(cp)
+                ds = cR/15
+                if cdist+ds > tdist:
+                    ds = tdist-cdist
+                    cdist += cR/15
+                else:
+                    cdist += ds
+                wire_length+=ds
+                resp = hr(cR)
+                HR += -1*ds*cp[1]*resp/cR
+                cp += ds*p12
+                n_dipoles +=1
 
-    return HR
+        return HR
 
 from ..transforms import Hankel, invFourier, CubicSpline
 from ..physics import refl_transverse_electric as rte, freespace_u0 as u0
@@ -255,7 +259,7 @@ class Waveform:
         self.d2wdt2[-1] = -slope[-1]
 
 class Forward:
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None):
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None):
         self.source = source
         self.receiver = receiver
         self.times = times if isinstance(times, torch.Tensor) else torch.tensor(times)
@@ -263,18 +267,33 @@ class Forward:
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(times.device)
         self.dz = torch.tensor(self.receiver.z+self.source.z[0], device=times.device)
         self.waveform = waveform
-        self.tmin = self.times.min()
-        self.tmax = self.times.max()
+        if t_gatewidth is not None:
+            if isinstance(t_gatewidth, float): t_gatewidth = torch.ones_like(self.times)*t_gatewidth
+            elif not isinstance(t_gatewidth, torch.Tensor) and t_gatewidth is not None: t_gatewidth = torch.tensor(t_gatewidth, device=self.times.device)
+            self.t_gatewidth = t_gatewidth
+            self.t_st = self.times-t_gatewidth/2
+            self.t_end= self.times+t_gatewidth/2
+        else:
+            self.t_gatewidth=None
+        if self.t_gatewidth is not None:
+            self.tmin = (self.times-t_gatewidth/2).min()
+            self.tmax = (self.times+t_gatewidth/2).max()
+        else:
+            self.tmin = self.times.min()
+            self.tmax = self.times.max()
         if waveform is not None:
             self.tmin += -self.waveform.time.max()
             self.tmax += -self.waveform.time.min()
+        
         self.filterfunc = filterfunc
         self.device = times.device
+
 
 
     def forward(self):
         def frq_integrand(f):
             omega = c.twopi*f[None,:,None]
+
             def wvlngth_integrand(wave_length):
                 """ Hz from horizontal electric dipole. """
                 lmb = wave_length[None, None, :]
@@ -286,22 +305,31 @@ class Forward:
                     intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
             
-            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=6, range=(self.rmin, self.rmax), device=self.device)
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, range=(self.rmin, self.rmax), device=self.device)
             return integrate_around_loop(self.source, self.receiver, hkl1)
-        ift=invFourier(frq_integrand, smp_per_decade=20, device=self.device)
+        
+        ift=invFourier(frq_integrand, smp_per_decade=16, device=self.device)
         cbft = CubicSpline(*ift.range(self.tmin, self.tmax), transform=torch.log10)
-        if self.waveform is None:
-            return cbft(self.times)
-        else:
+
+        if self.waveform is not None:
             t_eval = self.times[:, None] - self.waveform.time[None, :]
             resp_step = cbft(t_eval).real
             return resp_step @ self.waveform.d2wdt2
+        else:
+            return cbft(self.times)
+
+
+        
+            
+
+
+        
 
 
     def __call__(self, sigma, thickness):
         self.sigma = torch.tensor(sigma,     device=self.device, dtype=torch.complex128)[...,None,None]
         self.thick = torch.tensor(thickness, device=self.device, dtype=torch.complex128)[...,None,None]
-        return self.forward()*c.mu0
+        return self.forward().real*c.mu0
     
 
 class ButterworthFilter:
@@ -332,3 +360,9 @@ class FilterChain:
         for i in range(1, len(self.filters)):
             resp *= self.filters[i](f)
         return resp
+    
+    def __len__(self):
+        return len(self.filters)
+    
+    def __iter__(self):
+        return iter(self.filters)

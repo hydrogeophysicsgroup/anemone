@@ -219,38 +219,6 @@ class Hankel:
         """
         return 1. / self.smp_per_decade
 
-    def calc_coefficients(self):
-        """
-        Calculate the coefficients.
-
-        Returns:
-        - coefficients (np.ndarray): The calculated coefficients.
-
-        """
-        return optimized_coefficients_christensen1990(self.v, omega_0=np.pi / 4., nu=self.nu,
-                                                     smp_per_decade=self.smp_per_decade)
-
-    def __call__(self, r):
-        """
-        Perform the Hankel transform.
-
-        Parameters:
-        - r (float): The radial distance.
-
-        Returns:
-        - result (torch.Tensor): The transformed result.
-
-        """
-        from math import log10
-        i_offset = int(round(self.smp_per_decade * log10(r)))
-
-        if i_offset == 0:
-            return torch.einsum('...i,...i->...', self.F, self.fc) / r
-        elif i_offset > 0:
-            return torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:]) / r
-        else:
-            i_offset *= -1
-            return torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:]) / r
     
     def range(self, rmin, rmax):
         return self._range(rmin, rmax)
@@ -268,6 +236,8 @@ class Hankel:
         - HR (torch.Tensor): The computed values based on the range.
 
         """
+        if not isinstance(rmin, torch.Tensor): rmin = torch.tensor(rmin)
+        if not isinstance(rmax, torch.Tensor): rmax = torch.tensor(rmax)
         imin = int(torch.floor(self.smp_per_decade * torch.log10(rmin)) - 2)
         imax = int(torch.ceil(self.smp_per_decade * torch.log10(rmax)) + 2)
         i_offsets = torch.arange(imin, imax)
@@ -291,7 +261,7 @@ class Hankel:
     
     def __call__(self, r):
         if not 'interpfunc' in dir(self):
-            rmax = r*(self.delta)**3
+            rmax = r*(self.delta)**2
             rmin = r/(self.delta**2)
             self.r, self.resp = self.range(rmin, rmax)
             self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log)

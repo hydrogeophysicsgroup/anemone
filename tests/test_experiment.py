@@ -47,6 +47,19 @@ def test_40x40_aarhusInv_stepoff():
     fwr = Forward(lp, rx, times)
     dbdt = fwr(sigma, thick);
 
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots(1,2, sharex=True)
+        ax[0].loglog(fwr.times.numpy(), dbdt.real, label='mforward')
+        ax[0].loglog(times,      ainv_dbdt, '--', label='AarhusInv')
+        ax[0].legend()
+        ax[0].set_aspect('equal')
+
+        ax[1].semilogx(times, 100*np.abs(dbdt.real-ainv_dbdt)/np.abs(ainv_dbdt))
+        ax[1].set_ylabel('relative difference [%]')
+
+        fig.suptitle('Test against AarhusInv with Piecewise Waveform')
+        plt.show()
     assert torch.allclose(ainv_dbdt.real, dbdt.real, rtol=0.5e-2), "aarhus inv and pytorch forward match within 1/2 percent"
 
 def test_40x40_aarhusInv_piecewise_waveform():
@@ -98,4 +111,4 @@ def test_40x40_aarhusInv_piecewise_waveform():
 
 if __name__ == '__main__':
     test_minimum_distance()
-    test_40x40_aarhusInv_piecewise_waveform()
+    test_40x40_aarhusInv_stepoff()
