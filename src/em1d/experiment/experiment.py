@@ -282,7 +282,6 @@ class Forward:
             self.tmin = self.times.min()
             self.tmax = self.times.max()
 
-        print(self.tmin, self.tmax)
         self.filterfunc = filterfunc
         self.device = times.device
         if waveform is not None:
@@ -301,7 +300,7 @@ class Forward:
                 tmp_u0 = u0(omega, lmb)
                 if self.waveform is not None:
                     tmp_u0 *= -1j*omega
-                intg = (torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb))*lmb**2 / tmp_u0
+                intg = torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb)*lmb**2 / tmp_u0
                 if self.filterfunc is not None:
                     intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
