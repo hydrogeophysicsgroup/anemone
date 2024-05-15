@@ -71,6 +71,19 @@ class Loop:
         y = tc.tensor([-half, -half, half, half, -half, -half, half, half, -half])
         z = tc.ones_like(x)*kwargs.get('z', 0.)
         return cls(x, y, z)
+    
+    @classmethod
+    def differential(cls, length, width, seperation=0.4, height=0.2):
+        hl = length/2
+        hw =  width/2
+        x = [-hl, hl, hl, -hl, -hl]
+        y = [-hw, -hw, hw, hw, -hw ]
+        z = [height]*5
+        bottom_coil = cls(x,y,z)
+        z = [height+seperation]*5
+        top_coil = cls(x[::-1], y[::-1], z)
+        return bottom_coil, top_coil
+
 
     @property
     def xyz(self):
@@ -258,6 +271,12 @@ class Waveform:
         self.d2wdt2[0] = slope[0]
         self.d2wdt2[-1] = -slope[-1]
 
+    @classmethod
+    def example(cls):
+        t = torch.tensor([-1.0526e-03, -9.2963e-04,  0.0000e+00,  2.5000e-06])
+        wv = torch.tensor([0, 1, 1, 0])
+        cls(t, wv)
+
 class Forward:
     def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None):
         self.source = source
@@ -288,6 +307,9 @@ class Forward:
             if self.waveform.time.max()<self.tmin:
                 self.tmin += -self.waveform.time.max()
             self.tmax += -self.waveform.time.min()
+            waveform.time = waveform.time.to(self.device)
+            waveform.amplitude = waveform.amplitude.to(self.device)
+            waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
 
 
     def forward(self):
@@ -328,13 +350,6 @@ class Forward:
             return cbft.integrate(self.t_st, self.t_end, normalize=True)
         else:
             return cbft(self.times)
-
-
-        
-            
-
-
-        
 
 
     def __call__(self, sigma, thickness):
