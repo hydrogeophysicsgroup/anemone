@@ -328,7 +328,7 @@ class CubicSpline:
         c = torch.zeros(y.shape, dtype=y.dtype, device=y.device)
         d = torch.zeros(y.shape, dtype=y.dtype, device=y.device)
 
-        dx = torch.diff(x, prepend=torch.zeros(1), axis=0)
+        dx = torch.diff(x, prepend=torch.zeros(1, device=y.device), axis=0)
         # dx[0] = dx[1]
 
         d[..., :-1] = dx[1:]
