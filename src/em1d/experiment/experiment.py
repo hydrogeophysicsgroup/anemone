@@ -265,17 +265,21 @@ class Waveform:
         self.calc_d2wdt2()
 
     def calc_d2wdt2(self):
-        self.d2wdt2 = torch.zeros_like(self.time)
-        slope = torch.diff(self.amplitude)/torch.diff(self.time)
+        self.d2wdt2       = torch.zeros_like(self.time)
+        slope             = torch.diff(self.amplitude)/torch.diff(self.time)
         self.d2wdt2[1:-1] = torch.diff(slope)
-        self.d2wdt2[0] = slope[0]
-        self.d2wdt2[-1] = -slope[-1]
+        self.d2wdt2[0]    = slope[0]
+        self.d2wdt2[-1]   = -slope[-1]
+
+    def fourier_d2wdt2(self, f):
+        FT = torch.exp(2j*torch.pi*f[..., :, None]*self.time[..., None, :])*self.d2wdt2[..., None, :]
+        return FT.sum(axis=-1)
 
     @classmethod
     def example(cls):
-        t = torch.tensor([-1.0526e-03, -9.2963e-04,  0.0000e+00,  2.5000e-06])
-        wv = torch.tensor([0, 1, 1, 0])
-        cls(t, wv)
+        t = torch.tensor([-1.0526e-03, -9.2963e-04,  0.0000e+00,  2.5000e-06], dtype=torch.double)
+        wv = torch.tensor([0, 1, 1, 0], dtype=torch.double)
+        return cls(t, wv)
 
 class Forward:
     def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None):
@@ -356,7 +360,69 @@ class Forward:
         self.sigma = torch.tensor(sigma,     device=self.device, dtype=torch.complex128)[...,None,None]
         self.thick = torch.tensor(thickness, device=self.device, dtype=torch.complex128)[...,None,None]
         return self.forward().real*c.mu0
-    
+
+class DualMoment:
+    def __init__(self, source, receiver, times, filterfunc, waveforms):
+        self.source = source
+        self.receiver = receiver
+        self.times = times
+        self.rmin = self.source.min_horizontal_distance(self.receiver).to(times[0].device)
+        self.rmax = self.source.max_horizontal_distance(self.receiver).to(times[0].device)
+        self.dz = torch.tensor(self.receiver.z+self.source.z[0], device=times[0].device)
+        self.waveforms = waveforms
+        self.tmin = min(self.times[0].min(), self.times[1].min())
+        self.tmax = max(self.times[0].max(), self.times[1].max())
+
+        self.filterfunc = filterfunc
+        self.device = times[0].device
+        self.waveforms = []
+        for waveform in waveforms:
+            if waveform is not None:
+                if waveform.time.max()<self.tmin:
+                    self.tmin += -waveform.time.max()
+                self.tmax += -waveform.time.min()
+                waveform.time = waveform.time.to(self.device)
+                waveform.amplitude = waveform.amplitude.to(self.device)
+                waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
+            self.waveforms.append(waveform)
+
+
+    def forward(self):
+        def frq_integrand(f):
+            omega = c.twopi*f[None,:,None]
+
+            def wvlngth_integrand(wave_length):
+                """ Hz from horizontal electric dipole. """
+                lmb = wave_length[None, None, :]
+                tmp_u0 = -u0(omega, lmb)*1j*omega
+                intg = torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb)*lmb**2 / tmp_u0
+                intg *= self.filterfunc.omega_filter(omega)
+                return torch.squeeze(intg/c.fourpi)
+
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, range=(self.rmin, self.rmax), device=self.device)
+            return integrate_around_loop(self.source, self.receiver, hkl1)#/1j
+        
+        # cbft=invLaplace(frq_integrand)
+        # return cbft(self.times[0])
+        ift = invFourier(frq_integrand, smp_per_decade=16)
+        t,dbdt=ift.range(self.tmin, self.tmax)
+        cbft = CubicSpline(t,dbdt.real, transform=torch.log10)
+        
+        dbdts = []
+        for i in range(2):
+            t = self.times[i]
+            t_eval = t[:, None] - self.waveforms[i].time[None, :]
+            resp_step = cbft(t_eval)
+            dbdt = resp_step @ self.waveforms[i].d2wdt2
+            dbdts.append(dbdt.T)
+        return torch.concatenate(dbdts).T
+
+    def __call__(self, sigma, thickness):
+        self.sigma = torch.tensor(sigma,     device=self.device, dtype=torch.complex128)[...,None,None]
+        if sigma.ndim > thickness.ndim:
+            thickness = thickness[:, None]
+        self.thick = torch.tensor(thickness, device=self.device, dtype=torch.complex128)[...,None,None]
+        return self.forward().real*c.mu0
 
 class ButterworthFilter:
     def __init__(self, fcut, order=1):

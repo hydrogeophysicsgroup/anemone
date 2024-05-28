@@ -98,7 +98,7 @@ def christensen1990_eq17(v, sc, nu=0, a=0.1, term_max=50, convergence_threshold=
     return H_nu.astype(complex)
 
 
-def christensen1990_eq41(v, delta, Delta1, a, sc, nu=0, smp_per_decade=10,term_max=50, convergence_threshold=1e-9):
+def christensen1990_eq41(v, delta, Delta1, a, sc, nu=0, smp_per_decade=10, term_max=50, convergence_threshold=1e-9):
     n=0
     partial_sum = delta*christensen1990_p_hat(n*delta*Delta1, a)*johansen1979_Hhat_nu(n*Delta1, nu=nu)*np.exp(1j*2*pi*n*v*Delta1)
 
@@ -303,6 +303,64 @@ class invFourier(Fourier):
     
     def __repr__(self) -> str:
         return 'X(f)->x(t)'
+
+def factorial(s):
+    x = s*1
+    y = 1
+    while x>0:
+        y *= x
+        x -= 1
+    return y
+
+def gaver_stehfest_coefficients(N):
+    """ Inverse laplace transform using Gaver-Stehfest method.
+        see https://dl.acm.org/doi/10.1145/361953.361969
+        Algorithm 368: Numerical inversion of laplace transforms
+    """
+    idx = np.arange(N)+1
+    k_lower = (idx+1)//2
+    k_upper = np.clip(idx, 0, N/2)+1
+    v = np.zeros(N)
+
+    for i in idx:
+        tmpv = 0
+        for k in np.arange(k_lower[i-1], k_upper[i-1]):
+            numerator = factorial(2*k)
+            numerator *= k**(N/2)# niels code values when next line is commented
+            # numerator *= k**(1+N/2)# what I think it should be
+            denominator = factorial(N/2 - k)
+            denominator *= factorial(k)
+            denominator *= factorial(k-1)
+            denominator *= factorial(i-k)
+            denominator *= factorial(2*k-i)
+            tmpv += numerator/denominator
+        v[i-1] = (-1)**(i + N/2)*tmpv
+
+    return torch.from_numpy(v+0j)
+
+class invLaplace:
+    """ Inverse laplace transform using Gaver-Stehfest method.
+        see https://dl.acm.org/doi/10.1145/361953.361969
+        Algorithm 368: Numerical inversion of laplace transforms
+    """
+    def __init__(self, func, n_coefficients=16):
+        assert n_coefficients % 2 == 0, "Gaver-stehfest method requires an even number of coefficients"
+        self.func = func
+        self.v = gaver_stehfest_coefficients(n_coefficients)
+        self.i = torch.arange(1, n_coefficients+1)
+        self.n_coefficients = n_coefficients
+
+    def __call__(self, t):
+        ntimes = t.shape[-1]
+        q = (c.log2 / t)[...,:, None]
+        res1 = q[...,0,:]*self.func(q[...,0,:]*self.i)@self.v
+        res = torch.zeros(t.shape+res1.shape, dtype=res1.dtype)
+        res[0] = res1
+        for i in range(1, t.shape[-1]):
+            res[i] = q[...,i,:]*self.func(q[...,i,:]*self.i)@self.v
+        return res
+
+
 
 import matplotlib.pyplot as plt
 import numpy as np
