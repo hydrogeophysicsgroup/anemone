@@ -324,9 +324,10 @@ class Forward:
                 """ Hz from horizontal electric dipole. """
                 lmb = wave_length[None, None, :]
                 tmp_u0 = u0(omega, lmb)
-                if self.waveform is not None:
-                    tmp_u0 *= -1j*omega
                 intg = torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb)*lmb**2 / tmp_u0
+
+                if self.waveform is not None:
+                    intg /= -1j*omega                
                 if self.filterfunc is not None:
                     intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
@@ -368,6 +369,11 @@ class DualMoment:
         self.times = times
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(times[0].device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(times[0].device)
+        self.srcz = torch.tensor([source.z[0]], dtype=torch.float64)
+        self.rz = self.receiver.z
+        self.pfield_dz = torch.abs(self.srcz-self.rz)
+        self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)
+                
         self.dz = torch.tensor(self.receiver.z+self.source.z[0], device=times[0].device)
         self.waveforms = waveforms
         self.tmin = min(self.times[0].min(), self.times[1].min())
@@ -394,9 +400,14 @@ class DualMoment:
             def wvlngth_integrand(wave_length):
                 """ Hz from horizontal electric dipole. """
                 lmb = wave_length[None, None, :]
-                tmp_u0 = -u0(omega, lmb)*1j*omega
-                intg = torch.exp(-tmp_u0*self.dz)*rte(self.sigma, self.thick, omega, lmb)*lmb**2 / tmp_u0
-                intg *= self.filterfunc.omega_filter(omega)
+                tmp_u0 = u0(omega, lmb)
+                cRTE = rte(self.sigma, self.thick, omega, lmb)
+                intg = torch.exp(-tmp_u0*self.pfield_dz)+cRTE*torch.exp(-tmp_u0*self.sfield_dz)
+                intg *= lmb**2 / tmp_u0
+                intg /= -1j*omega
+
+                if self.filterfunc is not None:
+                    intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
 
             hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, range=(self.rmin, self.rmax), device=self.device)
@@ -423,6 +434,8 @@ class DualMoment:
             thickness = thickness[:, None]
         self.thick = torch.tensor(thickness, device=self.device, dtype=torch.complex128)[...,None,None]
         return self.forward().real*c.mu0
+    
+    
 
 class ButterworthFilter:
     def __init__(self, fcut, order=1):
