@@ -47,6 +47,25 @@ def halfspace_vmd(sigma, omega, r):
     Hz /= (2*tc.pi*k**2 * r**5)
     return Hz
 
+def halfspace_horizontal_electric_dipole(sigma, omega, r):
+    """this needs to be confirmed.
+
+        Args:
+            omega (1d-array): the angular frequency
+            sigma    (float): halfspace conductivity
+            r        (float): horizontal distance from the dipole
+
+        Returns:
+            z-component of the magnetic field
+    """
+    raise UserWarning("Hz from a horizontal electric dipole over a halfspace should be confirmed.\nUse at your own risk.")
+    k = calc_wavenumber(sigma, omega)
+
+    Hz = 3 - (3 + 3j*k*r - (r*k)**2)*tc.exp(-1j*k*r)
+
+    Hz /= -(2*tc.pi*k**2 * r**5)
+    return Hz
+
 def hz_halfspace_center_circle_loop(omega, sigma, r, I=1.):
     """ get the vertical component of the response at the center of a circular loop on the earth's surface.
         see equation 4.94 of ward and hohmann (pg. 220)
