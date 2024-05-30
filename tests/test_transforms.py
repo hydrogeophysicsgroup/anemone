@@ -187,6 +187,26 @@ def test_invfourier_earlytimes():
     if running_as_main:
         return t.numpy(), y1.numpy(), y2.numpy()
 
+def test_invlaplace():
+    from em1d.transforms import invLaplace
+
+    def f(t):
+        return 1./torch.sqrt(torch.pi*t)
+
+    def LF(s):
+        return 1./torch.sqrt(s)
+
+    t = torch.logspace(-7, 2, 31, dtype=torch.complex128)
+
+    y1 = invLaplace(LF, n_coefficients=16)(t)
+    y2 = f(t)
+
+    assert torch.allclose(y1.real, y2.real), "inverse Laplace transform is performing poorly on 1/sqrt(s)<->1./sqrt(t*pi) analytical example"
+
+    if running_as_main:
+        return t.numpy(), y1.numpy(), y2.numpy()
+
+
 if __name__ == '__main__':
     # test_frequency_response()
     # test_spline()
