@@ -181,6 +181,17 @@ def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=1
     return np.real(Hnustar)
 
 
+def coefficient_bounds(coefficients, tolerance=1e-6):
+    fcabs = np.abs(coefficients)
+    bigdogs = np.argsort(fcabs)[::-1]
+
+    fcsort = fcabs[bigdogs]*1
+    signal_fraction = np.cumsum(fcsort)/fcsort.sum()
+    idx = np.searchsorted(signal_fraction, 1.-tolerance)
+    bigdogs = bigdogs[:idx+1]
+    return bigdogs.min(), bigdogs.max()
+
+
 from functools import cache
 @cache
 def hankel_coefficients(order, log10min, log10max, smp_per_decade):
@@ -191,12 +202,17 @@ def hankel_coefficients(order, log10min, log10max, smp_per_decade):
     return torch.from_numpy(lamda), torch.from_numpy(fc)
 
 class Hankel:
-    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10, device=None, range=None):
+    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10, device=None, range=None, tolerance=None):
         self.func    = func
         self.nu    = order
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
         hkl = hankel_coefficients(order, log10min, log10max, smp_per_decade)
+        if tolerance is not None:
+            idxmin, idxmax = coefficient_bounds(hkl[1].numpy(), tolerance=tolerance)
+            hkl = hkl[0][idxmin:idxmax], hkl[1][idxmin:idxmax]
+        self.tolerance = tolerance       
+
         self.lamda = torch.clone(hkl[0])
         self.fc = torch.clone(hkl[1])
         if device is not None:
@@ -221,6 +237,7 @@ class Hankel:
 
     
     def range(self, rmin, rmax):
+        """ the reason for this is to make it reusable for the fourier transform"""
         return self._range(rmin, rmax)
 
     def _range(self, rmin, rmax):
@@ -258,7 +275,7 @@ class Hankel:
                 HR[..., i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
         
         return rout, HR/rout
-    
+        
     def __call__(self, r):
         if not 'interpfunc' in dir(self):
             rmax = r*(self.delta)**2
@@ -326,8 +343,8 @@ def gaver_stehfest_coefficients(N):
         tmpv = 0
         for k in np.arange(k_lower[i-1], k_upper[i-1]):
             numerator = factorial(2*k)
-            numerator *= k**(N/2)# niels code values when next line is commented
-            # numerator *= k**(1+N/2)# what I think it should be
+            numerator *= k**(N/2)# niels code values
+            # numerator *= k**(1+N/2)# what the paper says. its wrong
             denominator = factorial(N/2 - k)
             denominator *= factorial(k)
             denominator *= factorial(k-1)
@@ -343,24 +360,25 @@ class invLaplace:
         see https://dl.acm.org/doi/10.1145/361953.361969
         Algorithm 368: Numerical inversion of laplace transforms
     """
-    def __init__(self, func, n_coefficients=16):
+    def __init__(self, func, n_coefficients=8):
+        #8 coefficient is more stable than 16 for current implementation. not sure why this is.
+
         assert n_coefficients % 2 == 0, "Gaver-stehfest method requires an even number of coefficients"
         self.func = func
         self.v = gaver_stehfest_coefficients(n_coefficients)
-        self.i = torch.arange(1, n_coefficients+1)
+        self.i = torch.arange(n_coefficients)+1
         self.n_coefficients = n_coefficients
 
     def __call__(self, t):
-        ntimes = t.shape[-1]
+        # ntimes = t.shape[-1]
+
         q = (c.log2 / t)[...,:, None]
         res1 = q[...,0,:]*self.func(q[...,0,:]*self.i)@self.v
         res = torch.zeros(t.shape+res1.shape, dtype=res1.dtype)
         res[0] = res1
-        for i in range(1, t.shape[-1]):
-            res[i] = q[...,i,:]*self.func(q[...,i,:]*self.i)@self.v
+        for i_t in range(1, t.shape[-1]):
+            res[i_t] = q[...,i_t,:]*self.func(q[...,i_t,:]*self.i)@self.v
         return res
-
-
 
 import matplotlib.pyplot as plt
 import numpy as np
