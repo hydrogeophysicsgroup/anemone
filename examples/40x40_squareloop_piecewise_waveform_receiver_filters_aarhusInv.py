@@ -29,7 +29,7 @@ rho = 40
 sigma = 1/torch.tensor([rho,rho])
 thick = torch.tensor([10])
 
-fwr = Forward(lp, rx, times, waveform=waveform, filterfunc=recfilter)
+fwr = Forward(lp, rx, torch.from_numpy(times), waveform=waveform, filterfunc=recfilter)
 dbdt = fwr(sigma, thick);
 
 fig,ax = plt.subplots(1,2, sharex=True)
