@@ -320,6 +320,7 @@ class Forward:
             waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
         self.tolerance=tolerance
 
+        print('tmin, tmax', self.tmin, self.tmax, self.t_gatewidth)
 
     def forward(self):
         def frq_integrand(f):
@@ -330,8 +331,7 @@ class Forward:
                 lmb = wave_length[None, None, :]
                 
                 tmp_u0 = u0(omega, lmb)
-                cRTE = rte(self.sigma, self.thick, omega, lmb)
-                intg = torch.exp(-tmp_u0*self.pfield_dz)+cRTE*torch.exp(-tmp_u0*self.sfield_dz)
+                intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
                 intg *= lmb**2 / tmp_u0
 
                 if self.waveform is not None:
@@ -340,12 +340,10 @@ class Forward:
                     intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
             
-            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
+            hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
             return integrate_around_loop(self.source, self.receiver, hkl1)
         
-        ift=invFourier(frq_integrand, smp_per_decade=16, device=self.device)
-        t,dbdt=ift.range(self.tmin, self.tmax)
-        cbft = CubicSpline(t,dbdt, transform=torch.log10)
+        cbft=invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device, tolerance=self.tolerance)
 
         if self.t_gatewidth is None:
             t = self.times

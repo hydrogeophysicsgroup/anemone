@@ -140,7 +140,6 @@ def christensen1990_eq41(v, delta, Delta1, a, sc, nu=0, smp_per_decade=10, term_
     return partial_sum-leftside_removal-rightside_removal
 
 
-
 def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=10,  term_max=50, convergence_threshold=1e-12):
     """
     Calculate the optimized coefficients using the Christensen (1990) method.
@@ -211,7 +210,9 @@ class Hankel:
         if tolerance is not None:
             idxmin, idxmax = coefficient_bounds(hkl[1].numpy(), tolerance=tolerance)
             hkl = hkl[0][idxmin:idxmax], hkl[1][idxmin:idxmax]
-        self.tolerance = tolerance       
+        self.tolerance = tolerance
+
+        self.func_results = None       
 
         self.lamda = torch.clone(hkl[0])
         self.fc = torch.clone(hkl[1])
@@ -219,11 +220,40 @@ class Hankel:
             self.fc=self.fc.to(device)
             self.lamda=self.lamda.to(device)
         self.device=device
-        self.F = self.func(self.lamda)
-        if not range is None:
-            self.r,self.resp = self.range(*range)
-            self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log10)
+
+        self.rc = 1.
+        self.rcidx = 0
+        if range is not None:
+            self._recenter_function(range)
+            self.create_interpolator(range[0], range[1])
+
+        if isinstance(self, Hankel):
+            self.func_results = self.func(self.lamda)
+            if range is not None:
+                self.create_interpolator(range[0], range[1])
     
+    def _recenter_function(self, r_center):
+        assert self.rcidx == 0, "recentering is only allowed once"
+        if isinstance(r_center, tuple): r_center = torch.sqrt(r_center[0]*r_center[1])
+        self.rc = r_center
+        self.lamda = self.lamda/self.rc
+        self.rcidx = self.smp_per_decade*torch.log10(self.rc)
+        self.func_results = None
+
+    def create_interpolator(self, rmin, rmax):
+        if self.func_results is None:
+            self.func_results = self.func(self.lamda)
+        self.r, self.resp = self.range(rmin, rmax)
+        self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log10)
+    
+    
+    def r_to_idx(self, r):
+        return self.smp_per_decade*torch.log10(r)-self.rcidx
+    
+    def idx_to_r(self, idx):
+        return 10**((idx + self.rcidx)*self.delta)
+    
+
     @property
     def delta(self):
         """
@@ -255,11 +285,11 @@ class Hankel:
         """
         if not isinstance(rmin, torch.Tensor): rmin = torch.tensor(rmin)
         if not isinstance(rmax, torch.Tensor): rmax = torch.tensor(rmax)
-        imin = int(torch.floor(self.smp_per_decade * torch.log10(rmin)) - 2)
-        imax = int(torch.ceil(self.smp_per_decade * torch.log10(rmax)) + 2)
+        imin = int(torch.floor(self.r_to_idx(rmin)) - 2)
+        imax = int(torch.ceil(self.r_to_idx(rmax))  + 2)
         i_offsets = torch.arange(imin, imax)
-        rout = 10 ** (i_offsets / self.smp_per_decade)
-        HR = torch.zeros(self.F.shape[:-1] + rout.shape, dtype=torch.complex128, device=self.device)
+        rout = self.idx_to_r(i_offsets)
+        HR = torch.zeros(self.func_results.shape[:-1] + rout.shape, dtype=torch.complex128, device=self.device)
         if self.device is not None:
             rout = rout.to(self.device)
             HR = HR.to(self.device)
@@ -267,12 +297,12 @@ class Hankel:
 
         for i, i_offset in enumerate(i_offsets):
             if i_offset == 0:
-                HR[..., i] = torch.einsum('...i,...i->...', self.F, self.fc)
+                HR[..., i] = torch.einsum('...i,...i->...', self.func_results, self.fc)
             elif i_offset > 0:
-                HR[..., i] = torch.einsum('...i,...i->...', self.F[..., :-i_offset], self.fc[..., i_offset:])
+                HR[..., i] = torch.einsum('...i,...i->...', self.func_results[..., :-i_offset], self.fc[..., i_offset:])
             else:
                 i_offset *= -1
-                HR[..., i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.F[..., i_offset:])
+                HR[..., i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.func_results[..., i_offset:])
         
         return rout, HR/rout
         
@@ -285,8 +315,7 @@ class Hankel:
         r = r if isinstance(r, torch.Tensor) else torch.tensor(r, device=self.device)
         return self.interpfunc(r).to(self.device)
             
-
-        
+     
         
 # instead of giving hz(t) from Hz(f) this is giving d Hz / dt (t)
 twopi = torch.pi*2.
@@ -298,13 +327,22 @@ class Fourier(Hankel):
         See Johansen and Sorensen 1979 - Fast Hankel Transforms eq.  87 + 88
     """
         
-    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None, range=None):
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None, range=None, tolerance=None):
         def f1(lamda):
             return func(lamda/twopi_sqrt)*torch.sqrt(lamda)
         super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device)
         _, imagfc = hankel_coefficients(0.5, log10min, log10max, smp_per_decade)
         imagfc = imagfc.to(self.fc.device)
         self.fc += -1j*imagfc
+        if tolerance is not None:
+            idxmin, idxmax = coefficient_bounds(self.fc.numpy(), tolerance=tolerance)
+            print('fraction of coefficients ', (idxmax-idxmin) / len(self.fc))
+            self.fc = self.fc[idxmin:idxmax]
+            self.lamda = self.lamda[idxmin:idxmax]
+
+        if range is not None:
+            self._recenter_function(range)
+            self.create_interpolator(range[0], range[1])
 
     def range(self, fmin, fmax):
         rout, Resp = self._range(fmin*c.sqrt_twopi, fmax*c.sqrt_twopi)
@@ -314,10 +352,11 @@ class Fourier(Hankel):
         return 'x(t)->X(f)'
 
 class invFourier(Fourier):
-    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=20, device=None, range=None):
-        super().__init__(func, log10min, log10max, smp_per_decade, device, range)
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=20, device=None, range=None, tolerance=None):
+        super().__init__(func, log10min, log10max, smp_per_decade, device, range, tolerance)
         self.fc = self.fc.real - 1j*self.fc.imag
-    
+        if range is not None:
+            self.create_interpolator(range[0], range[1])
     def __repr__(self) -> str:
         return 'X(f)->x(t)'
 

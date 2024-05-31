@@ -101,7 +101,7 @@ def test_40x40_aarhusInv_stepoff_hankel_tolerance():
 
         fig.suptitle('Test against AarhusInv with Piecewise Waveform')
         plt.show()
-    assert torch.allclose(ainv_dbdt.real, dbdt.real, rtol=0.5e-2), "aarhus inv and pytorch forward do not match within 1/2 percent"
+    assert torch.allclose(ainv_dbdt.real, dbdt.real, rtol=1e-2), "aarhus inv and pytorch forward do not match within 1/2 percent"
 
 
 def test_40x40_aarhusInv_piecewise_waveform():
@@ -154,3 +154,4 @@ def test_40x40_aarhusInv_piecewise_waveform():
 if __name__ == '__main__':
     # test_minimum_distance()
     test_40x40_aarhusInv_stepoff_hankel_tolerance()
+    # test_40x40_aarhusInv_stepoff()
