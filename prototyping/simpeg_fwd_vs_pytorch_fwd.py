@@ -181,7 +181,7 @@ fwr = Forward(lp, rx, torch.tensor(times))
 
 from time import perf_counter as timer
 bt = timer()
-t,dbdt = fwr(sigma, thick)
+dbdt = fwr(sigma, thick)
 print(f'dipole default time: {(timer()-bt)/n_forwards} s')
 
 
@@ -191,7 +191,7 @@ print(f'dipole default time: {(timer()-bt)/n_forwards} s')
 fig = plt.figure(figsize=(6, 6))
 ax = fig.add_axes([0.2, 0.15, 0.75, 0.78])
 ax.loglog(times, dpred, "k-o", lw=2, label='simpeg')
-ax.loglog(t.numpy(), np.abs(dbdt.numpy().real)/795774.71545947673925, 'r.-', label='pytorch')
+ax.loglog(times, np.abs(dbdt.numpy().real)/795774.71545947673925, 'r.-', label='pytorch')
 ax.set_xlabel("Times (s)")
 ax.set_ylabel("|H| (A/m)")
 ax.set_title("Magnetic Flux")
