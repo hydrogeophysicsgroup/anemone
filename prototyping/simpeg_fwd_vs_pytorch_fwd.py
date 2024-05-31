@@ -67,7 +67,7 @@ mesh1D = discretize.TensorMesh([hx], [0.])
 
 receiver_list = []
 receiver_list.append(
-    tdem.receivers.PointMagneticFluxDensity(
+    tdem.receivers.PointMagneticFluxTimeDerivative(
         receiver_location, times, orientation=receiver_orientation
     )
 )
@@ -88,20 +88,18 @@ source_list = [
     )
 ]
 
-from em1d.experiment import Loop, Receiver, Forward
+from em1d.experiment import *
 
-#lp = Loop.circle(6, z=20)
-lp = Loop.square(6, z=20)
+# lp = Loop.square(6, z=20)
 # source_list = [
 #     tdem.sources.segmented_line_current_source_term(mesh1D, 
 #         lp.xyz,
-#         receiver_list=receiver_list,
-#         waveform=waveform,
+#         # waveform=waveform,
 #         current=source_current,)
 # ]
 
 # Define the survey
-survey = tdem.Survey(source_list)
+survey = tdem.Survey(source_list)#, receivers=receiver_list)
 
 # Emerald forward setup...
 # tdem.sources.MagDipole(
@@ -159,30 +157,78 @@ simulation = tdem.Simulation1DLayered(
 n_forwards=10
 from time import perf_counter as timer
 bt = timer()
-dpred = simulation.dpred(model)
+for i in range(n_forwards):
+    dpred = simulation.dpred(model)
+#dpred = simulation.dpred(model)
 print(f'simpeg single forward time: {(timer()-bt)/n_forwards} s')
 
 
 import torch
 
 from em1d.experiment import Loop, Receiver, Forward
-
-lp = Loop.circle(6, z=20)
+side = np.sqrt(np.pi*6**2)
+lp = Loop.square(side, z=20)
 rx = Receiver(z=20)
 
 sigma = torch.tensor([0.1, 1, 0.1])
 thick = torch.tensor([40, 40])
+
+class Forward:
+    def __init__(self, source, receiver, times):
+        self.source = source
+        self.receiver = receiver
+        self.times = times if isinstance(times, torch.Tensor) else torch.tensor(times)
+        self.rmin = self.source.min_horizontal_distance(self.receiver).to(times.device)
+        self.rmax = self.source.max_horizontal_distance(self.receiver).to(times.device)
+        self.srcz = torch.tensor([source.z[0]], dtype=torch.float64)
+        self.rz = self.receiver.z
+        self.pfield_dz = torch.abs(self.srcz-self.rz)
+        self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)
+
+        self.tmin = self.times.min()
+        self.tmax = self.times.max()
+
+        self.device = times.device
+
+    def forward(self):
+        def frq_integrand(f):
+            omega = c.twopi*f[None,:,None]
+
+            def wvlngth_integrand(wave_length):
+                """ Hz from horizontal electric dipole. """
+                lmb = wave_length[None, None, :]
+                tmp_u0 = u0(omega, lmb)
+                # intg = torch.exp(-tmp_u0*self.pfield_dz)+
+                intg = rte(self.sigma, self.thick, omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
+                intg *= lmb**2 / tmp_u0
+                return torch.squeeze(intg/c.fourpi)
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=6, range=(self.rmin, self.rmax), device=self.device, tolerance=1e-4)#, tolerance=1e-4)
+            return integrate_around_loop(self.source, self.receiver, hkl1)
+        
+        ift=invFourier(frq_integrand, smp_per_decade=6, range=(self.tmin, self.tmax), device=self.device)#, tolerance=1e-6)
+        return ift(self.times)*c.mu0
+
+    def __call__(self, sigma, thickness):
+        self.sigma = sigma[...,None,None] + 0j#torch.tensor(sigma,     device=self.device, dtype=torch.complex128)[...,None,None]
+        self.thick = thick[...,None,None] + 0j#torch.tensor(thickness, device=self.device, dtype=torch.complex128)[...,None,None]
+        return self.forward()
+        
+
 fwr = Forward(lp, rx, torch.tensor(times))
 
 
+n_forwards = 200
+t = times
 
+dbdt = fwr(sigma, thick)
 
-
+sigma = sigma[:, None] + torch.arange(n_forwards)[None,:]
+thick = thick[:, None] + torch.arange(n_forwards)[None,:]
 
 from time import perf_counter as timer
 bt = timer()
-dbdt = fwr(sigma, thick)
-print(f'dipole default time: {(timer()-bt)/n_forwards} s')
+dbdt = fwr(sigma, thick)    
+print(f'pytorch default time: {(timer()-bt)/n_forwards} s')
 
 
 
@@ -190,8 +236,8 @@ print(f'dipole default time: {(timer()-bt)/n_forwards} s')
 # Plot sounding
 fig = plt.figure(figsize=(6, 6))
 ax = fig.add_axes([0.2, 0.15, 0.75, 0.78])
-ax.loglog(times, dpred, "k-o", lw=2, label='simpeg')
-ax.loglog(times, np.abs(dbdt.numpy().real)/795774.71545947673925, 'r.-', label='pytorch')
+ax.loglog(times, np.abs(dpred), "k-o", lw=2, label='simpeg')
+ax.loglog(t, np.abs(dbdt[0].numpy().real), 'r.-', label='pytorch')
 ax.set_xlabel("Times (s)")
 ax.set_ylabel("|H| (A/m)")
 ax.set_title("Magnetic Flux")

@@ -320,8 +320,6 @@ class Forward:
             waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
         self.tolerance=tolerance
 
-        print('tmin, tmax', self.tmin, self.tmax, self.t_gatewidth)
-
     def forward(self):
         def frq_integrand(f):
             omega = c.twopi*f[None,:,None]

@@ -336,7 +336,6 @@ class Fourier(Hankel):
         self.fc += -1j*imagfc
         if tolerance is not None:
             idxmin, idxmax = coefficient_bounds(self.fc.numpy(), tolerance=tolerance)
-            print('fraction of coefficients ', (idxmax-idxmin) / len(self.fc))
             self.fc = self.fc[idxmin:idxmax]
             self.lamda = self.lamda[idxmin:idxmax]
 
