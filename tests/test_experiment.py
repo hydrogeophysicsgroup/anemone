@@ -125,6 +125,7 @@ def test_40x40_aarhusInv_piecewise_waveform():
     wv = np.array([0, 1, 1, 0])
 
     waveform = Waveform(t, wv)
+    waveform.d2wdt2 = waveform.d2wdt2.real
 
 
     lp = Loop.square(40)
@@ -153,5 +154,6 @@ def test_40x40_aarhusInv_piecewise_waveform():
 
 if __name__ == '__main__':
     # test_minimum_distance()
-    test_40x40_aarhusInv_stepoff_hankel_tolerance()
-    # test_40x40_aarhusInv_stepoff()
+    #test_40x40_aarhusInv_stepoff_hankel_tolerance()
+    #test_40x40_aarhusInv_piecewise_waveform()
+    test_40x40_aarhusInv_stepoff()

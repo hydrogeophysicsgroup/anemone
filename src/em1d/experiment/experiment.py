@@ -102,7 +102,7 @@ class Loop:
                 numerator = tc.abs(v1x*v2y-v2x*v1y)
                 cmin = tc.min(numerator/tc.sqrt(v2r))
                 if cmin < overall_min: overall_min = cmin*1
-        return overall_min
+        return tc.tensor(overall_min)
     
     def max_horizontal_distance(self, rx):
         overall_max = 0
@@ -250,7 +250,6 @@ def integrate_around_loop(lp, rx, hr):
                 HR += -1*ds*cp[1]*resp/cR
                 cp += ds*p12
                 n_dipoles +=1
-
         return HR
 
 from ..transforms import Hankel, invFourier, CubicSpline
@@ -270,6 +269,7 @@ class Waveform:
         self.d2wdt2[1:-1] = torch.diff(slope)
         self.d2wdt2[0]    = slope[0]
         self.d2wdt2[-1]   = -slope[-1]
+        self.d2wdt2 = self.d2wdt2
 
     def fourier_d2wdt2(self, f):
         FT = torch.exp(2j*torch.pi*f[..., :, None]*self.time[..., None, :])*self.d2wdt2[..., None, :]
@@ -331,15 +331,16 @@ class Forward:
                 tmp_u0 = u0(omega, lmb)
                 intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
                 intg *= lmb**2 / tmp_u0
-
-                if self.waveform is not None:
-                    intg /= -1j*omega                
+            
                 if self.filterfunc is not None:
                     intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
             
             hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
-            return integrate_around_loop(self.source, self.receiver, hkl1)
+            res = integrate_around_loop(self.source, self.receiver, hkl1)
+            if self.waveform is not None:
+                res /= -1j*omega.squeeze()
+            return res
         
         cbft=invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device, tolerance=self.tolerance)
 
@@ -349,7 +350,9 @@ class Forward:
 
         if self.waveform is not None:
             t_eval = t[:, None] - self.waveform.time[None, :]
-            resp_step = cbft(t_eval).real
+            tshp = t_eval.shape
+            t_eval = t_eval.reshape(-1)
+            resp_step = cbft(t_eval).real.reshape(tshp)
             dbdt = resp_step @ self.waveform.d2wdt2
             if self.t_gatewidth is not None:
                 cbft = CubicSpline(t, dbdt, transform=torch.log10)
@@ -408,20 +411,17 @@ class DualMoment:
                 cRTE = rte(self.sigma, self.thick, omega, lmb)
                 intg = torch.exp(-tmp_u0*self.pfield_dz)+cRTE*torch.exp(-tmp_u0*self.sfield_dz)
                 intg *= lmb**2 / tmp_u0
-                intg /= -1j*omega
+                # intg /= -1j*omega
 
                 if self.filterfunc is not None:
                     intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
 
-            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, range=(self.rmin, self.rmax), device=self.device)
-            return integrate_around_loop(self.source, self.receiver, hkl1)#/1j
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, range=(self.rmin, self.rmax), device=self.device, tolerance=1e-6)
+            return -integrate_around_loop(self.source, self.receiver, hkl1)/1j*omega.squeeze()
         
-        # cbft=invLaplace(frq_integrand)
-        # return cbft(self.times[0])
-        ift = invFourier(frq_integrand, smp_per_decade=16)
-        t,dbdt=ift.range(self.tmin, self.tmax)
-        cbft = CubicSpline(t,dbdt.real, transform=torch.log10)
+        cbft = invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device, tolerance=1e-6)
+        
         
         dbdts = []
         for i in range(2):
@@ -429,7 +429,7 @@ class DualMoment:
             t_eval = t[:, None] - self.waveforms[i].time[None, :]
             resp_step = cbft(t_eval)
             dbdt = resp_step @ self.waveforms[i].d2wdt2
-            dbdts.append(dbdt.T)
+            dbdts.append(dbdt.real.T)
         return torch.concatenate(dbdts).T
 
     def __call__(self, sigma, thickness):
