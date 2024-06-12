@@ -208,7 +208,7 @@ class Hankel:
         self.n_decades = log10max-log10min
         hkl = hankel_coefficients(order, log10min, log10max, smp_per_decade)
         if tolerance is not None:
-            idxmin, idxmax = coefficient_bounds(hkl[1].numpy(), tolerance=tolerance)
+            idxmin, idxmax = coefficient_bounds(hkl[1].cpu().numpy(), tolerance=tolerance)
             hkl = hkl[0][idxmin:idxmax], hkl[1][idxmin:idxmax]
         self.tolerance = tolerance
 
@@ -234,7 +234,7 @@ class Hankel:
     
     def _recenter_function(self, r_center):
         assert self.rcidx == 0, "recentering is only allowed once"
-        if isinstance(r_center, tuple): r_center = torch.sqrt(r_center[0]*r_center[1])
+        if isinstance(r_center, tuple): r_center = torch.sqrt(r_center[0]*r_center[1]).to(self.device)
         self.rc = r_center
         self.lamda = self.lamda/self.rc
         self.rcidx = self.smp_per_decade*torch.log10(self.rc)
@@ -283,11 +283,11 @@ class Hankel:
         - HR (torch.Tensor): The computed values based on the range.
 
         """
-        if not isinstance(rmin, torch.Tensor): rmin = torch.tensor(rmin)
-        if not isinstance(rmax, torch.Tensor): rmax = torch.tensor(rmax)
+        if not isinstance(rmin, torch.Tensor): rmin = torch.tensor(rmin, device=self.device)
+        if not isinstance(rmax, torch.Tensor): rmax = torch.tensor(rmax, device=self.device)
         imin = int(torch.floor(self.r_to_idx(rmin)) - 2)
         imax = int(torch.ceil(self.r_to_idx(rmax))  + 2)
-        i_offsets = torch.arange(imin, imax)
+        i_offsets = torch.arange(imin, imax, device=self.device)
         rout = self.idx_to_r(i_offsets)
         HR = torch.zeros(self.func_results.shape[:-1] + rout.shape, dtype=torch.complex128, device=self.device)
         if self.device is not None:
@@ -335,7 +335,7 @@ class Fourier(Hankel):
         imagfc = imagfc.to(self.fc.device)
         self.fc += -1j*imagfc
         if tolerance is not None:
-            idxmin, idxmax = coefficient_bounds(self.fc.numpy(), tolerance=tolerance)
+            idxmin, idxmax = coefficient_bounds(self.fc.cpu().numpy(), tolerance=tolerance)
             self.fc = self.fc[idxmin:idxmax]
             self.lamda = self.lamda[idxmin:idxmax]
 
