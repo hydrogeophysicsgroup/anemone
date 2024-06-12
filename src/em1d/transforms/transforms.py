@@ -398,24 +398,30 @@ class invLaplace:
         see https://dl.acm.org/doi/10.1145/361953.361969
         Algorithm 368: Numerical inversion of laplace transforms
     """
-    def __init__(self, func, n_coefficients=8):
+    def __init__(self, func, n_coefficients=8, device=None):
         #8 coefficient is more stable than 16 for current implementation. not sure why this is.
 
         assert n_coefficients % 2 == 0, "Gaver-stehfest method requires an even number of coefficients"
         self.func = func
+        self.device = device
         self.v = gaver_stehfest_coefficients(n_coefficients)
+        if device is not None:
+            self.v = self.v.to(device)
+        else:
+            self.device = self.v.device
         self.i = torch.arange(n_coefficients)+1
         self.n_coefficients = n_coefficients
+        
 
     def __call__(self, t):
         # ntimes = t.shape[-1]
 
-        q = (c.log2 / t)[...,:, None]
-        res1 = q[...,0,:]*self.func(q[...,0,:]*self.i)@self.v
-        res = torch.zeros(t.shape+res1.shape, dtype=res1.dtype)
+        q = (c.log2 / t)[:, None]
+        res1 = q[0,:]*self.func(q[0,:]*self.i)@self.v
+        res = torch.zeros(t.shape+res1.shape, dtype=res1.dtype, device=self.device)
         res[0] = res1
         for i_t in range(1, t.shape[-1]):
-            res[i_t] = q[...,i_t,:]*self.func(q[...,i_t,:]*self.i)@self.v
+            res[i_t] = q[i_t,:]*self.func(q[i_t,:]*self.i)@self.v
         return res
 
 import matplotlib.pyplot as plt
