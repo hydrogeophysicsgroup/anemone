@@ -6,7 +6,7 @@
 # the order of arguments will be sigma, omega, wavelength
 
 import torch as tc
-
+from em1d import constants as c
 
 mu0 = tc.pi*4e-7
 epsilon0 = 8.854187817e-12
@@ -66,7 +66,7 @@ def halfspace_horizontal_electric_dipole(sigma, omega, r):
     Hz /= -(2*tc.pi*k**2 * r**5)
     return Hz
 
-def hz_halfspace_center_circle_loop(omega, sigma, r, I=1.):
+def hz_halfspace_center_circle_loop(sigma, omega, r, I=1.):
     """ get the vertical component of the response at the center of a circular loop on the earth's surface.
         see equation 4.94 of ward and hohmann (pg. 220)
         Args:
@@ -76,11 +76,20 @@ def hz_halfspace_center_circle_loop(omega, sigma, r, I=1.):
         Returns:
             Hz    (1d-array): magnetic field strength
     """
-    k = calc_wavenumber(omega, sigma)
+    k = calc_wavenumber(sigma, omega)
 
     Hz = 3-(3+3j*k*r - (r*k)**2)*tc.exp(-1j*k*r)
     Hz *= -I / (k**2 * r**3)
     return Hz
+
+def hz_halfspace_center_circle_loop_time(times, sigma, r, I=1.):
+    theta = tc.sqrt(0.25*mu0*sigma / times)
+    theta_r = theta*r
+
+    hz = 3*torch.exp(-theta_r**2)/(r*theta*c.sqrt_pi) + (1 - 3 / (2*theta_r**2))*tc.erf(theta_r)
+    hz *= I/(2*r)
+    return hz
+
 
 def hzdt_halfspace_center_circle_loop(times, sigma, r, I=1.):
     theta = tc.sqrt(0.25*mu0*sigma / times)
