@@ -365,8 +365,10 @@ class Forward:
 
 
     def __call__(self, sigma, thickness):
-        self.sigma = torch.tensor(sigma,     device=self.device, dtype=torch.complex128)[...,None,None]
-        self.thick = torch.tensor(thickness, device=self.device, dtype=torch.complex128)[...,None,None]
+        if isinstance(sigma, np.ndarray): sigma = torch.from_numpy(sigma)
+        if isinstance(thickness, np.ndarray): thickness = torch.from_numpy(thickness)
+        self.sigma = (sigma     + 0j).to(self.device)[...,None,None]
+        self.thick = (thickness + 0j).to(self.device)[...,None,None]
         return self.forward().real*c.mu0
 
 class DualMoment:
