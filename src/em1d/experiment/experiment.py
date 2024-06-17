@@ -18,14 +18,18 @@ class Receiver:
 
     def grid(self):
         X,Y,Z = tc.meshgrid(self.x, self.y, self.z, indexing='ij')
-        self.x = tc.squeeze(X)
-        self.y = tc.squeeze(Y)
-        self.z = tc.squeeze(Z)
+        self.shp = X.shape+(3,)
+        self.x = X.squeeze()
+        self.y = Y.squeeze()
+        self.z = Z.squeeze()
         return self
     
     @property
     def xyz(self):
-        return tc.squeeze(tc.moveaxis(tc.stack((self.x, self.y, self.z)), 0, -1))
+        return tc.squeeze(tc.moveaxis(tc.stack((
+                            self.x.flatten(), 
+                            self.y.flatten(), 
+                            self.z.flatten())), 0, -1))
 
     def __len__(self):
         return self.x.numel()
@@ -138,10 +142,13 @@ class Loop:
         R_edge1 = (R/dR_alpha)**2
         R_edge2 = (R*dR_alpha)**2
 
-        
-        s = tc.zeros_like(R, dtype=torch.complex128)
+        rx_xyz = rx.xyz
+        if len(rx_xyz.shape)==1:
+            s = tc.zeros(R, dtype=torch.complex128)
+        else:
+            s = tc.zeros(rx_xyz.shape[:-1]+R.shape, dtype=torch.complex128)
 
-        lp_xyz = self.xyz - rx.xyz[None, :]
+        lp_xyz = self.xyz[:, None] - rx_xyz[None, :]
         for i in range(len(self)-1):
             Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
             p1 = tc.einsum('...i,...i->...', Rz, lp_xyz[i])
@@ -413,25 +420,23 @@ class DualMoment:
                 cRTE = rte(self.sigma, self.thick, omega, lmb)
                 intg = torch.exp(-tmp_u0*self.pfield_dz)+cRTE*torch.exp(-tmp_u0*self.sfield_dz)
                 intg *= lmb**2 / tmp_u0
-                # intg /= -1j*omega
 
                 if self.filterfunc is not None:
                     intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
 
-            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, range=(self.rmin, self.rmax), device=self.device, tolerance=1e-6)
-            return -integrate_around_loop(self.source, self.receiver, hkl1)/1j*omega.squeeze()
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, range=(self.rmin, self.rmax), device=self.device)
+            return -integrate_around_loop(self.source, self.receiver, hkl1)/(1j*omega.squeeze())
         
-        cbft = invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device, tolerance=1e-6)
-        
+        cbft = invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device)
         
         dbdts = []
         for i in range(2):
             t = self.times[i]
             t_eval = t[:, None] - self.waveforms[i].time[None, :]
             resp_step = cbft(t_eval)
-            dbdt = resp_step @ self.waveforms[i].d2wdt2
-            dbdts.append(dbdt.real.T)
+            dbdt = resp_step.real @ self.waveforms[i].d2wdt2
+            dbdts.append(dbdt.T)
         return torch.concatenate(dbdts).T
 
     def __call__(self, sigma, thickness):
