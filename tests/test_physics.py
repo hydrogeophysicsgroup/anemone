@@ -31,6 +31,8 @@ def test_frequency_response():
     assert np.allclose(hz, hz_analytical), "hankel transform results do not match analytical solution"
 
 def test_rte_convergence():
+    from em1d import constants as c
+
     print('it would be wise to expand the range the frequencies or adjust the conductivity so that it does not converge so fast')
     sigma = torch.tensor([100, 0.5, 0.1], dtype=torch.complex128)
     omega = torch.tensor([1000], dtype=torch.complex128)*2*torch.pi
@@ -39,8 +41,8 @@ def test_rte_convergence():
     wave_length   = torch.logspace(-3, 3, 1001, dtype=torch.complex128)
     lambda_sqrd   = wave_length*wave_length
 
-    K0_sqrd       = physics.epsilon0*physics.mu0*omega**2
-    K1_sqrd       = physics.mu0*omega*(physics.epsilon0*omega-1j*sigma[0])
+    K0_sqrd       = c.epsilon0*c.mu0*omega**2
+    K1_sqrd       = c.mu0*omega*(c.epsilon0*omega-1j*sigma[0])
 
     u0            = torch.sqrt(lambda_sqrd-K0_sqrd)
     u1            = torch.sqrt(lambda_sqrd-K1_sqrd)
@@ -60,6 +62,7 @@ def test_rte_convergence():
     assert np.allclose(rte_halfspace.numpy(), c_rte.numpy()), 'rte did not converge as expected'
 
 def test_rtm_convergence():
+    from em1d import constants as c
     sigma = torch.tensor([100, 0.5, 0.1], dtype=torch.complex128)
     omega = torch.tensor([1000], dtype=torch.complex128)*2*torch.pi
 
@@ -67,8 +70,8 @@ def test_rtm_convergence():
     wave_length   = torch.logspace(-3, 3, 1001, dtype=torch.complex128)
     lambda_sqrd   = wave_length*wave_length
 
-    K0_sqrd       = physics.epsilon0*physics.mu0*omega**2
-    K1_sqrd       = physics.mu0*omega*(physics.epsilon0*omega-1j*sigma[0])
+    K0_sqrd       = c.epsilon0*c.mu0*omega**2
+    K1_sqrd       = c.mu0*omega*(c.epsilon0*omega-1j*sigma[0])
 
     u0            = torch.sqrt(lambda_sqrd-K0_sqrd)
     u1            = torch.sqrt(lambda_sqrd-K1_sqrd)
@@ -88,4 +91,4 @@ def test_rtm_convergence():
     assert np.allclose(rtm_halfspace.numpy(), c_rte.numpy()), 'rtm did not converge as expected'
 
 if __name__ == '__main__':
-    test_frequency_response()
+    test_rtm_convergence()

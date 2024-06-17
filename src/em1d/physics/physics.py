@@ -5,15 +5,11 @@
 # we assume the physical properties of the earth only change with depth, i.e. the earth is 1D.
 # the order of arguments will be sigma, omega, wavelength
 
-import torch as tc
+import torch
+from em1d import constants as c
 
 
-mu0 = tc.pi*4e-7
-epsilon0 = 8.854187817e-12
-sqrt_pi = tc.sqrt(tc.tensor(tc.pi))
-
-
-def calc_zy(sigma, omega, epsilon=epsilon0, mu=mu0):
+def calc_zy(sigma, omega, epsilon=c.epsilon0, mu=c.mu0):
     """compute the impedivity (zhat) and admittivity (yhat)
        see W&H between eq. 1.15->1.16, reference to harrington, 1961
     """
@@ -22,12 +18,12 @@ def calc_zy(sigma, omega, epsilon=epsilon0, mu=mu0):
     return z,y
 
 
-def calc_wavenumber(sigma, omega, mu=mu0, epsilon=epsilon0, sqrt=True):
+def calc_wavenumber(sigma, omega, mu=c.mu0, epsilon=c.epsilon0, sqrt=True):
     """get the intrinsic complex wavenumber 'k' 
        see equation 4.30 in ward in hohmann (pg 207)
     """
     k = mu*omega*(epsilon*omega - 1j*sigma)
-    if sqrt: k = tc.sqrt(k)
+    if sqrt: k = torch.sqrt(k)
     return k
 
 def halfspace_vmd(sigma, omega, r):
@@ -43,8 +39,8 @@ def halfspace_vmd(sigma, omega, r):
             z-component of the magnetic field
     """
     k = calc_wavenumber(sigma, omega)
-    Hz = 9 - (9 + 9j*k*r - 4*k**2 * r**2 -1j*k**3*r**3)*tc.exp(-1j*k*r)
-    Hz /= (2*tc.pi*k**2 * r**5)
+    Hz = 9 - (9 + 9j*k*r - 4*k**2 * r**2 -1j*k**3*r**3)*torch.exp(-1j*k*r)
+    Hz /= (2*torch.pi*k**2 * r**5)
     return Hz
 
 def halfspace_horizontal_electric_dipole(sigma, omega, r):
@@ -61,12 +57,12 @@ def halfspace_horizontal_electric_dipole(sigma, omega, r):
     raise UserWarning("Hz from a horizontal electric dipole over a halfspace should be confirmed.\nUse at your own risk.")
     k = calc_wavenumber(sigma, omega)
 
-    Hz = 3 - (3 + 3j*k*r - (r*k)**2)*tc.exp(-1j*k*r)
+    Hz = 3 - (3 + 3j*k*r - (r*k)**2)*torch.exp(-1j*k*r)
 
-    Hz /= -(2*tc.pi*k**2 * r**5)
+    Hz /= -(2*torch.pi*k**2 * r**5)
     return Hz
 
-def hz_halfspace_center_circle_loop(omega, sigma, r, I=1.):
+def hz_halfspace_center_circle_loop(sigma, omega, r, I=1.):
     """ get the vertical component of the response at the center of a circular loop on the earth's surface.
         see equation 4.94 of ward and hohmann (pg. 220)
         Args:
@@ -76,15 +72,24 @@ def hz_halfspace_center_circle_loop(omega, sigma, r, I=1.):
         Returns:
             Hz    (1d-array): magnetic field strength
     """
-    k = calc_wavenumber(omega, sigma)
+    k = calc_wavenumber(sigma, omega)
 
-    Hz = 3-(3+3j*k*r - (r*k)**2)*tc.exp(-1j*k*r)
+    Hz = 3-(3+3j*k*r - (r*k)**2)*torch.exp(-1j*k*r)
     Hz *= -I / (k**2 * r**3)
     return Hz
 
+def hz_halfspace_center_circle_loop_time(times, sigma, r, I=1.):
+    theta = torch.sqrt(0.25*c.mu0*sigma / times)
+    theta_r = theta*r
+
+    hz = 3*torch.exp(-theta_r**2)/(r*theta*c.sqrt_pi) + (1 - 3 / (2*theta_r**2))*torch.erf(theta_r)
+    hz *= I/(2*r)
+    return hz
+
+
 def hzdt_halfspace_center_circle_loop(times, sigma, r, I=1.):
-    theta = tc.sqrt(0.25*mu0*sigma / times)
-    dhdt = 1./(mu0*sigma*r**3)*(3*tc.erf(theta*r)-2*theta*r*(3+2*theta**2*r**2)*tc.exp(-theta**2*r**2)/sqrt_pi)
+    theta = torch.sqrt(0.25*c.mu0*sigma / times)
+    dhdt = 1./(c.mu0*sigma*r**3)*(3*torch.erf(theta*r)-2*theta*r*(3+2*theta**2*r**2)*torch.exp(-theta**2*r**2)/c.sqrt_pi)
     return dhdt
 
 
@@ -98,13 +103,13 @@ def freespace_u0(omega, wave_length, sqrt=True):
     Returns:
         u0: vertical wavenumber with shape = omega.shape+wave_length.shape
     """
-    k2 = mu0*epsilon0*omega**2
+    k2 = c.mu0*c.epsilon0*omega**2
     u02 = wave_length**2 - k2
-    if sqrt: u02=tc.sqrt(u02+0j)
+    if sqrt: u02=torch.sqrt(u02+0j)
     return u02
 
 
-def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsilon=epsilon0):
+def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     """ rte = (Y_0 - hat Y_1)/(Y_0 + hat Y_1) - W&H eq 4.19 (pg 205)
         where Y_0 is the intrinsic admittance
         and hat Y_1 is the surface or boundary admittance
@@ -124,22 +129,22 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
         reflection coefficients for transverse electric mode
     """
     if isinstance(mu, float):
-        mu = tc.ones_like(sigma, dtype=tc.complex128, device=sigma.device)*mu
+        mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
     if isinstance(epsilon, float):
-        epsilon = tc.ones_like(sigma, dtype=tc.complex128, device=sigma.device)*epsilon
+        epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
 
     n_layers=len(sigma)
 
     lambda2 = wave_length**2
     
-    adm_freespace = tc.sqrt(lambda2 - omega**2 * mu0*epsilon0 + 0j)/(1j*omega*mu0)
+    adm_freespace = torch.sqrt(lambda2 - omega**2 * c.mu0*c.epsilon0 + 0j)/(1j*omega*c.mu0)
     
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
 
     # this is u_n (misnamed temporarily, will divide by zn soon.)
-    adm_intrinsic = tc.sqrt(lambda2 - k2)
-    tanh_un_thick = tc.tanh(adm_intrinsic[:-1]*thickness)
+    adm_intrinsic = torch.sqrt(lambda2 - k2)
+    tanh_un_thick = torch.tanh(adm_intrinsic[:-1]*thickness)
     adm_intrinsic/= zn
     
     adm_boundary = adm_intrinsic[-1]*1.
@@ -152,7 +157,7 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=mu0, epsil
     rte = (adm_freespace - adm_boundary) / (adm_freespace + adm_boundary)
     return rte
 
-def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsilon=epsilon0):
+def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     """ rtm = (Z_0 - hat Z_1)/(Z_0 + hat Z_1) - W&H eq 4.20 (pg 206)
         where Z_0 is the intrinsic impedance
         and hat Z_1 is the surface or boundary impedance
@@ -172,9 +177,9 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
         reflection coefficients for transverse magnetic mode
     """
     if isinstance(mu, float):
-        mu = tc.ones_like(sigma, dtype=tc.complex128)*mu
+        mu = torch.ones_like(sigma, dtype=torch.complex128)*mu
     if isinstance(epsilon, float):
-        epsilon = tc.ones_like(sigma, dtype=tc.complex128)*epsilon
+        epsilon = torch.ones_like(sigma, dtype=torch.complex128)*epsilon
 
     n_layers=len(sigma)
 
@@ -182,16 +187,16 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=mu0, epsil
     
 
     
-    imp_freespace = tc.sqrt(lambda2 - omega**2 * mu0*epsilon0)/(1j*omega*epsilon0)
+    imp_freespace = torch.sqrt(lambda2 - omega**2 * c.mu0*c.epsilon0)/(1j*omega*c.epsilon0)
     
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
     yn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[1]
 
-    imp_intrinsic  = tc.sqrt(lambda2 - k2)
-    tanh_un_thick  = tc.tanh(imp_intrinsic[:-1]*thickness)
+    imp_intrinsic  = torch.sqrt(lambda2 - k2)
+    tanh_un_thick  = torch.tanh(imp_intrinsic[:-1]*thickness)
     imp_intrinsic /=  yn
 
-    imp_boundary  = tc.zeros_like(imp_intrinsic)
+    imp_boundary  = torch.zeros_like(imp_intrinsic)
     imp_boundary[-1] = imp_intrinsic[-1]*1.
 
         
