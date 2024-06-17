@@ -371,20 +371,21 @@ class DualMoment:
         self.source = source
         self.receiver = receiver
         self.times = times
-        self.rmin = self.source.min_horizontal_distance(self.receiver).to(times[0].device)
-        self.rmax = self.source.max_horizontal_distance(self.receiver).to(times[0].device)
+        self.device = times[0].device
+
+        self.rmin = self.source.min_horizontal_distance(self.receiver).to(self.device)
+        self.rmax = self.source.max_horizontal_distance(self.receiver).to(self.device)
         self.srcz = torch.tensor([source.z[0]], dtype=torch.float64)
         self.rz = self.receiver.z
-        self.pfield_dz = torch.abs(self.srcz-self.rz)
-        self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)
+        self.pfield_dz = torch.abs(self.srcz-self.rz).to(self.device)
+        self.sfield_dz = (torch.abs(self.srcz)+torch.abs(self.rz)).to(self.device)
                 
-        self.dz = torch.tensor(self.receiver.z+self.source.z[0], device=times[0].device)
+        self.dz = torch.tensor(self.receiver.z+self.source.z[0], device=self.device)
         self.waveforms = waveforms
         self.tmin = min(self.times[0].min(), self.times[1].min())
         self.tmax = max(self.times[0].max(), self.times[1].max())
 
         self.filterfunc = filterfunc
-        self.device = times[0].device
         self.waveforms = []
         for waveform in waveforms:
             if waveform is not None:
@@ -419,7 +420,7 @@ class DualMoment:
         
         # cbft=invLaplace(frq_integrand)
         # return cbft(self.times[0])
-        ift = invFourier(frq_integrand, smp_per_decade=16)
+        ift = invFourier(frq_integrand, smp_per_decade=16, device=self.device)
         t,dbdt=ift.range(self.tmin, self.tmax)
         cbft = CubicSpline(t,dbdt.real, transform=torch.log10)
         
@@ -433,12 +434,11 @@ class DualMoment:
         return torch.concatenate(dbdts).T
 
     def __call__(self, sigma, thickness):
-        self.sigma = torch.tensor(sigma,     device=self.device, dtype=torch.complex128)[...,None,None]
+        self.sigma = ((sigma+0j)[..., None, None]).to(self.device)
         if sigma.ndim > thickness.ndim:
             thickness = thickness[:, None]
-        self.thick = torch.tensor(thickness, device=self.device, dtype=torch.complex128)[...,None,None]
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
         return self.forward().real*c.mu0
-    
     
 
 class ButterworthFilter:
