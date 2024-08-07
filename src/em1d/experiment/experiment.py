@@ -370,6 +370,15 @@ class Forward:
         else:
             return cbft(self.times)
 
+    def compute_relstd(self, sigma, thickness, noise_slope_exponent=-0.5, noise_level_at_1ms=1e-8, moment=1, relative_noise=0.03):
+        moment = self.source.area
+        t_gates, data_val = self.times, self(sigma, thickness)
+        b = noise_level_at_1ms/(1e-3**noise_slope_exponent)
+        abs_noise = b*(t_gates**noise_slope_exponent)
+        y = data_val*moment
+        std_rel = abs_noise/y
+        std_tot = torch.sqrt(std_rel**2 + relative_noise**2)
+        return std_tot
 
     def __call__(self, sigma, thickness):
         if isinstance(sigma, np.ndarray): sigma = torch.from_numpy(sigma)
@@ -465,6 +474,7 @@ class ButterworthFilter:
         return 1./recip_resp
     
 class FilterChain:
+    """filter based on frequency in Hz (f), not radians/s (Omega)"""
     def __init__(self, filters):
         self.filters = filters
     
@@ -482,3 +492,11 @@ class FilterChain:
     
     def __iter__(self):
         return iter(self.filters)
+
+def compute_relstd(t_gates, data_val, noise_slope_exponent=-0.5, noise_level_at_1ms=1e-8, moment=1, relative_noise=0.03):
+    b = noise_level_at_1ms/(1e-3**noise_slope_exponent)
+    abs_noise = b*(t_gates**noise_slope_exponent)
+    y = data_val*moment
+    std_rel = abs_noise/y
+    std_tot = torch.sqrt(std_rel**2 + relative_noise**2)
+    return std_tot
