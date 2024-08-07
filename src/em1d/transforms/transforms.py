@@ -181,9 +181,9 @@ def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=1
 
 
 def coefficient_bounds(coefficients, tolerance=1e-6):
+    """a function to find an interval that makes up most of the signal."""
     fcabs = np.abs(coefficients)
     bigdogs = np.argsort(fcabs)[::-1]
-
     fcsort = fcabs[bigdogs]*1
     signal_fraction = np.cumsum(fcsort)/fcsort.sum()
     idx = np.searchsorted(signal_fraction, 1.-tolerance)
@@ -197,7 +197,7 @@ def hankel_coefficients(order, log10min, log10max, smp_per_decade):
     """the reason from wrapping this is to make the inputs hashable and therefore cachable"""
     lamda = 10**(np.arange(log10min*smp_per_decade, log10max*smp_per_decade+1)/smp_per_decade)
     v = np.log(lamda)
-    fc = optimized_coefficients_christensen1990(v.astype(float), omega_0=np.pi/4, nu=order, smp_per_decade=smp_per_decade).astype(complex)
+    fc = optimized_coefficients_christensen1990(v, omega_0=np.pi/4, nu=order, smp_per_decade=smp_per_decade)
     return torch.from_numpy(lamda), torch.from_numpy(fc)
 
 class Hankel:
@@ -214,8 +214,8 @@ class Hankel:
 
         self.func_results = None       
 
-        self.lamda = torch.clone(hkl[0])
-        self.fc = torch.clone(hkl[1])
+        self.lamda = torch.clone(hkl[0])#.to(torch.double)
+        self.fc = torch.clone(hkl[1])#.to(torch.double)
         if device is not None:
             self.fc=self.fc.to(device)
             self.lamda=self.lamda.to(device)
@@ -229,8 +229,11 @@ class Hankel:
 
         if isinstance(self, Hankel):
             self.func_results = self.func(self.lamda)
+        
             if range is not None:
                 self.create_interpolator(range[0], range[1])
+
+
     
     def _recenter_function(self, r_center):
         assert self.rcidx == 0, "recentering is only allowed once"
@@ -289,11 +292,14 @@ class Hankel:
         imax = int(torch.ceil(self.r_to_idx(rmax))  + 2)
         i_offsets = torch.arange(imin, imax, device=self.device)
         rout = self.idx_to_r(i_offsets)
-        HR = torch.zeros(self.func_results.shape[:-1] + rout.shape, dtype=torch.complex128, device=self.device)
+        HR = torch.zeros(self.func_results.shape[:-1] + rout.shape, dtype=self.func_results.dtype, device=self.device)
         if self.device is not None:
             rout = rout.to(self.device)
             HR = HR.to(self.device)
             i_offsets = i_offsets.to(self.device)
+        if self.fc.dtype != self.func_results.dtype:
+            self.fc = self.fc.to(self.func_results.dtype)    
+
 
         for i, i_offset in enumerate(i_offsets):
             if i_offset == 0:
@@ -333,7 +339,7 @@ class Fourier(Hankel):
         super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device)
         _, imagfc = hankel_coefficients(0.5, log10min, log10max, smp_per_decade)
         imagfc = imagfc.to(self.fc.device)
-        self.fc += -1j*imagfc
+        self.fc = torch.complex(self.fc, -1*imagfc)
         if tolerance is not None:
             idxmin, idxmax = coefficient_bounds(self.fc.cpu().numpy(), tolerance=tolerance)
             self.fc = self.fc[idxmin:idxmax]
@@ -391,14 +397,14 @@ def gaver_stehfest_coefficients(N):
             tmpv += numerator/denominator
         v[i-1] = (-1)**(i + N/2)*tmpv
 
-    return torch.from_numpy(v+0j)
+    return torch.from_numpy(v)
 
 class invLaplace:
     """ Inverse laplace transform using Gaver-Stehfest method.
         see https://dl.acm.org/doi/10.1145/361953.361969
         Algorithm 368: Numerical inversion of laplace transforms
     """
-    def __init__(self, func, n_coefficients=8, device=None):
+    def __init__(self, func, n_coefficients=16, device=None):
         #8 coefficient is more stable than 16 for current implementation. not sure why this is.
 
         assert n_coefficients % 2 == 0, "Gaver-stehfest method requires an even number of coefficients"
@@ -417,8 +423,14 @@ class invLaplace:
         # ntimes = t.shape[-1]
 
         q = (c.log2 / t)[:, None]
-        res1 = q[0,:]*self.func(q[0,:]*self.i)@self.v
-        res = torch.zeros(t.shape+res1.shape, dtype=res1.dtype, device=self.device)
+        respt1 = self.func(q[0,:]*self.i)
+        if respt1.dtype != self.v.dtype:
+            self.v = self.v.to(respt1.dtype)
+            
+        res1 = q[0,:]*respt1@self.v
+        res = torch.zeros(t.shape+res1.shape, dtype=respt1.dtype, device=self.device)
+        #if respt1.dtype==torch.complex128:
+
         res[0] = res1
         for i_t in range(1, t.shape[-1]):
             res[i_t] = q[i_t,:]*self.func(q[i_t,:]*self.i)@self.v

@@ -234,6 +234,7 @@ class Inversion:
         ax.set_yticks(tick_pos)
         ax.set_yticklabels(tick_lab)
         if cbar:
+            import matplotlib.pyplot as plt
             plt.colorbar(pcm, ax=ax, label='sensitivity factor')
         return ax
 

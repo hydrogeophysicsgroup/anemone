@@ -204,6 +204,15 @@ def test_invlaplace():
     assert torch.allclose(y1.real, y2.real), "inverse Laplace transform is performing poorly on 1/sqrt(s)<->1./sqrt(t*pi) analytical example"
 
     if running_as_main:
+        
+        import matplotlib.pyplot as plt
+        fig,axs = plt.subplots(1,2)
+        axs[0].loglog(t.numpy(), y2.numpy(), 'k-', label='analytical')
+        axs[0].loglog(t.numpy(), y1.numpy(), 'r--', label='laplace numeric')
+        axs[1].semilogx(t.numpy(), (y1.numpy()-y2.numpy())/y2.numpy(), 'k-', label='analytical')
+
+        plt.legend()
+        plt.show()        
         return t.numpy(), y1.numpy(), y2.numpy()
     
 def test_invlaplace_Hz_center_of_circular_loop_halfspace():
@@ -288,5 +297,6 @@ if __name__ == '__main__':
     # test_transforms_varying_samples_per_decades()
     # test_fourier()
     # test_spline_integration()
-    test_invlaplace_Hz_center_of_circular_loop_halfspace()
-    test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
+    test_invlaplace()
+    # test_invlaplace_Hz_center_of_circular_loop_halfspace()
+    # test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
