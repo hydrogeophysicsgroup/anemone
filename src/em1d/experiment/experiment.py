@@ -276,7 +276,7 @@ class Waveform:
         self.d2wdt2[1:-1] = torch.diff(slope)
         self.d2wdt2[0]    = slope[0]
         self.d2wdt2[-1]   = -slope[-1]
-        self.d2wdt2 = self.d2wdt2
+        self.d2wdt2 = self.d2wdt2.type(torch.DoubleTensor)
 
     def fourier_d2wdt2(self, f):
         FT = torch.exp(2j*torch.pi*f[..., :, None]*self.time[..., None, :])*self.d2wdt2[..., None, :]
