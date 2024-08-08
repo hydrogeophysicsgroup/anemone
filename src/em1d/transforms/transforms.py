@@ -191,8 +191,8 @@ def coefficient_bounds(coefficients, tolerance=1e-6):
     return bigdogs.min(), bigdogs.max()
 
 
-from functools import cache
-@cache
+from functools import lru_cache
+@lru_cache
 def hankel_coefficients(order, log10min, log10max, smp_per_decade):
     """the reason from wrapping this is to make the inputs hashable and therefore cachable"""
     lamda = 10**(np.arange(log10min*smp_per_decade, log10max*smp_per_decade+1)/smp_per_decade)
@@ -226,14 +226,6 @@ class Hankel:
         if range is not None:
             self._recenter_function(range)
             self.create_interpolator(range[0], range[1])
-
-        if isinstance(self, Hankel):
-            self.func_results = self.func(self.lamda)
-        
-            if range is not None:
-                self.create_interpolator(range[0], range[1])
-
-
     
     def _recenter_function(self, r_center):
         assert self.rcidx == 0, "recentering is only allowed once"
@@ -286,6 +278,8 @@ class Hankel:
         - HR (torch.Tensor): The computed values based on the range.
 
         """
+        if self.func_results is None:
+            self.func_results = self.func(self.lamda)
         if not isinstance(rmin, torch.Tensor): rmin = torch.tensor(rmin, device=self.device)
         if not isinstance(rmax, torch.Tensor): rmax = torch.tensor(rmax, device=self.device)
         imin = int(torch.floor(self.r_to_idx(rmin)) - 2)
@@ -319,7 +313,7 @@ class Hankel:
             self.r, self.resp = self.range(rmin, rmax)
             self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log)
         r = r if isinstance(r, torch.Tensor) else torch.tensor(r, device=self.device)
-        return self.interpfunc(r).to(self.device)
+        return self.interpfunc(r)#.to(self.device)
             
      
         
@@ -348,6 +342,7 @@ class Fourier(Hankel):
         if range is not None:
             self._recenter_function(range)
             self.create_interpolator(range[0], range[1])
+        
 
     def range(self, fmin, fmax):
         rout, Resp = self._range(fmin*c.sqrt_twopi, fmax*c.sqrt_twopi)
@@ -443,14 +438,15 @@ def passthrough(x):
     return x
 
 class CubicSpline:
-    def __init__(self, x, y, transform=passthrough):
+    def __init__(self, x, y, transform=passthrough, integrate=True):
         self.x = transform(x.to(y.device))
         self.y = y
-        self.compute_coefficients()
+        self.integrated=None
+        self.compute_coefficients(integrate=integrate)
         self.transform = transform
 
 
-    def compute_coefficients(self):
+    def compute_coefficients(self, integrate=True):
         x = self.x
         y = self.y
 
@@ -500,11 +496,13 @@ class CubicSpline:
         self.b = b
         self.c = c
         self.d = d
-        self.integrated = torch.cumsum(self.a*dx + 0.5*self.b*dx**2 + (1./3.)*self.c*dx**3 + 0.25*self.d*dx**4, axis=-1)
+        if integrate:
+            self.integrated = torch.cumsum(self.a*dx + 0.5*self.b*dx**2 + (1./3.)*self.c*dx**3 + 0.25*self.d*dx**4, axis=-1)
 
 
 
     def integrate(self, x_lower, x_upper, normalize=False):
+
         xt1 = self.transform(x_lower)
         ix1 = torch.searchsorted(self.x, xt1, side='right')-1
         dx = xt1-self.x[ix1]
