@@ -7,13 +7,16 @@ class EarthModel:
     def __init__(self, property_values, property_names, device=None, **kwargs):
         self.values       = property_values
         self.names        = property_names
-        self.lower_bounds = kwargs.get('lower_bounds', [-1.*np.ones_like(val)*np.inf for val in self.values])
-        self.upper_bounds = kwargs.get('upper_bounds', [ np.ones_like(val)*np.inf for val in self.values])
+        self.lower_bounds = kwargs.get('lower_bounds', [-1.*torch.ones_like(val)*torch.inf for val in self.values])
+        self.upper_bounds = kwargs.get('upper_bounds', [ torch.ones_like(val)*torch.inf for val in self.values])
         self.dim          = len(self.values[0].shape)
-        self.ptypes       = []
+        self.pslice       = []
+        self.pshape       = []
+
         counter=0
         for val in self.values:
-            self.ptypes.append(slice(counter, counter+len(val.flatten())))
+            self.pslice.append(slice(counter, counter+len(val.flatten())))
+            self.pshape.append(val.shape)
             counter += len(val.flatten())
         self.lbnds = self.vectorize(self.lower_bounds)
         self.ubnds = self.vectorize(self.upper_bounds)
@@ -26,6 +29,7 @@ class EarthModel:
                     for i, v in enumerate(var):
                         if torch.is_tensor(v):
                             var[i] = v.to(device)
+        self.n_params = len(self.vec)
 
     
     @property
@@ -34,17 +38,14 @@ class EarthModel:
     
     @staticmethod
     def vectorize(list_of_arrays):
-        return np.concatenate([v.flatten() for v in list_of_arrays])
+        return torch.concatenate([v for v in list_of_arrays])
 
-    @staticmethod
-    def modelize(mvec):
-        assert len(mvec) == len(self.vec), 'incorrect number of parameters in update vector'
+    def modelize(self, mvec):
+        assert len(mvec) == self.n_params, 'incorrect number of parameters in update vector'
         i_m = 0
         values = []
-        for i_p in range(len(self.values)):
-            shp = self.values[i_p].shape
-            values.append(vec[i_m:i_m+len(self.values[i_p].flatten())].reshape(shp))
-            i_m += len(values[-1].flatten())
+        for pslice,pshape in zip(self.pslice, self.pshape):
+            values.append(mvec[pslice].reshape(pshape+(-1,)).squeeze())
         return values
 
     def make_physical(self, mvec):
@@ -112,6 +113,21 @@ class FewLayerModel(EarthModel):
     def make_physical(self,mvec):
         new_mvec = torch.clip(mvec, self.lbnds, self.ubnds)
         return new_mvec
+    
+    def plot(self, ax=None, **kwargs):
+        if ax is None:
+            from matplotlib.pyplot import subplots
+            fig,ax = subplots()
+        z1 = np.cumsum(self.values[1].numpy())
+        z2 = np.zeros((len(z1)+1,2))
+        z2[1:,0]=z1
+        z2[:-1,1]=z1
+        z2[-1,1] = z1.max()*1.5
+        v = np.repeat(self.values[0].numpy(), 2).T
+        
+        ax.plot(v.flatten(), z2.flatten(), **kwargs)
+        return ax
+
 
 class SmoothModel(EarthModel):
     def __init__(self, sigma, thick, device=None):
@@ -144,18 +160,12 @@ class Inversion:
         self.data_observed    = data_observed
         self.data_error       = data_error
         self.model            = starting_model
-        self.forward_operator = forward_operator
+        self.forward = forward_operator
         self.result        = None
         self.nM = len(self.m)
         self.nD = len(data_observed)
         self.recip_error_squared = 1./self.data_error**2
         self.log=logger
-
-
-    def forward(self, *args):
-        if len(args)==1: mvec = args[0]
-        else:            mvec = self.m*1.
-        return self.forward_operator(mvec)
 
     @property
     def m(self):
@@ -185,8 +195,7 @@ class Inversion:
         return inv( G.T @ np.diag(1./self.data_error) @ G )
 
     def mforward(self, mvec):
-        sigma,thick = self.model.modelize(mvec)
-        return self.forward_operator(sigma, thick)
+        return self.forward(*self.model.modelize(mvec))
 
     @property
     def stop_inversion(self):
@@ -196,6 +205,8 @@ class Inversion:
             self.log('misfit change is less than 1e-3')
             return True
         if self.misfits[-1]<0.5:
+            return True
+        if self.misfits[-1]>self.misfits[-2]:
             return True
         if self.iteration>=self.iter_cap:
             self.log('reached iteration cap..')
@@ -265,7 +276,8 @@ class Inversion:
                 max_diag = torch.max(torch.diag(GtG))/diag_normalizer
                 
             else:
-                mvec -= dM*0.9
+                mvec -= dM
+                break#*0.9
                 NDamp += 2
 
             damping_attempts = 0
@@ -304,10 +316,11 @@ class Inversion:
             data_predicted     = self.mforward(mvec)
             self.misfits.append(self.misfit(data_predicted))
             NDamp += -1
-
             self.log("{:03d}\tmisfit:\t{:2.2f}".format(self.iteration, self.misfits[-1]))
                                 
         if self.iteration==iter_cap: self.log('reached iteration cap..')
         print('\n',self.iteration)
-        return mvec
+        mres = self.model.copy()
+        mres.values = mres.modelize(mvec)
+        return mres
 
