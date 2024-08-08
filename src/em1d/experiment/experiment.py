@@ -439,10 +439,10 @@ class DualMoment:
                     intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
 
-            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, range=(self.rmin, self.rmax), device=self.device)
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, range=(self.rmin, self.rmax), device=self.device, tolerance=1e-5)
             return -integrate_around_loop(self.source, self.receiver, hkl1)/(1j*omega.squeeze())
         
-        cbft = invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device)
+        cbft = invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device, tolerance=1e-6)
         
         dbdts = []
         for i in range(2):
@@ -536,12 +536,16 @@ class ForwardLaplace:
         self.filterfunc = filterfunc
         self.device = times.device
         if waveform is not None:
-            if self.waveform.time.max()<self.tmin:
-                self.tmin += -self.waveform.time.max()
+            self.tmin += -self.waveform.time.max()
             self.tmax += -self.waveform.time.min()
             waveform.time = waveform.time.to(self.device)
             waveform.amplitude = waveform.amplitude.to(self.device)
             waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
+            # defaults to 10 samples per decade...
+            self.t_eval = torch.logspace(torch.log10(self.tmin), torch.log10(self.tmax), int(6*np.log10(self.tmax/self.tmin)), dtype=torch.double)
+
+        else:
+            self.t_eval = self.times
         self.tolerance=tolerance
 
     def forward(self):
@@ -560,11 +564,11 @@ class ForwardLaplace:
                     intg /= -1j*omega.squeeze()                    
                 return torch.squeeze(intg/c.fourpi).real
             cbft = invLaplace(s_integrand, n_coefficients=16, device=self.device)
-            return cbft(self.times)
+            return cbft(self.t_eval)
 
         hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
         res = integrate_around_loop(self.source, self.receiver, hkl1)
-        cbft=CubicSpline(self.times, res, transform=torch.log10)
+        cbft=CubicSpline(self.t_eval, res, transform=torch.log10, integrate=False)
 
         if self.t_gatewidth is None:
             t = self.times
@@ -573,6 +577,7 @@ class ForwardLaplace:
             t_eval = t[:, None] - self.waveform.time[None, :]
             tshp = t_eval.shape
             t_eval = t_eval.reshape(-1)
+
             resp_step = cbft(t_eval).real.reshape(tshp)
             dbdt = resp_step @ self.waveform.d2wdt2
             if self.t_gatewidth is not None:
@@ -591,7 +596,7 @@ class ForwardLaplace:
         self.thick = (thickness + 0j).to(self.device)[...,None,None]
         return self.forward().real*c.mu0
 
-class FastForward:
+class ForwardLaplace:
     def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None):
         self.source = source
         self.receiver = receiver
@@ -602,7 +607,6 @@ class FastForward:
         self.rz = self.receiver.z
         self.pfield_dz = torch.abs(self.srcz-self.rz)
         self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)
-        self.sofr = None#self.source.s_of_r(self.receiver)
 
         self.waveform = waveform
         if t_gatewidth is not None:
@@ -623,13 +627,19 @@ class FastForward:
         self.filterfunc = filterfunc
         self.device = times.device
         if waveform is not None:
-            if self.waveform.time.max()<self.tmin:
-                self.tmin += -self.waveform.time.max()
+            self.tmin += -self.waveform.time.max()
             self.tmax += -self.waveform.time.min()
             waveform.time = waveform.time.to(self.device)
             waveform.amplitude = waveform.amplitude.to(self.device)
             waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
+            # defaults to 10 samples per decade...
+            self.t_eval = torch.logspace(torch.log10(self.tmin), torch.log10(self.tmax), int(6*np.log10(self.tmax/self.tmin)), dtype=torch.double)
+
+        else:
+            self.t_eval = self.times
         self.tolerance=tolerance
+        self.save={}
+
 
     def forward(self):
         def wvlngth_integrand(wave_length):
@@ -637,24 +647,32 @@ class FastForward:
             def s_integrand(s):
                 """ Hz from horizontal electric dipole. """
                 omega = -1j*s
-                tmp_u0 = u0(omega, lmb)
-                intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
-                intg *= lmb**2 / tmp_u0
-            
+                
+                if 'tmp_u0' not in self.save: 
+                    self.save['tmp_u0'] = u0(omega, lmb)
+                tmp_u0 = self.save['tmp_u0']
+
+                if 'pfield' not in self.save:
+                    self.save['pfield'] = (torch.exp(-tmp_u0*self.pfield_dz)*lmb**2 / tmp_u0 / c.fourpi)#.real
+                pfield = self.save['pfield']     
+
+                if 'sfield/rte' not in self.save:
+                    self.save['sfield/rte'] = torch.exp(-tmp_u0*self.sfield_dz)*lmb**2 / tmp_u0 / c.fourpi
+                sfield_rte = self.save['sfield/rte']
+
+                intg = pfield + rte(self.sigma, self.thick, omega, lmb)*sfield_rte
+
                 if self.filterfunc is not None:
                     intg *= self.filterfunc.omega_filter(omega)
                 if self.waveform is not None:
                     intg /= -1j*omega.squeeze()                    
-                return torch.squeeze(intg/c.fourpi).real
+                return torch.squeeze(intg).real
             cbft = invLaplace(s_integrand, n_coefficients=16, device=self.device)
-            return cbft(self.times)
+            return cbft(self.t_eval)
 
-        hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=self.tolerance)
-        rout,Hr = hkl1._range(self.rmin, self.rmax)
-        if self.sofr is None:
-            self.sofr = self.source.s_of_r(self.receiver, rout)
-        res = Hr @ self.sofr
-        cbft=CubicSpline(self.times, res, transform=torch.log10)
+        hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
+        res = integrate_around_loop(self.source, self.receiver, hkl1)
+        cbft=CubicSpline(self.t_eval, res, transform=torch.log10, integrate=False)
 
         if self.t_gatewidth is None:
             t = self.times
@@ -663,6 +681,7 @@ class FastForward:
             t_eval = t[:, None] - self.waveform.time[None, :]
             tshp = t_eval.shape
             t_eval = t_eval.reshape(-1)
+
             resp_step = cbft(t_eval).real.reshape(tshp)
             dbdt = resp_step @ self.waveform.d2wdt2
             if self.t_gatewidth is not None:
