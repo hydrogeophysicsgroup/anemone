@@ -387,8 +387,10 @@ class Forward:
     def __call__(self, sigma, thickness):
         if isinstance(sigma, np.ndarray): sigma = torch.from_numpy(sigma)
         if isinstance(thickness, np.ndarray): thickness = torch.from_numpy(thickness)
-        self.sigma = (sigma     + 0j).to(self.device)[...,None,None]
-        self.thick = (thickness + 0j).to(self.device)[...,None,None]
+        self.sigma = ((sigma+0j)[..., None, None]).to(self.device)
+        if sigma.ndim > thickness.ndim:
+            thickness = thickness[:, None]
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
         return self.forward().real*c.mu0
 
 class DualMoment:
@@ -421,7 +423,6 @@ class DualMoment:
                 waveform.amplitude = waveform.amplitude.to(self.device)
                 waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
             self.waveforms.append(waveform)
-
 
     def forward(self):
         def frq_integrand(f):
@@ -592,8 +593,10 @@ class ForwardLaplace:
     def __call__(self, sigma, thickness):
         if isinstance(sigma, np.ndarray): sigma = torch.from_numpy(sigma)
         if isinstance(thickness, np.ndarray): thickness = torch.from_numpy(thickness)
-        self.sigma = (sigma     + 0j).to(self.device)[...,None,None]
-        self.thick = (thickness + 0j).to(self.device)[...,None,None]
+        self.sigma = ((sigma+0j)[..., None, None]).to(self.device)
+        if sigma.ndim > thickness.ndim:
+            thickness = thickness[:, None]
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
         return self.forward().real*c.mu0
 
 class ForwardLaplace:
@@ -696,6 +699,8 @@ class ForwardLaplace:
     def __call__(self, sigma, thickness):
         if isinstance(sigma, np.ndarray): sigma = torch.from_numpy(sigma)
         if isinstance(thickness, np.ndarray): thickness = torch.from_numpy(thickness)
-        self.sigma = (sigma     + 0j).to(self.device)[...,None,None]
-        self.thick = (thickness + 0j).to(self.device)[...,None,None]
+        self.sigma = ((sigma+0j)[..., None, None]).to(self.device)
+        if sigma.ndim > thickness.ndim:
+            thickness = thickness[:, None]
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
         return self.forward().real*c.mu0
