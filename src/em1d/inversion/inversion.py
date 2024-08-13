@@ -139,9 +139,10 @@ class SmoothModel(EarthModel):
         self.thick = thick
     
     @classmethod
-    def starting_model(cls, n_layers, **kwargs):
-        sigma = (1./40)*torch.ones(n_layers)
-        thick = torch.logspace(-1, 1, n_layers-1)        
+    def starting_model(cls, n_layers, depth_bottom=150, rho=40, **kwargs):
+        sigma = (1./rho)*torch.ones(n_layers)
+        thick = torch.logspace(-1, 1, n_layers-1)
+        thick *= depth_bottom/thick.sum()
         return cls(sigma, thick, **kwargs)
     
     @staticmethod
