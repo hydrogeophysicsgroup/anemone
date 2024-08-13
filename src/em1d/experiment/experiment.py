@@ -361,9 +361,9 @@ class Forward:
 
         if self.waveform is not None:
             t_eval = t[:, None] - self.waveform.time[None, :]
-            tshp = t_eval.shape
-            t_eval = t_eval.reshape(-1)
-            resp_step = cbft(t_eval).real.reshape(tshp)
+#            tshp = t_eval.shape
+#           t_eval = t_eval.reshape(-1)
+            resp_step = cbft(t_eval).real#.reshape(tshp)
             dbdt = resp_step @ self.waveform.d2wdt2
             if self.t_gatewidth is not None:
                 cbft = CubicSpline(t, dbdt, transform=torch.log10)
@@ -576,10 +576,10 @@ class ForwardLaplace:
 
         if self.waveform is not None:
             t_eval = t[:, None] - self.waveform.time[None, :]
-            tshp = t_eval.shape
-            t_eval = t_eval.reshape(-1)
+            # tshp = t_eval.shape
+            # t_eval = t_eval.reshape(-1)
 
-            resp_step = cbft(t_eval).real.reshape(tshp)
+            resp_step = cbft(t_eval).real#.reshape(tshp)
             dbdt = resp_step @ self.waveform.d2wdt2
             if self.t_gatewidth is not None:
                 cbft = CubicSpline(t, dbdt, transform=torch.log10)

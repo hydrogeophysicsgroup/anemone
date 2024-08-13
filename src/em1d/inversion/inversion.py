@@ -59,7 +59,8 @@ class EarthModel:
 
     def H1d(self, values):
         H = np.eye(len(values))-np.eye(len(values), k=1)
-        return H[:-1]
+        #H = np.eye(len(values))-2*np.eye(len(values), k=1)+np.eye(len(values), k=2)
+        return H[:-2]
 
     def H2d(self, matrix):
         Hv = block_diag(*[self.H1d(matrix[i]) for i in range(len(matrix))])
@@ -154,6 +155,21 @@ class SmoothModel(EarthModel):
         new_mvec = torch.clip(mvec, self.lbnds, self.ubnds)
         return new_mvec
 
+    def plot(self, ax=None, **kwargs):
+        if ax is None:
+            from matplotlib.pyplot import subplots
+            fig,ax = subplots()
+        v,thk = self.modelize(self.vec)
+        z1 = np.cumsum(thk.numpy())
+        z2 = np.zeros((len(z1)+1,2))
+        z2[1:,0]=z1
+        z2[:-1,1]=z1
+        z2[-1,1] = z1.max()*1.5
+        v = np.repeat(self.values[0].numpy(), 2).T
+        
+        ax.plot(v.flatten(), z2.flatten(), **kwargs)
+        return ax
+
 class Inversion:
     def __init__(self, data_observed, data_error, starting_model,  forward_operator, logger=print, device=None):
         """Create an inversion object, the necessary """
@@ -206,7 +222,7 @@ class Inversion:
             return True
         if self.misfits[-1]<0.5:
             return True
-        if self.misfits[-1]>self.misfits[-2]:
+        if self.misfits[-1]>self.misfits[-2] and self.misfits[-3]==min(self.misfits):
             return True
         if self.iteration>=self.iter_cap:
             self.log('reached iteration cap..')
@@ -250,7 +266,7 @@ class Inversion:
         return ax
 
     def invert(self, smoothness=0., iter_cap=10, step=1, verbose=True, **kwargs):
-        from torch.linalg import inv
+        from torch.linalg import inv, solve
         mvec = self.m*1.
         diag_normalizer = 5.e3
         max_step = 0.5
@@ -276,8 +292,7 @@ class Inversion:
                 max_diag = torch.max(torch.diag(GtG))/diag_normalizer
                 
             else:
-                mvec -= dM
-                break#*0.9
+                mvec -= dM*0.9
                 NDamp += 2
 
             damping_attempts = 0
@@ -290,8 +305,9 @@ class Inversion:
                 else:
                     damp = 0.
                 r_data = G.T @ Cdi @ (self.data_observed-data_predicted)
-                Aown = inv(GtG + torch.eye(len(mvec), device=mvec.device)*damp + HtH)
-                dM   = Aown @ r_data
+                Aown = GtG + torch.eye(len(mvec), device=mvec.device)*damp + HtH
+                dM   = solve(Aown, r_data)
+
                 dM_abs = torch.abs(dM)
                 
                 if torch.any(dM_abs>max_step):
