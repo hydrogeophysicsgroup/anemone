@@ -330,6 +330,13 @@ class Forward:
             waveform.amplitude = waveform.amplitude.to(self.device)
             waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
         self.tolerance=tolerance
+        if self.device is not None:
+            for attr_name in self.__dict__:
+                attr_value = getattr(self, attr_name)
+                if torch.is_tensor(attr_value):
+                    setattr(self, attr_name, attr_value.to(self.device))
+
+
 
     def forward(self):
         def frq_integrand(f):
@@ -372,7 +379,7 @@ class Forward:
         if self.t_gatewidth is not None:
             return cbft.integrate(self.t_st, self.t_end, normalize=True)
         else:
-            return cbft(self.times)
+            return cbft(self.times).T
 
     def compute_relstd(self, sigma, thickness, noise_slope_exponent=-0.5, noise_level_at_1ms=1e-8, moment=1, relative_noise=0.03):
         moment = self.source.area
@@ -504,7 +511,7 @@ def compute_relstd(t_gates, data_val, noise_slope_exponent=-0.5, noise_level_at_
     y = data_val*moment
     std_rel = abs_noise/y
     relstd_tot = torch.sqrt(std_rel**2 + relative_noise**2)
-    return relstd_tot
+    return relstd_tot.to(data_val.device)
 
 class ForwardLaplace:
     def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None):
