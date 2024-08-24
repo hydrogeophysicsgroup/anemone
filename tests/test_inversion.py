@@ -87,9 +87,9 @@ def test_inversion():
     m0 = FewLayerModel.starting_model(3)
     
 
-    inv = Inversion(dbdt+dbdt*torch.randn(len(dbdt))*dbdt_err, dbdt*dbdt_err, m0, fwr)
+    inv = Inversion(dbdt+dbdt*torch.randn(len(dbdt))*dbdt_err, dbdt*dbdt_err, m0, fwr, data_transform=torch.log10)
     dbdt_start = inv.mforward(m0.vec)
-    resmod = inv.invert(iter_cap=10)
+    resmod = inv.invert(iter_cap=7)
     dbdt_pred = inv.mforward(resmod.vec)
 
 
@@ -103,9 +103,9 @@ def test_inversion():
         m0.plot(ax=axs[0], linestyle=':', color='k')
 
 
-        axs[1].loglog(t.numpy(), inv.data_observed.numpy())
-        axs[1].loglog(t.numpy(), dbdt_pred.numpy())
-        axs[1].loglog(t.numpy(), dbdt_start.numpy(), 'k:')        
+        axs[1].loglog(t.numpy(), 10**inv.data_observed.numpy())
+        axs[1].loglog(t.numpy(), 10**dbdt_pred.numpy())
+        axs[1].loglog(t.numpy(), 10**dbdt_start.numpy(), 'k:')        
 
         plt.show()    
     assert inv.misfits[-1] < 1, "misfit is not below one."

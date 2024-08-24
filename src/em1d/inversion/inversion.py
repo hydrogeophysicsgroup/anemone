@@ -246,7 +246,7 @@ class Inversion:
         """Create an inversion object, the necessary """
         self.data_transform = data_transform
         self.data_observed    = self.data_transform(data_observed)
-        self.data_error       = self.data_transform(data_error)
+        self.data_error       = torch.abs(self.data_transform(data_observed+data_error)-self.data_transform(data_observed-data_error))
         self.model            = starting_model
         self.forward = forward_operator
         self.result        = None
