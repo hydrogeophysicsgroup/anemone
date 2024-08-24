@@ -121,7 +121,7 @@ def test_inversion_multi_model():
     
 
     gpu = torch.device('cuda:0')
-    fwr = Forward(tx, rx, t.to(gpu), waveform=Waveform.example(), tolerance=1e-4)
+    fwr = Forward(tx, rx, t.to(gpu), waveform=Waveform.example(), tolerance=1e-5)
     print(fwr.device)
     
     z = np.linspace(0, np.pi, 31)
@@ -134,14 +134,7 @@ def test_inversion_multi_model():
     assert torch.allclose(sm,sigma), 'something is not right with the model'
     dbdt = fwr(sm,tm)
 
-    print('data device: ' + str(dbdt.device))
-
-
-    print(dbdt.shape)
     n_data = len(dbdt.T.flatten())
-
-    # def transform(d):
-    #     return d.reshape((n_data,-1)).T.squeeze()
 
     def transform(d):
         return d.reshape((-1,n_data)).squeeze()
@@ -154,7 +147,7 @@ def test_inversion_multi_model():
     dbdt_obs = dbdt + dbdt*dbdt_err*torch.clamp(torch.randn(dbdt.shape,device=gpu), -1,1)/2
 
 
-    inv = Inversion(dbdt_obs, dbdt*dbdt_err5, m_start, fwr, data_transform=transform)
+    inv = LCI(dbdt_obs, dbdt*dbdt_err5, m_start, fwr, data_transform=transform)
     invm1 = inv.m*1.
     invm1[20:25] *= 2.
     dbdt_flat0 = inv.mforward(inv.m)
@@ -207,5 +200,5 @@ def test_inversion_multi_model():
 
 if __name__ == '__main__':
     # test_model_smoothing_constraint()
-    # test_inversion_multi_model()
-    test_inversion()
+    test_inversion_multi_model()
+    # test_inversion()

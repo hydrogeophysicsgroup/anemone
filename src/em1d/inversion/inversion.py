@@ -260,8 +260,6 @@ class Inversion:
             attr_value = getattr(self, attr_name)
             if torch.is_tensor(attr_value):
                 setattr(self, attr_name, attr_value.to(self.device))
-        
-        
 
     @property
     def m(self):
@@ -419,3 +417,26 @@ class Inversion:
         mres.values = mres.modelize(mvec)
         return mres
 
+    
+class LCI(Inversion):
+    def jacobian(self, mvec):
+        n_mods = self.model.n_models
+        n_layers = self.model.n_layers
+        c_data = self.mforward(mvec)
+        n_data = int(len(c_data)/n_mods)
+        Gt = torch.zeros(mvec.shape+c_data.shape, device=c_data.device, dtype=torch.double)
+
+        dm   = mvec*self.jac_perturbation_fraction
+        dm[dm==0] = self.jac_perturbation_fraction
+        
+        dm_mat = torch.zeros(mvec.shape+(n_layers,), device=c_data.device)
+        for i in range(n_mods):
+            dm_mat[i*n_layers:(i+1)*n_layers] = torch.diag(dm[i*n_layers:(i+1)*n_layers])
+        
+        m_pert    = dm_mat + mvec[:, None]
+        d_data    = self.mforward(m_pert.T)
+        for i in range(n_mods):
+            Gt[i*n_layers:(i+1)*n_layers, i*n_data:(i+1)*n_data] = d_data[:, i*n_data:(i+1)*n_data]-c_data[i*n_data:(i+1)*n_data]
+        Gt /= dm[:, None]
+
+        return Gt.T    
