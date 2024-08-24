@@ -283,7 +283,7 @@ class Inversion:
         
         m_pert    = torch.diag(dm) + mvec[:, None]
         c_data    = self.mforward(mvec)
-        d_data    = self.mforward(m_pert.T)
+        d_data    = self.mforward(m_pert)#.T)
         Gt = (d_data - c_data) / dm[:, None]
         return Gt.T
 

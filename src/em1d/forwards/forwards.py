@@ -88,7 +88,7 @@ class Forward:
         if self.t_gatewidth is not None:
             return cbft.integrate(self.t_st, self.t_end, normalize=True)
         else:
-            return cbft(self.times).T
+            return cbft(self.times)#.T
 
     def compute_relstd(self, sigma, thickness, noise_slope_exponent=-0.5, noise_level_at_1ms=1e-8, moment=1, relative_noise=0.03):
         moment = self.source.area

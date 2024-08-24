@@ -71,7 +71,8 @@ def test_inversion_noise_free():
     assert inv.misfits[-1] < 1, "misfit is not below one."
         
 def test_inversion():
-    from em1d.experiment import Forward, Loop, Receiver, compute_relstd
+    from em1d.experiment import Loop, Receiver, compute_relstd
+    from em1d.forwards import Forward
     tx = Loop.square(25)
     rx = Receiver()
     t = torch.logspace(-5, -3.5, 16, dtype=torch.double)
@@ -112,7 +113,8 @@ def test_inversion():
 def test_inversion_multi_model():
     import matplotlib.pyplot as plt
 
-    from em1d.experiment import Forward, Loop, Receiver, compute_relstd, Waveform
+    from em1d.experiment import Loop, Receiver, compute_relstd, Waveform
+    from em1d.forwards import Forward
     tx = Loop.square(25)
     rx = Receiver()
     t = torch.logspace(-5, -3.5, 16, dtype=torch.double)
@@ -205,4 +207,5 @@ def test_inversion_multi_model():
 
 if __name__ == '__main__':
     # test_model_smoothing_constraint()
-    test_inversion_multi_model()
+    # test_inversion_multi_model()
+    test_inversion()
