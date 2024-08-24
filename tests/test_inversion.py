@@ -6,7 +6,8 @@ def test_default_model_class():
 
 
 def test_inversion_noise_free():
-    from em1d.experiment import Forward, Loop, Receiver, compute_relstd
+    from em1d.experiment import Loop, Receiver, compute_relstd
+    from em1d.forwards import Forward
     tx = Loop.square(25)
     rx = Receiver()
     t = torch.logspace(-5, -3, 16, dtype=torch.double)

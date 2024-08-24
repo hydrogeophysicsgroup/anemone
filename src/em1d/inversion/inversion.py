@@ -219,7 +219,7 @@ class Inversion:
         if self.iteration<=1:
             return False
         if (abs(self.misfits[-2]-self.misfits[-1]) / self.misfits[-1]) < 1e-2 and self.misfits[-1]<1:
-            self.log('misfit change is less than 1e-3')
+            self.log('misfit change is less than 1e-2')
             return True
         if self.misfits[-1]<0.5:
             return True
@@ -307,6 +307,7 @@ class Inversion:
                     damp = 0.
                 r_data = G.T @ Cdi @ (self.data_observed-data_predicted)
                 Aown = GtG + torch.eye(len(mvec), device=mvec.device)*damp + HtH
+                # dM = 
                 dM   = solve(Aown, r_data)
 
                 dM_abs = torch.abs(dM)
