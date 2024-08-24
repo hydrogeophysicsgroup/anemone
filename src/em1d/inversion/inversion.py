@@ -384,11 +384,9 @@ class Inversion:
                 else:
                     damp = 0.
                 r_data = G.T @ Cdi @ (self.data_observed-data_predicted)
-                Aown = (GtG + torch.eye(len(mvec), device=mvec.device)*damp + HtH)
-                dM = solve(Aown, r_data)
-                # # Aown = inv(GtG)
-                # dM   = Aown @ r_data
-                # test_damping=False
+                Aown = GtG + torch.eye(len(mvec), device=mvec.device)*damp + HtH
+                dM   = solve(Aown, r_data)
+
                 dM_abs = torch.abs(dM)
                 
                 if torch.any(dM_abs>self.max_step):
