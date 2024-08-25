@@ -114,22 +114,38 @@ def test_inversion_multi_model():
     import matplotlib.pyplot as plt
 
     from em1d.experiment import Loop, Receiver, compute_relstd, Waveform
-    from em1d.forwards import Forward
+    from em1d.forwards import Forward, ForwardLaplace
     tx = Loop.square(25)
     rx = Receiver()
     t = torch.logspace(-5, -3.5, 16, dtype=torch.double)
     
 
-    gpu = torch.device('cuda:0')
-    fwr = Forward(tx, rx, t.to(gpu), waveform=Waveform.example(), tolerance=1e-5)
+    gpu = torch.device('cuda:3')
+    fwr = ForwardLaplace(tx, rx, t.to(gpu), waveform=Waveform.example(), tolerance=1e-4)
     print(fwr.device)
     
-    z = np.linspace(0, np.pi, 31)
-    x = np.linspace(0, np.pi, 5)
-    rho = 10**np.abs((np.cos(x[None, :])-np.sin(z[:,None]))+2)
+    n_layers = 31
+    thick = torch.logspace(-1, 1, n_layers-1).to(gpu)
+
+
+    z = np.arange(n_layers)[:,None]
+    x = np.arange(200)[None,:]
+
+    rho = 300*np.ones_like(z+x)
+    rho[(0.03*x-0.75*z+10)>0] = 10
+    rho[(0.075*x-1.25*z+5)>0] = 40
+    # rho[-5:,:] = 300
+    
+    # rho[(x+0.5*z+25)>=45] = 10.
+    # rho[(x+0.5*z>45)*(x+0.5*z+25<45)] = 200.
+    
+#    rho = 10**np.abs((np.cos(x[None, :])-np.sin(z[:,None]))+2)
     sigma = torch.from_numpy(1./rho).to(gpu)
     thick = torch.logspace(-1, 1, len(z)-1).to(gpu)
     m_true = SmoothModels(sigma, thick, device=gpu)
+    # fig,axs = plt.subplots(2,1,sharex=True, sharey=True)
+    m_true.plot(vmin=1, vmax=2.5, cmap='turbo')
+    plt.show()
     sm,tm = m_true.modelize(m_true.vec)
     assert torch.allclose(sm,sigma), 'something is not right with the model'
     dbdt = fwr(sm,tm)
@@ -158,16 +174,16 @@ def test_inversion_multi_model():
     # plt.plot(dbdt_flat1.numpy())
     # plt.show()
 
-    res_mod = inv.invert(smoothness=100., iter_cap=20)
-    fig,axs = plt.subplots(1,2)
-    m_true.plot(ax=axs[0], vmin=-3, vmax=0)
-    res_mod.plot(ax=axs[1], vmin=-3, vmax=0)
+    res_mod = inv.invert(smoothness=2e3, iter_cap=20)
+    fig,axs = plt.subplots(2,1,sharex=True, sharey=True)
+    m_true.plot(ax=axs[0], vmin=1, vmax=2.5, cmap='turbo')
+    res_mod.plot(ax=axs[1], vmin=1, vmax=2.5, cmap='turbo')
     # mtrue = FewLayerModel(1./torch.tensor([140, 50, 200]), torch.tensor([20, 40]))
     dpred = fwr(*res_mod.modelize(res_mod.vec))
-    plt.figure()
-    plt.loglog(fwr.times.cpu().numpy(), np.abs(dbdt_obs.cpu().numpy()).T, '|-')
-    plt.loglog(fwr.times.cpu().numpy(), np.abs(dpred.cpu().numpy()).T)
-    plt.show()
+    # plt.figure()
+    # plt.loglog(fwr.times.cpu().numpy(), np.abs(dbdt_obs.cpu().numpy()).T, '|-')
+    # plt.loglog(fwr.times.cpu().numpy(), np.abs(dpred.cpu().numpy()).T)
+    # plt.show()
 
     # dbdt = fwr(*mtrue.values)
     # dbdt_err = compute_relstd(t, dbdt, moment=tx.area)
