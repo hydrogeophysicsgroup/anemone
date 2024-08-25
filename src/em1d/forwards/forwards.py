@@ -237,6 +237,11 @@ class ForwardLaplace(Forward):
             self.t_eval = self.times
         self.tolerance=tolerance
         self.save={}
+        if self.device is not None:
+            for attr_name in self.__dict__:
+                attr_value = getattr(self, attr_name)
+                if torch.is_tensor(attr_value):
+                    setattr(self, attr_name, attr_value.to(self.device))              
 
 
     def forward(self):
@@ -269,7 +274,7 @@ class ForwardLaplace(Forward):
             return cbft(self.t_eval)
 
         hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
-        res = integrate_around_loop(self.source, self.receiver, hkl1)
+        res = integrate_around_loop(self.source, self.receiver, hkl1).T
         cbft=CubicSpline(self.t_eval, res, transform=torch.log10, integrate=False)
 
         if self.t_gatewidth is None:
@@ -277,10 +282,10 @@ class ForwardLaplace(Forward):
 
         if self.waveform is not None:
             t_eval = t[:, None] - self.waveform.time[None, :]
-            tshp = t_eval.shape
-            t_eval = t_eval.reshape(-1)
+            # tshp = t_eval.shape
+            # t_eval = t_eval.reshape(-1)
 
-            resp_step = cbft(t_eval).real.reshape(tshp)
+            resp_step = cbft(t_eval).real
             dbdt = resp_step @ self.waveform.d2wdt2
             if self.t_gatewidth is not None:
                 cbft = CubicSpline(t, dbdt, transform=torch.log10)
