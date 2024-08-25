@@ -65,6 +65,8 @@ class EarthModel:
     def H2d(self, matrix):
         Hv = block_diag(*[self.H1d(matrix[:, i]) for i in range(matrix.shape[1])])
         Hh = np.eye(len(matrix.flatten())) - np.eye(len(matrix.flatten()), k=len(matrix[0]))
+        norm = Hh.sum(1)
+        Hh = Hh[norm==0]
         return np.vstack((Hv, 0.1*Hh))
     
     def update_model(self, m):
@@ -226,8 +228,9 @@ class SmoothModels(EarthModel):
         v,thk = self.modelize(self.vec)
         z1 = np.insert(np.cumsum(thk.cpu().numpy()), 0,0)
         xdist = np.arange(v.shape[1])
-        pcm=ax.pcolor(xdist, z1, np.log10(v.cpu().numpy()), **kwargs)
+        pcm=ax.pcolor(xdist, z1, np.log10(1./v.cpu().numpy()), **kwargs)
         plt.colorbar(pcm)
+        ax.set_ylim(z1.max(), z1.min())
         return ax
 
 def passthrough(d):
