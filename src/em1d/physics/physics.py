@@ -54,7 +54,7 @@ def halfspace_horizontal_electric_dipole(sigma, omega, r):
         Returns:
             z-component of the magnetic field
     """
-    raise UserWarning("Hz from a horizontal electric dipole over a halfspace should be confirmed.\nUse at your own risk.")
+    UserWarning("Hz from a horizontal electric dipole over a halfspace should be confirmed.\nUse at your own risk.")
     k = calc_wavenumber(sigma, omega)
 
     Hz = 3 - (3 + 3j*k*r - (r*k)**2)*torch.exp(-1j*k*r)
@@ -208,3 +208,12 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=c.mu0, eps
 
     rtm = (imp_freespace - imp_boundary[0]) / (imp_freespace + imp_boundary[0])
     return rtm
+
+def colecole(rho_o, m, tau, c, omega):
+    """equation 1 from Pelton et al. 1978
+    """
+    tmp = 1.+(1j*omega*tau)**c
+    tmp = 1. - 1./tmp
+    tmp = 1. - m*tmp
+    rho = rho_o*tmp
+    return rho

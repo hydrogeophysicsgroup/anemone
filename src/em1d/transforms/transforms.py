@@ -410,7 +410,7 @@ class invLaplace:
             self.v = self.v.to(device)
         else:
             self.device = self.v.device
-        self.i = torch.arange(n_coefficients)+1
+        self.i = torch.arange(n_coefficients, device=self.device)+1
         self.n_coefficients = n_coefficients
         
 
