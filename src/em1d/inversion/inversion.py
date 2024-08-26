@@ -31,6 +31,13 @@ class EarthModel:
                             var[i] = v.to(device)
         self.n_params = len(self.vec)
 
+    @property
+    def mod(self):
+        """ the reason for return modelize of the vector representation is to accomodate models with fixed parameters
+            the many layer smooth models for example have fixed thicknesses, so modelize function will return the thickness as well.
+            if self.values is used, the thickness will not be included.
+        """
+        return self.modelize(self.vec)
     
     @property
     def vec(self):
@@ -91,6 +98,28 @@ class EarthModel:
     def copy(self):
         from copy import deepcopy
         return deepcopy(self)
+    
+    def plot(self, axs=None, **kwargs):
+        if 'thickness' in self.names:
+            thk = self.values[self.names.index('thickness')]
+        else:
+            thk = self.thick
+        if axs is None:
+            from matplotlib.pyplot import subplots
+            fig,axs = subplots(1,4, sharey=True)
+        for v,ax,pname in zip(self.values, axs, self.names):
+            z1 = np.cumsum(thk.numpy())
+            z2 = np.zeros((len(z1)+1,2))
+            z2[1:,0]=z1
+            z2[:-1,1]=z1
+            z2[-1,1] = z1.max()*1.5
+            v2 = np.repeat(v.numpy(), 2).T
+            
+            ax.plot(v2.flatten(), z2.flatten(), **kwargs)
+            ax.set_title(pname)
+        axs[0].set_ylim(z2.max(), z2.min())
+        axs[0].set_ylabel('depth [m]')
+        return axs    
 
 
 class FewLayerModel(EarthModel):
@@ -118,6 +147,7 @@ class FewLayerModel(EarthModel):
 
     def modelize(self, mvec):
         return 10**mvec[:self.n_layers], 10**mvec[self.n_layers:]
+    
     
     def make_physical(self,mvec):
         new_mvec = torch.clip(mvec, self.lbnds, self.ubnds)
@@ -185,6 +215,113 @@ class SmoothModel(EarthModel):
         
         ax.plot(v.flatten(), z2.flatten(), **kwargs)
         return ax
+    
+    
+class SmoothModelColeCole(EarthModel):
+    def __init__(self, rho, tau, m, C, thick, device=None):
+        lbnds = [torch.ones_like(rho)*1, torch.ones_like(tau)*1e-3, torch.ones_like(m)*1e-3, torch.ones_like(C)*1e-3]
+        ubnds = [torch.ones_like(rho)*2e3, torch.ones_like(tau)*1e3, torch.ones_like(m)*1e3, torch.ones_like(C)*1e3]
+        super().__init__([rho, tau, m, C], ['resistivity', 'tau', 'chargeability', 'c'], lower_bounds=lbnds, upper_bounds=ubnds, device=device)
+        self.n_layers = len(rho)
+        self.thick = thick
+        if device is not None:
+            for attr_name in self.__dict__:
+                attr_value = getattr(self, attr_name)
+                if torch.is_tensor(attr_value):
+                    setattr(self, attr_name, attr_value.to(device))
+        self.device=device
+
+    
+    @classmethod
+    def starting_model(cls, n_layers, depth_bottom=150, rho=40, tau=3e-4, m=0.2, C=0.6, **kwargs):
+        res = rho*torch.ones(n_layers)
+        tau = tau*torch.ones(n_layers)
+        m   = m*torch.ones(n_layers)
+        C   = C*torch.ones(n_layers)
+
+        thick = torch.logspace(-1, 1, n_layers-1)
+        thick *= depth_bottom/thick.sum()
+
+        return cls(res, tau, m, C, thick, **kwargs)
+    
+    
+    @staticmethod
+    def vectorize(list_of_arrays):
+        return torch.log10(torch.concat(list_of_arrays))
+
+    def modelize(self, mvec):
+        rho = 10**mvec[:self.n_layers]
+        tau = 10**mvec[self.n_layers:2*self.n_layers]
+        m   = 10**mvec[2*self.n_layers:3*self.n_layers]
+        c   = 10**mvec[3*self.n_layers:]
+        return rho, tau, m, c, self.thick
+    
+    def make_physical(self,mvec):
+        new_mvec = torch.clip(mvec, self.lbnds, self.ubnds)
+        return new_mvec
+
+    def plot(self, axs=None, **kwargs):
+        thk = self.thick
+        if axs is None:
+            from matplotlib.pyplot import subplots
+            fig,axs = subplots(1,4, sharey=True)
+        for v,ax,pname in zip(self.values, axs, self.names):
+            z1 = np.cumsum(thk.numpy())
+            z2 = np.zeros((len(z1)+1,2))
+            z2[1:,0]=z1
+            z2[:-1,1]=z1
+            z2[-1,1] = z1.max()*1.5
+            v2 = np.repeat(v.numpy(), 2).T
+            
+            ax.plot(v2.flatten(), z2.flatten(), **kwargs)
+            ax.set_title(pname)
+        axs[0].set_ylim(z2.max(), z2.min())
+        axs[0].set_ylabel('depth [m]')
+        return axs
+    
+class FewLayerColeCole(EarthModel):
+    def __init__(self, rho, tau, m, C, thick, device=None):
+        if not isinstance(rho, torch.Tensor):   rho   = torch.tensor(rho)
+        if not isinstance(tau, torch.Tensor):   tau   = torch.tensor(tau)
+        if not isinstance(m, torch.Tensor):     m     = torch.tensor(m)
+        if not isinstance(C, torch.Tensor):     C     = torch.tensor(C)
+        if not isinstance(thick, torch.Tensor): thick = torch.tensor(thick)
+
+        lbnds = [torch.ones_like(rho)*1, torch.ones_like(tau)*1e-3, torch.ones_like(m)*1e-3, torch.ones_like(C)*1e-3, torch.ones_like(thick)]
+        ubnds = [torch.ones_like(rho)*2e3, torch.ones_like(tau)*1e3, torch.ones_like(m)*1e3, torch.ones_like(C)*1e3, torch.ones_like(thick)*1e2]
+        super().__init__([rho, tau, m, C, thick], ['resistivity', 'tau', 'chargeability', 'c', 'thickness'], lower_bounds=lbnds, upper_bounds=ubnds, device=device)
+        self.n_layers = len(rho)
+        if device is not None:
+            for attr_name in self.__dict__:
+                attr_value = getattr(self, attr_name)
+                if torch.is_tensor(attr_value):
+                    setattr(self, attr_name, attr_value.to(device))
+        self.device=device
+
+    @classmethod
+    def starting_model(cls, n_layers, depth_bottom=150, rho=40, tau=3e-4, m=0.2, C=0.6, **kwargs):
+        res = rho*torch.ones(n_layers)
+        tau = tau*torch.ones(n_layers)
+        m = m*torch.ones(n_layers)
+        C = C*torch.ones(n_layers)
+
+        thick = torch.logspace(-1, 1, n_layers-1)
+        thick *= depth_bottom/thick.sum()
+
+        return cls(res, tau, m, C, thick, **kwargs)
+    
+    
+    @staticmethod
+    def vectorize(list_of_arrays):
+        return torch.log10(torch.concat(list_of_arrays))
+
+    def modelize(self, mvec):
+        rho   = 10**mvec[:self.n_layers]
+        tau   = 10**mvec[self.n_layers:2*self.n_layers]
+        m     = 10**mvec[2*self.n_layers:3*self.n_layers]
+        c     = 10**mvec[3*self.n_layers:4*self.n_layers]
+        thick = 10**mvec[4*self.n_layers:]
+        return rho, tau, m, c, thick
 
 class SmoothModels(EarthModel):
     def __init__(self, sigma, thick, device=None):
@@ -283,6 +420,7 @@ class Inversion:
         dm[dm==0] = self.jac_perturbation_fraction
         
         m_pert    = torch.diag(dm) + mvec[:, None]
+        print(m_pert.shape)
         c_data    = self.mforward(mvec)
         d_data    = self.mforward(m_pert)#.T)
         Gt = (d_data - c_data) / dm[:, None]
