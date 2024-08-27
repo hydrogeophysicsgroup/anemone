@@ -1,4 +1,4 @@
-from em1d import experiment
+from anemone import experiment
 
 import numpy as np
 

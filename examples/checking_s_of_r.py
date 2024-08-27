@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from em1d.experiment import Receiver, Loop
+from anemone.experiment import Receiver, Loop
 
 lp = Loop.square(500)
 

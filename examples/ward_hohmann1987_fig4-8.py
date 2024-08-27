@@ -1,9 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from em1d.transforms import BaseHankel, BaseFourier, CubicSpline
-from em1d.physics import refl_transverse_electric as rte, freespace_u0 as u0, mu0, hzdt_halfspace_center_circle_loop, calc_wavenumber
-from em1d.experiment import Loop, Receiver
+from anemone.transforms import BaseHankel, BaseFourier, CubicSpline
+from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0, mu0, hzdt_halfspace_center_circle_loop, calc_wavenumber
+from anemone.experiment import Loop, Receiver
 import torch
 twopi = torch.pi*2
 fourpi = 2*twopi

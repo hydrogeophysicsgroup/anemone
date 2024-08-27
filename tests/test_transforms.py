@@ -1,6 +1,6 @@
-from em1d import transforms
-from em1d import physics
-from em1d import constants as c
+from anemone import transforms
+from anemone import physics
+from anemone import constants as c
 import numpy as np
 import torch
 
@@ -103,7 +103,7 @@ def test_spline_integration():
         return x.numpy(), y1.numpy(), y2.numpy()    
 
 # def test_fourier():
-#     from em1d.transforms import Fourier
+#     from anemone.transforms import Fourier
 
 #     a = torch.tensor([1e-1], dtype=torch.complex128)
 #     def f1(x):
@@ -136,7 +136,7 @@ def test_spline_integration():
 
 
 def test_fourier_lowerfrequencies():
-    from em1d.transforms import Fourier
+    from anemone.transforms import Fourier
 
     a = torch.tensor([1], dtype=torch.complex128)
     def f1(x):
@@ -167,7 +167,7 @@ def test_fourier_lowerfrequencies():
 
 
 def test_invfourier_earlytimes():
-    from em1d.transforms import invFourier
+    from anemone.transforms import invFourier
 
     a = torch.tensor([1e-1], dtype=torch.complex128)
     def f1(x):
@@ -188,7 +188,7 @@ def test_invfourier_earlytimes():
         return t.numpy(), y1.numpy(), y2.numpy()
 
 def test_invlaplace():
-    from em1d.transforms import invLaplace
+    from anemone.transforms import invLaplace
 
     def f(t):
         return 1./torch.sqrt(torch.pi*t)

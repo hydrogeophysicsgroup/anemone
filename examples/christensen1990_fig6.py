@@ -1,4 +1,4 @@
-from em1d.transforms import optimized_coefficients_christensen1990
+from anemone.transforms import optimized_coefficients_christensen1990
 import matplotlib.pyplot as plt
 import numpy as np
 pi = np.pi

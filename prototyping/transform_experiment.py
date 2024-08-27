@@ -1,4 +1,4 @@
-from em1d.experiment import *
+from anemone.experiment import *
 import numpy as np
 
 t0 = np.geomspace(1e-6, 1e-2, 31)

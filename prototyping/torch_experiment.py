@@ -6,9 +6,9 @@ import torch
 
 import numpy as np
 import matplotlib.pyplot as plt
-from em1d.experiment import Loop, Receiver
-from em1d.transforms import Hankel, plot_loglog
-from em1d.physics import refl_transverse_electric as rte, freespace_u0 as u0
+from anemone.experiment import Loop, Receiver
+from anemone.transforms import Hankel, plot_loglog
+from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0
 
 two = torch.tensor([2], dtype=torch.complex64)
 

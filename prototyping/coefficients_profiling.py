@@ -1,4 +1,4 @@
-from em1d.transforms import hankel_coefficients
+from anemone.transforms import hankel_coefficients
 
 import cProfile, pstats, io
 from pstats import SortKey

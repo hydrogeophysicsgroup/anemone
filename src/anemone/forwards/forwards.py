@@ -1,7 +1,7 @@
-from em1d.transforms import Hankel, invFourier, CubicSpline, invLaplace
-from em1d.physics import refl_transverse_electric as rte, freespace_u0 as u0, colecole
-from em1d import constants as c
-from em1d.experiment import integrate_around_loop
+from anemone.transforms import Hankel, invFourier, CubicSpline, invLaplace
+from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0, colecole
+from anemone import constants as c
+from anemone.experiment import integrate_around_loop
 import torch
 from numpy import ndarray
 

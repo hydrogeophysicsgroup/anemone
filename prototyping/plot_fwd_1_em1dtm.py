@@ -161,12 +161,12 @@ print(f'simpeg single forward time: {timer()-bt} s')
 import torch
 torch.set_num_threads(4)
 
-from em1d.physics import mu0
-from em1d.experiment import Loop, Receiver
-from em1d.transforms import *
-# from em1d.transforms import _precalcHankel1
+from anemone.physics import mu0
+from anemone.experiment import Loop, Receiver
+from anemone.transforms import *
+# from anemone.transforms import _precalcHankel1
 
-from em1d.physics import refl_transverse_electric as rte, freespace_u0 as u0
+from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0
 
 # first lets compute Hz(R)
 #side = np.sqrt(np.pi*source_radius**2)

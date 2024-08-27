@@ -1,4 +1,4 @@
-from em1d.inversion import *
+from anemone.inversion import *
 
 def test_default_model_class():
     exp = EarthModel([torch.ones(1), torch.ones(1)], ['amp', 'rate'])
@@ -30,8 +30,8 @@ def test_model_smoothing_constraint():
 
 
 def test_inversion_noise_free():
-    from em1d.experiment import Loop, Receiver, compute_relstd
-    from em1d.forwards import Forward
+    from anemone.experiment import Loop, Receiver, compute_relstd
+    from anemone.forwards import Forward
     tx = Loop.square(25)
     rx = Receiver()
     t = torch.logspace(-5, -3.5, 16, dtype=torch.double)
@@ -48,7 +48,7 @@ def test_inversion_noise_free():
 
     inv = Inversion(dbdt, dbdt*dbdt_err, m0, fwr)
     dbdt_start = inv.mforward(m0.vec)
-    resmod = inv.invert(iter_cap=4)
+    resmod = inv.invert(iter_cap=15)
     dbdt_pred = inv.mforward(resmod.vec)
     
 
@@ -71,8 +71,8 @@ def test_inversion_noise_free():
     assert inv.misfits[-1] < 1, "misfit is not below one."
         
 def test_inversion():
-    from em1d.experiment import Loop, Receiver, compute_relstd
-    from em1d.forwards import Forward
+    from anemone.experiment import Loop, Receiver, compute_relstd
+    from anemone.forwards import Forward
     tx = Loop.square(25)
     rx = Receiver()
     t = torch.logspace(-5, -3.5, 16, dtype=torch.double)
@@ -113,14 +113,14 @@ def test_inversion():
 def test_inversion_multi_model():
     import matplotlib.pyplot as plt
 
-    from em1d.experiment import Loop, Receiver, compute_relstd, Waveform
-    from em1d.forwards import Forward, ForwardLaplace
+    from anemone.experiment import Loop, Receiver, compute_relstd, Waveform
+    from anemone.forwards import Forward, ForwardLaplace
     tx = Loop.square(25)
     rx = Receiver()
     t = torch.logspace(-5, -3.5, 16, dtype=torch.double)
     
 
-    gpu = torch.device('cuda:3')
+    gpu = torch.device('cpu')
     fwr = ForwardLaplace(tx, rx, t.to(gpu), waveform=Waveform.example(), tolerance=1e-4)
     print(fwr.device)
     
@@ -129,7 +129,7 @@ def test_inversion_multi_model():
 
 
     z = np.arange(n_layers)[:,None]
-    x = np.arange(200)[None,:]
+    x = np.arange(20)[None,:]
 
     rho = 300*np.ones_like(z+x)
     rho[(0.03*x-0.75*z+10)>0] = 10
@@ -144,8 +144,9 @@ def test_inversion_multi_model():
     thick = torch.logspace(-1, 1, len(z)-1).to(gpu)
     m_true = SmoothModels(sigma, thick, device=gpu)
     # fig,axs = plt.subplots(2,1,sharex=True, sharey=True)
-    m_true.plot(vmin=1, vmax=2.5, cmap='turbo')
-    plt.show()
+    if __name__ == '__main__':
+        m_true.plot(vmin=1, vmax=2.5, cmap='turbo')
+        plt.show()
     sm,tm = m_true.modelize(m_true.vec)
     assert torch.allclose(sm,sigma), 'something is not right with the model'
     dbdt = fwr(sm,tm)
@@ -175,11 +176,13 @@ def test_inversion_multi_model():
     # plt.show()
 
     res_mod = inv.invert(smoothness=2e3, iter_cap=20)
-    fig,axs = plt.subplots(2,1,sharex=True, sharey=True)
-    m_true.plot(ax=axs[0], vmin=1, vmax=2.5, cmap='turbo')
-    res_mod.plot(ax=axs[1], vmin=1, vmax=2.5, cmap='turbo')
+    if __name__ == '__main__':
+        fig,axs = plt.subplots(2,1,sharex=True, sharey=True)
+        m_true.plot(ax=axs[0], vmin=1, vmax=2.5, cmap='turbo')
+        res_mod.plot(ax=axs[1], vmin=1, vmax=2.5, cmap='turbo')
+        plt.show() 
     # mtrue = FewLayerModel(1./torch.tensor([140, 50, 200]), torch.tensor([20, 40]))
-    dpred = fwr(*res_mod.modelize(res_mod.vec))
+    #dpred = fwr(*res_mod.modelize(res_mod.vec))
     # plt.figure()
     # plt.loglog(fwr.times.cpu().numpy(), np.abs(dbdt_obs.cpu().numpy()).T, '|-')
     # plt.loglog(fwr.times.cpu().numpy(), np.abs(dpred.cpu().numpy()).T)
@@ -211,10 +214,11 @@ def test_inversion_multi_model():
     #     axs[1].loglog(t.numpy(), inv.data_observed.numpy())
     #     axs[1].loglog(t.numpy(), dbdt_pred.numpy())
     #     axs[1].loglog(t.numpy(), dbdt_start.numpy(), 'k:')        
-    plt.show()    
-    # assert inv.misfits[-1] < 1, "misfit is not below one."
+       
+    assert inv.misfits[-1] < 1, "misfit is not below one."
 
 if __name__ == '__main__':
     # test_model_smoothing_constraint()
-    test_inversion_multi_model()
+    # test_inversion_multi_model()
     # test_inversion()
+    test_inversion_noise_free()

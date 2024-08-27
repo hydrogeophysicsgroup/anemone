@@ -1,4 +1,4 @@
-from em1d import physics
+from anemone import physics
 import matplotlib.pyplot as plt
 import numpy as np
 import torch

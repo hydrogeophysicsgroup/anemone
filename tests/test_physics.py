@@ -1,5 +1,5 @@
-from em1d import transforms
-from em1d import physics
+from anemone import transforms
+from anemone import physics
 import numpy as np
 import torch
 
@@ -31,7 +31,7 @@ def test_frequency_response():
     assert np.allclose(hz, hz_analytical), "hankel transform results do not match analytical solution"
 
 def test_rte_convergence():
-    from em1d import constants as c
+    from anemone import constants as c
 
     print('it would be wise to expand the range the frequencies or adjust the conductivity so that it does not converge so fast')
     sigma = torch.tensor([100, 0.5, 0.1], dtype=torch.complex128)
@@ -62,7 +62,7 @@ def test_rte_convergence():
     assert np.allclose(rte_halfspace.numpy(), c_rte.numpy()), 'rte did not converge as expected'
 
 def test_rtm_convergence():
-    from em1d import constants as c
+    from anemone import constants as c
     sigma = torch.tensor([100, 0.5, 0.1], dtype=torch.complex128)
     omega = torch.tensor([1000], dtype=torch.complex128)*2*torch.pi
 

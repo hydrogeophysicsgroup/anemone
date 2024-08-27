@@ -1,4 +1,4 @@
-from em1d.experiment import Loop, Receiver, Forward, Waveform, ButterworthFilter, FilterChain
+from anemone.experiment import Loop, Receiver, Forward, Waveform, ButterworthFilter, FilterChain
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
