@@ -4,9 +4,9 @@ print(f'default number of threads {torch.get_num_threads()}')
 print(f'default number of interop threads {torch.get_num_interop_threads()}')
 torch.set_num_interop_threads(16)
 
-from em1d.experiment import Loop, Receiver
-from em1d.transforms import Hankel, Fourier, plot_loglog
-from em1d.physics import refl_transverse_electric as rte, freespace_u0 as u0
+from anemone.experiment import Loop, Receiver
+from anemone.transforms import Hankel, Fourier, plot_loglog
+from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0
 import matplotlib.pyplot as plt
 import numpy as np
 

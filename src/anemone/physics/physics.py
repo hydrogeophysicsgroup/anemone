@@ -6,7 +6,7 @@
 # the order of arguments will be sigma, omega, wavelength
 
 import torch
-from em1d import constants as c
+from anemone import constants as c
 
 
 def calc_zy(sigma, omega, epsilon=c.epsilon0, mu=c.mu0):

@@ -1,5 +1,5 @@
-from em1d import transforms
-from em1d import physics
+from anemone import transforms
+from anemone import physics
 
 import torch
 import matplotlib.pyplot as plt

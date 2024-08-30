@@ -1,8 +1,8 @@
 import torch
 
 def test_40x40_aarhusInv_stepoff():
-    from em1d.experiment import Loop, Receiver
-    from em1d.forwards import Forward
+    from anemone.experiment import Loop, Receiver
+    from anemone.forwards import Forward
     import torch
 
 
@@ -43,8 +43,8 @@ def test_40x40_aarhusInv_stepoff():
     assert torch.allclose(ainv_dbdt.real, dbdt.real, rtol=1e-2), "aarhus inv and pytorch forward do not match within 1/2 percent"
 
 def test_Laplace_40x40_aarhusInv_stepoff():
-    from em1d.experiment import Loop, Receiver
-    from em1d.forwards import ForwardLaplace
+    from anemone.experiment import Loop, Receiver
+    from anemone.forwards import ForwardLaplace
     import torch
 
 
@@ -85,8 +85,8 @@ def test_Laplace_40x40_aarhusInv_stepoff():
     assert torch.allclose(ainv_dbdt.real, dbdt.real, rtol=1e-2), "aarhus inv and pytorch forward do not match within 1/2 percent"
 
 def test_40x40_aarhusInv_stepoff_hankel_tolerance():
-    from em1d.experiment import Loop, Receiver
-    from em1d.forwards import Forward
+    from anemone.experiment import Loop, Receiver
+    from anemone.forwards import Forward
     import torch
 
 
@@ -128,8 +128,8 @@ def test_40x40_aarhusInv_stepoff_hankel_tolerance():
 
 
 def test_40x40_aarhusInv_piecewise_waveform():
-    from em1d.experiment import Loop, Receiver, Waveform
-    from em1d.forwards import Forward
+    from anemone.experiment import Loop, Receiver, Waveform
+    from anemone.forwards import Forward
     import torch
 
 
@@ -177,8 +177,8 @@ def test_40x40_aarhusInv_piecewise_waveform():
     assert torch.allclose(ainv_dbdt, dbdt, rtol=0.5e-2), "aarhus inv and pytorch forward do not match within 1/2 percent"
 
 def test_Laplace_40x40_aarhusInv_piecewise_waveform():
-    from em1d.experiment import Loop, Receiver, Waveform
-    from em1d.forwards import ForwardLaplace
+    from anemone.experiment import Loop, Receiver, Waveform
+    from anemone.forwards import ForwardLaplace
     import torch
 
 
@@ -226,8 +226,8 @@ def test_Laplace_40x40_aarhusInv_piecewise_waveform():
     assert torch.allclose(ainv_dbdt, dbdt, rtol=0.5e-2), "aarhus inv and pytorch forward do not match within 1/2 percent"
 
 def test_IPforward():
-    from em1d.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
-    from em1d.forwards import IPForward
+    from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
+    from anemone.forwards import IPForward
     sq = Loop.square(40)
     rx = Receiver()
     waveform = Waveform.example()
@@ -264,7 +264,7 @@ def test_IPforward():
        -4.377552e-09, -2.834261e-09, -1.834226e-09, -1.188674e-09,
        -7.686370e-10, -4.945201e-10, -3.173105e-10], dtype=torch.double)
     
-    dbdt = pyfwr(res, m0, tau, chg, thick)
+    dbdt = pyfwr(res, tau, m0, chg, thick)
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
@@ -288,6 +288,6 @@ def test_IPforward():
 
 
 if __name__ == '__main__':
-    #test_IPforward()
+    test_IPforward()
     #test_40x40_aarhusInv_stepoff()
-    test_Laplace_40x40_aarhusInv_piecewise_waveform()
+    # test_Laplace_40x40_aarhusInv_piecewise_waveform()

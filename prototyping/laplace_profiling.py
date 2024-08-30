@@ -1,5 +1,5 @@
-from em1d.experiment import *
-from em1d.transforms import invLaplace
+from anemone.experiment import *
+from anemone.transforms import invLaplace
 
 
 tx = Loop.square(40)

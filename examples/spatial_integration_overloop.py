@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from em1d.experiment import Loop, Receiver
-from em1d.transforms import Hankel
-from em1d.physics import refl_transverse_electric as rte, freespace_u0 as u0
+from anemone.experiment import Loop, Receiver
+from anemone.transforms import Hankel
+from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0
 # first lets compute Hz(R)
 lp = Loop.square(50)
 lp.x += 0.005156154881
@@ -28,8 +28,8 @@ int_hr = interp1d(np.log10(r), hr)
 
 def hr_interp(r):
     return int_hr(np.log10(r))
-from em1d.transforms import plot_loglog
-from em1d.experiment import getRz
+from anemone.transforms import plot_loglog
+from anemone.experiment import getRz
 fig,axs = plt.subplots()
 axs = plot_loglog(r, hr, ax=axs)
 axs.set_xscale('linear')

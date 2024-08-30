@@ -320,7 +320,7 @@ class Hankel:
 # instead of giving hz(t) from Hz(f) this is giving d Hz / dt (t)
 twopi = torch.pi*2.
 twopi_sqrt = twopi**(1/2)
-from em1d import constants as c
+from anemone import constants as c
 
 class Fourier(Hankel):
     """ A fourier transform for logarithmically sampled data. The implementation uses hankel transforms at the base.

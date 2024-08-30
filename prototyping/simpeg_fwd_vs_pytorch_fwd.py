@@ -88,7 +88,7 @@ source_list = [
     )
 ]
 
-from em1d.experiment import *
+from anemone.experiment import *
 
 # lp = Loop.square(6, z=20)
 # source_list = [
@@ -165,7 +165,7 @@ print(f'simpeg single forward time: {(timer()-bt)/n_forwards} s')
 
 import torch
 
-from em1d.experiment import Loop, Receiver, Forward
+from anemone.experiment import Loop, Receiver, Forward
 side = np.sqrt(np.pi*6**2)
 lp = Loop.square(side, z=20)
 rx = Receiver(z=20)

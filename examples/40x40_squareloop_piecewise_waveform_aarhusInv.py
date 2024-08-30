@@ -1,4 +1,4 @@
-from em1d.experiment import Loop, Receiver, Forward, Waveform
+from anemone.experiment import Loop, Receiver, Forward, Waveform
 import matplotlib.pyplot as plt
 import numpy as np
 import torch

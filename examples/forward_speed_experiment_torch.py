@@ -1,8 +1,8 @@
 import torch
 import matplotlib.pyplot as plt
-from em1d.experiment import Loop, Receiver, getRz
-from em1d.transforms import Hankel
-from em1d.physics import refl_transverse_electric as rte, freespace_u0 as u0
+from anemone.experiment import Loop, Receiver, getRz
+from anemone.transforms import Hankel
+from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0
 from numpy.linalg import norm
 
 # first lets compute Hz(R)
