@@ -297,6 +297,65 @@ class ForwardLaplace(Forward):
         else:
             return cbft(self.times)
 
+class DualMomentLaplace(DualMoment):
+    def __init__(self, source, receiver, times, filterfunc, waveforms, tolerance=None, t_smp_per_decade=6):
+        super().__init__(source, receiver, times, filterfunc, waveforms)
+        if waveforms is not None:
+            self.t_smp_per_decade = t_smp_per_decade
+            self.t_eval = torch.logspace(torch.log10(self.tmin), torch.log10(self.tmax), int(t_smp_per_decade*torch.log10(self.tmax/self.tmin)), dtype=torch.double)
+        else:
+            self.t_eval = torch.concatenate(self.times)
+        self.tolerance=tolerance
+        self.save={}
+        if self.device is not None:
+            for attr_name in self.__dict__:
+                attr_value = getattr(self, attr_name)
+                if torch.is_tensor(attr_value):
+                    setattr(self, attr_name, attr_value.to(self.device))              
+
+
+    def forward(self):
+        def wvlngth_integrand(wave_length):
+            lmb = wave_length[None, :, None]
+            def s_integrand(s):
+                """ Hz from horizontal electric dipole. """
+                omega = -1j*s
+                
+                if 'tmp_u0' not in self.save: 
+                    self.save['tmp_u0'] = u0(omega, lmb)
+                tmp_u0 = self.save['tmp_u0']
+
+                if 'pfield' not in self.save:
+                    self.save['pfield'] = (torch.exp(-tmp_u0*self.pfield_dz)*lmb**2 / tmp_u0 / c.fourpi)#.real
+                pfield = self.save['pfield']     
+
+                if 'sfield/rte' not in self.save:
+                    self.save['sfield/rte'] = torch.exp(-tmp_u0*self.sfield_dz)*lmb**2 / tmp_u0 / c.fourpi
+                sfield_rte = self.save['sfield/rte']
+
+                intg = pfield + rte(self.sigma, self.thick, omega, lmb)*sfield_rte
+
+                if self.filterfunc is not None:
+                    intg *= self.filterfunc.omega_filter(omega)
+                if self.waveforms is not None:
+                    intg /= -1j*omega.squeeze()                    
+                return torch.squeeze(intg).real
+            cbft = invLaplace(s_integrand, device=self.device)
+            return cbft(self.t_eval)
+
+        hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
+        res = integrate_around_loop(self.source, self.receiver, hkl1).T
+        cbft=CubicSpline(self.t_eval, res, transform=torch.log10, integrate=False)
+
+        dbdts = []
+        for i in range(2):
+            t = self.times[i]
+            t_eval = t[:, None] - self.waveforms[i].time[None, :]
+            resp_step = cbft(t_eval)
+            dbdt = resp_step.real @ self.waveforms[i].d2wdt2
+            dbdts.append(dbdt.T)
+        return torch.concatenate(dbdts).T    
+
 class IPForwardFD(IPForward):
     def __init__(self, source, receiver, freqs, waveform=None, filterfunc=None, tolerance=None):
         self.source = source
