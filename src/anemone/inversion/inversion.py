@@ -420,7 +420,6 @@ class Inversion:
         dm[dm==0] = self.jac_perturbation_fraction
         
         m_pert    = torch.diag(dm) + mvec[:, None]
-        print(m_pert.shape)
         c_data    = self.mforward(mvec)
         d_data    = self.mforward(m_pert)#.T)
         Gt = (d_data - c_data) / dm[:, None]
