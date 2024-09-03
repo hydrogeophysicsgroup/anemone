@@ -201,8 +201,8 @@ def box_filter(r, r_min, r_par_max):
     y *= torch.sign(r_par_max)
     return y
 
-def norm(tensor, axis=-1):
-    return torch.sqrt(torch.sum(tensor**2, axis=axis))
+def norm(tensor, axis=-1, keepdim=False):
+    return torch.sqrt(torch.sum(tensor**2, axis=axis, keepdim=keepdim))
 
 
 def getRz(P,Q):
@@ -230,37 +230,48 @@ def integrate_around_loop(lp, rx, hr):
     if 'radius' in dir(lp):
         return 2*c.pi*lp.radius*hr(lp.radius)
     else:
-
-        lp_xyz = lp.xyz - rx.xyz[None, ...]
         
-        HR = torch.zeros_like(hr(0.))
+        
+        if rx.xyz.numel()==3:
+            lp_xyz = lp.xyz - rx.xyz
+            hr_example = hr(0.)
+            HR = torch.zeros_like(hr_example).reshape((1,)+hr_example.shape)
+        else:
+            lp_xyz = lp.xyz[:, None, :]-rx.xyz[None,:,:]
+            hr_example = hr(torch.ones(len(rx.xyz)))
+            HR = torch.zeros_like(hr_example)
+            
+
         n_dipoles = 0
-        wire_length=0
+        wire_length= torch.zeros(len(rx.xyz))
         for i in range(len(lp)-1):
             Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
-            p1 = torch.einsum('...i,...i->...', Rz, lp_xyz[i])
-            p2 = torch.einsum('...i,...i->...', Rz, lp_xyz[i+1])
+
+            p1 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i])
+            p2 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i+1])
 
             p12 = p2-p1
-            tdist = norm(p12)
+            tdist = norm(p12, keepdim=True)
             p12 /= tdist
             cp = p1
-            cdist = 0
 
-            while cdist < tdist:
-                cR = norm(cp)
+            tdist = tdist.squeeze()
+            cdist = torch.zeros_like(tdist)
+
+            while torch.any(cdist < tdist):
+                still_to_go = cdist < tdist
+                cR = norm(cp[still_to_go])
                 ds = cR/15
-                if cdist+ds > tdist:
-                    ds = tdist-cdist
-                    cdist += cR/15
-                else:
-                    cdist += ds
-                wire_length+=ds
-                resp = hr(cR)
-                HR += -1*ds*cp[1]*resp/cR
-                cp += ds*p12
-                n_dipoles +=1
-        return HR
+                if torch.any(cdist[still_to_go]+ds > tdist[still_to_go]):
+                    go_back = cdist[still_to_go]+ds > tdist[still_to_go]
+                    ds[go_back] = (tdist-cdist)[still_to_go][go_back]
+                cdist[still_to_go]       += ds
+                wire_length[still_to_go] += ds
+                resp                      = hr(cR)
+                HR[..., still_to_go]     += -1*ds*cp[still_to_go, 1]*resp/cR
+                cp[still_to_go]          += (ds[:, None]*p12[still_to_go])
+                n_dipoles                += 1
+        return HR.T.squeeze()
 
 
 

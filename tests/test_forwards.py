@@ -35,7 +35,7 @@ def test_40x40_aarhusInv_stepoff():
         ax[0].legend()
         ax[0].set_aspect('equal')
 
-        ax[1].semilogx(times, 100*np.abs(dbdt.real-ainv_dbdt)/np.abs(ainv_dbdt))
+        ax[1].semilogx(times, 100*torch.abs(dbdt.real-ainv_dbdt)/torch.abs(ainv_dbdt))
         ax[1].set_ylabel('relative difference [%]')
 
         fig.suptitle('Test against AarhusInv 40x40 m^2 loop with stepoff waveform')
@@ -286,8 +286,38 @@ def test_IPforward():
         plt.show()
     assert torch.allclose(ainv_dbdt, dbdt, rtol=1e-2), "aarhus inv and pytorch forward do not match within 1 percent"
 
+def test_multireceiver_forward():
+    from anemone.experiment import Loop, Receiver
+    from anemone.forwards import Forward
+    import torch
+
+
+    times = torch.tensor([9.350e-06, 1.145e-05, 1.458e-05, 1.822e-05, 2.255e-05, 2.867e-05,
+        3.595e-05, 4.460e-05, 5.660e-05, 7.070e-05, 8.630e-05, 1.071e-04,
+        1.381e-04, 1.748e-04, 2.174e-04, 2.775e-04, 3.515e-04, 4.385e-04,
+        5.575e-04, 7.035e-04])
+
+    lp = Loop.square(4)
+    rx = Receiver(x=torch.linspace(-40, 40, 101))#, y=[-50,0,50])
+
+    rho = 40
+    sigma = 1/torch.tensor([rho,rho])
+    thick = torch.tensor([10])
+
+    fwr = Forward(lp, rx, times)
+    dbdt = fwr(sigma, thick)
+
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots()
+        ax.semilogy(rx.x, dbdt.real, 'C0.-', label='mforward')
+        ax.semilogy(rx.x, -dbdt.real, 'r.-', label='mforward')
+        plt.show()
+    assert (rx.x[:, None]+times[None, :]).shape == dbdt.shape, "dbdt shape is not correct"
+
 
 if __name__ == '__main__':
-    test_IPforward()
-    #test_40x40_aarhusInv_stepoff()
+#    test_IPforward()
+    # test_40x40_aarhusInv_stepoff()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
+    test_multireceiver_forward()

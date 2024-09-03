@@ -153,8 +153,7 @@ def test_inversion_multi_model():
 
     n_data = len(dbdt.T.flatten())
 
-    def transform(d):
-        return d.reshape((-1,n_data)).squeeze()
+
     dbdt_err = compute_relstd(fwr.times, dbdt)
     dbdt_err5 = compute_relstd(fwr.times, dbdt, relative_noise=0.05)
 

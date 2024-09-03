@@ -1,5 +1,5 @@
 from anemone import experiment
-
+import torch
 import numpy as np
 
 def test_minimum_distance():
@@ -20,5 +20,11 @@ def test_maximum_distance():
     rmax = lp.max_horizontal_distance(rx)
     assert rmax == np.sqrt(2*25**2), "maximum distance calculator in loop object is failing"
 
+def test_multireceiver():
+    rx = experiment.Receiver(x=[0, 100])
+    assert rx.x.shape == (2,), "receiver x cooridinates are not right"
+    assert torch.allclose(rx.xyz, torch.tensor([[0, 0, 0], [100, 0, 0]], dtype=torch.double)), "receiver coordinates are not right"
+
+
 if __name__ == '__main__':
-    test_minimum_distance()
+    test_multireceiver()

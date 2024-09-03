@@ -399,7 +399,7 @@ class Inversion:
         for attr_name in self.__dict__:
             attr_value = getattr(self, attr_name)
             if torch.is_tensor(attr_value):
-                setattr(self, attr_name, attr_value.to(self.device))
+                setattr(self, attr_name, attr_value.to(self.device).to(torch.double))
 
     @property
     def m(self):
@@ -420,7 +420,6 @@ class Inversion:
         dm[dm==0] = self.jac_perturbation_fraction
         
         m_pert    = torch.diag(dm) + mvec[:, None]
-        print(m_pert.shape)
         c_data    = self.mforward(mvec)
         d_data    = self.mforward(m_pert)#.T)
         Gt = (d_data - c_data) / dm[:, None]
@@ -539,10 +538,10 @@ class Inversion:
                 
             
             if damping_attempts==0 and self.iteration>1:
-                self.log('increased max step')
+                # self.log('increased max step')
                 self.max_step += 0.5
             elif damping_attempts==20:
-                self.log('decreased max step')
+                # self.log('decreased max step')
                 self.max_step -= 0.1
         
             mvec                += dM
