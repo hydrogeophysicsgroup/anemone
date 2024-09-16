@@ -297,11 +297,11 @@ def test_multireceiver_forward():
         1.381e-04, 1.748e-04, 2.174e-04, 2.775e-04, 3.515e-04, 4.385e-04,
         5.575e-04, 7.035e-04])
 
-    lp = Loop.square(4)
-    rx = Receiver(x=torch.linspace(-40, 40, 101))#, y=[-50,0,50])
+    lp = Loop.square(40)
+    rx = Receiver(x=torch.linspace(-400, 400, 202), z=10)
 
     rho = 40
-    sigma = 1/torch.tensor([rho,rho])
+    sigma = 1/torch.tensor([rho,2*rho])
     thick = torch.tensor([10])
 
     fwr = Forward(lp, rx, times)
@@ -315,9 +315,72 @@ def test_multireceiver_forward():
         plt.show()
     assert (rx.x[:, None]+times[None, :]).shape == dbdt.shape, "dbdt shape is not correct"
 
+def test_multireceiver_forward_multi_height():
+    from anemone.experiment import Loop, Receiver
+    from anemone.forwards import Forward
+    import torch
+
+
+    times = torch.tensor([9.350e-06, 1.145e-05, 1.458e-05, 1.822e-05, 2.255e-05, 2.867e-05,
+        3.595e-05, 4.460e-05, 5.660e-05, 7.070e-05, 8.630e-05, 1.071e-04,
+        1.381e-04, 1.748e-04, 2.174e-04, 2.775e-04, 3.515e-04, 4.385e-04,
+        5.575e-04, 7.035e-04])
+
+    lp = Loop.square(40)
+    rx = Receiver(x=torch.linspace(-400, 400, 202), z=torch.abs(torch.linspace(-400, 400, 202)))
+
+    rho = 40
+    sigma = 1/torch.tensor([rho,2*rho])
+    thick = torch.tensor([10])
+
+    fwr = Forward(lp, rx, times)
+    dbdt = fwr(sigma, thick)
+
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots()
+        ax.semilogy(rx.x, dbdt.real, 'C0.-', label='mforward')
+        ax.semilogy(rx.x, -dbdt.real, 'r.-', label='mforward')
+        plt.show()
+    assert (rx.x[:, None]+times[None, :]).shape == dbdt.shape, "dbdt shape is not correct"
+
+def test_multireceiver_frequency_domain():
+    from anemone.experiment import Loop, Receiver
+    from anemone.forwards import ForwardFD
+    import torch
+
+    lp = Loop.square(50)
+    rx = Receiver(x=torch.linspace(-200, 200, 202), y=torch.linspace(-200, 200, 202))
+    freqs = torch.tensor([2000], dtype=torch.double)
+
+    rho = 40
+    sigma = 1/torch.tensor([rho,2*rho])
+    thick = torch.tensor([10])
+
+    fwr = ForwardFD(lp, rx, freqs)
+    from time import time as timer
+    t0 = timer()
+    B = fwr(sigma, thick)
+    print('elapsed time: ', timer()-t0)
+    
+    t0 = timer()
+    B = fwr(sigma, thick)
+    print('elapsed time: ', timer()-t0)
+
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots()
+        ax.pcolormesh(rx.x,rx.y, torch.log10(torch.abs(B.reshape((202,202)))))
+        plt.show()
+    assert (rx.x[:, None]+freqs[None, :]).shape == B.shape, "dbdt shape is not correct"
+
+
 
 if __name__ == '__main__':
 #    test_IPforward()
     # test_40x40_aarhusInv_stepoff()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
-    test_multireceiver_forward()
+    # test_multireceiver_forward()
+    # test_multireceiver_forward_multi_height()
+    
+    test_multireceiver_frequency_domain()

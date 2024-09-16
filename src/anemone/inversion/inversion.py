@@ -483,6 +483,7 @@ class Inversion:
             import matplotlib.pyplot as plt
             plt.colorbar(pcm, ax=ax, label='sensitivity factor')
         return ax
+    
 
     def invert(self, smoothness=0., iter_cap=10, **kwargs):
         from torch.linalg import inv, solve
@@ -498,6 +499,7 @@ class Inversion:
         data_predicted = self.mforward(mvec)
         self.misfits.append(self.misfit(data_predicted))
         Cdi = torch.diag(self.recip_error_squared)
+
         H = torch.from_numpy(self.model.H()).to(mvec.device)
         HtH = (H.T @ H)*smoothness
 

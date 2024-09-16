@@ -361,9 +361,9 @@ class ForwardFD(Forward):
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(freqs.device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(freqs.device)
         self.srcz = torch.tensor([source.z[0]], dtype=torch.float64)
-        self.rz = self.receiver.z
-        self.pfield_dz = torch.abs(self.srcz-self.rz)
-        self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)
+        self.rz = self.receiver.z.flatten()[0]
+        self.pfield_dz = torch.abs(self.srcz-self.rz)#[:, None, None]
+        self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)#[:, None, None]
 
         self.filterfunc = filterfunc
         self.waveform = waveform
@@ -376,11 +376,11 @@ class ForwardFD(Forward):
 
     def forward(self):
         def frq_integrand(f):
-            omega = c.twopi*f[None,:,None]
+            omega = c.twopi*f[:,None]
 
             def wvlngth_integrand(wave_length):
                 """ Hz from horizontal electric dipole. """
-                lmb = wave_length[None, None, :]
+                lmb = wave_length[None, :]
                 
                 tmp_u0 = u0(omega, lmb)
                 intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
@@ -394,7 +394,7 @@ class ForwardFD(Forward):
             res = integrate_around_loop(self.source, self.receiver, hkl1)
             if self.waveform is not None:
                 res /= -1j*omega.squeeze()
-            return res
+            return res.squeeze()
         
         H = frq_integrand(self.freqs)
 

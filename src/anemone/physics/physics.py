@@ -217,3 +217,56 @@ def colecole(rho_o, m, tau, c, omega):
     tmp = 1. - m*tmp
     rho = rho_o*tmp
     return rho
+
+
+def transverse_electric_field_coefficients(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    """ for computing the field components at depth
+    """
+    if isinstance(mu, float):
+        mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
+    if isinstance(epsilon, float):
+        epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
+
+    n_layers=len(sigma)
+
+    lambda2 = wave_length**2
+    
+    u0 = torch.sqrt(lambda2 - omega**2 * c.mu0*c.epsilon0 + 0j)
+    
+    k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
+
+    # this is u_n (misnamed temporarily, will divide by zn soon.)
+    u_n = torch.sqrt(lambda2 - k2)
+    euh_p = torch.exp(u_n[:-1]*thickness)
+    euh_m = 1./euh_p
+
+    Amat = torch.zeros((2*n_layers-2, 2*n_layers-2)+u0.shape, dtype=torch.complex128, device=sigma.device)
+    Bmat = torch.zeros((2*n_layers-2,)+u0.shape, dtype=torch.complex128, device=sigma.device)
+    Bmat[0] = -1.
+    print(Amat.shape)
+    print(Bmat.shape)
+    
+    # surface layer
+    Amat[0,0], Amat[0,1], Amat[0,2] = 1., -1., -1.
+    Amat[1,0], Amat[1,1], Amat[1,2] = u0, u_n[0], -u_n[0]
+    
+    for i in range(1,n_layers-1):
+        Amat[i*2,i*2-1] = euh_m[i-1]
+        Amat[i*2,i*2  ] = euh_p[i-1]
+        Amat[i*2,i*2+1] = -1.
+
+
+        Amat[i*2+1,i*2-1] = -u_n[i-1]*euh_m[i-1]
+        Amat[i*2+1,i*2  ] =  u_n[i-1]*euh_p[i-1]
+        Amat[i*2+1,i*2+1] =  u_n[i]
+
+        if i<n_layers-2:
+            Amat[i*2,i*2+2]   = -1.
+            Amat[i*2+1,i*2+2] = -u_n[i]
+
+    AB = torch.linalg.solve(Amat, Bmat)
+    return AB[::2], AB[1::2]
+
+
+
+ 
