@@ -402,3 +402,43 @@ class ForwardFD(Forward):
             return H*self.waveform.fourier_d2wdt2(self.freqs)
         else:
             return H
+        
+    def __call__(self, sigma, thickness):
+        if isinstance(sigma, ndarray): sigma = torch.from_numpy(sigma)
+        if isinstance(thickness, ndarray): thickness = torch.from_numpy(thickness)
+        self.sigma = ((sigma+0j)[..., None, None]).to(self.device)
+        if sigma.ndim > thickness.ndim:
+            thickness = thickness[:, None]
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
+        return self.forward()*c.mu0
+
+class ForwardFD2(ForwardFD):
+    def forward(self):
+        def frq_integrand(f):
+            omega = c.twopi*f[:,None]
+
+            def wvlngth_integrand(wave_length):
+                """ Hz from horizontal electric dipole. """
+                lmb = wave_length[None, :]
+                
+                tmp_u0 = u0(omega, lmb)
+                intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
+                intg *= lmb**2 / tmp_u0
+            
+                if self.filterfunc is not None:
+                    intg *= self.filterfunc.omega_filter(omega)
+                return torch.squeeze(intg/c.fourpi)
+            
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=16, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
+            r,HR = hkl1.range(self.rmin, self.rmax)
+            HR = HR[:, None, :]
+            sofr = self.source.s_of_r(self.receiver, r)[None, :, :]
+
+            return - torch.einsum('...i,...i->...', HR, sofr)
+        
+        H = frq_integrand(self.freqs)
+
+        if self.waveform is not None:
+            return H*self.waveform.fourier_d2wdt2(self.freqs)
+        else:
+            return H        

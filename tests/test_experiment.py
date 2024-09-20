@@ -14,6 +14,14 @@ def test_minimum_distance():
     print(rmin)
     assert rmin == 225, "minimum distance calculator in loop object is failing"
 
+def test_minimum_distance_longline():
+    tx = experiment.Loop([0, 1000], [0,0], [0,0])
+    rx = experiment.Receiver(y = torch.logspace(0, 2, 31))
+
+    rmin = tx.min_horizontal_distance(rx)
+    assert rmin == 1., "minimum distance calculator in loop object is failing"
+
+
 def test_maximum_distance():
     lp = experiment.Loop.square(50)
     rx = experiment.Receiver()
@@ -28,3 +36,6 @@ def test_multireceiver():
 
 if __name__ == '__main__':
     test_multireceiver()
+    test_minimum_distance()
+    test_maximum_distance()
+    test_minimum_distance_longline()
