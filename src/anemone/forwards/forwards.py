@@ -413,6 +413,7 @@ class ForwardFD(Forward):
         return self.forward()*c.mu0
 
 class ForwardFD2(ForwardFD):
+    sofr = None
     def forward(self):
         def frq_integrand(f):
             omega = c.twopi*f[:,None]
@@ -429,12 +430,12 @@ class ForwardFD2(ForwardFD):
                     intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
             
-            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=16, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
-            r,HR = hkl1.range(self.rmin, self.rmax)
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=16, device=self.device, tolerance=self.tolerance)
+            r,HR = hkl1.range(self.rmin/2, self.rmax*2)
             HR = HR[:, None, :]
-            sofr = self.source.s_of_r(self.receiver, r)[None, :, :]
-
-            return - torch.einsum('...i,...i->...', HR, sofr)
+            if self.sofr is None:
+                self.sofr = self.source.s_of_r(self.receiver, r)[None, :, :]
+            return - torch.einsum('...i,...i->...', HR, self.sofr)
         
         H = frq_integrand(self.freqs)
 

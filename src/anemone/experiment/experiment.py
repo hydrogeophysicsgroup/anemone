@@ -138,7 +138,8 @@ class Loop:
     
     def s_of_r(self, rx, R):
         R = torch.tensor(R, dtype=torch.float64)
-        dR = torch.from_numpy(np.gradient(R.numpy()))
+        logR = torch.log10(R)
+        dR = R*torch.log(torch.tensor([10], dtype=torch.float64))*(logR.max()-logR.min())/R.numel()
 
         rx_xyz = rx.xyz
         n_rec  = len(rx)
@@ -155,7 +156,7 @@ class Loop:
             p2 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i+1])
             x1,y1 = p1[..., 0], p1[..., 1]
             x2,y2 = p2[..., 0], p2[..., 1]
-            x_ = x1[:,None] + (x2-x1)[:,None]*torch.linspace(0, 1, 100)[None, :]
+            x_ = x1[:,None] + (x2-x1)[:,None]*torch.linspace(0, 1, 1001)[None, :]
             dx = (x_[..., 1] - x_[..., 0])[:,None]
             
             x1 = x1[:, None]
@@ -166,12 +167,12 @@ class Loop:
 
 
             cr = torch.sqrt(y1**2 + x_**2)
-            theta = torch.atan2(y1, x_)
+            # theta = torch.atan2(y1, x_) # sin(theta) = y1/cr
             phi = lamontagne((cr-R)/dR)
-            cs = torch.sin(theta) * phi * dx
+            cs = y1 * phi * dx / cr
             s += cs.sum(axis=1, keepdims=False)
 
-        return s#.squeeze()  
+        return s
     
 def perp_distance_to_line(x,y, line_points):
 	((x1,y1), (x2,y2)) = line_points
