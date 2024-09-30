@@ -90,9 +90,9 @@ class Forward:
             else:
                 return dbdt
         if self.t_gatewidth is not None:
-            return cbft.integrate(self.t_st, self.t_end, normalize=True)
+            return cbft.integrate(self.t_st, self.t_end, normalize=True).real
         else:
-            return cbft(self.times)#.T
+            return cbft(self.times).real
 
     def compute_relstd(self, sigma, thickness, noise_slope_exponent=-0.5, noise_level_at_1ms=1e-8, moment=1, relative_noise=0.03):
         moment = self.source.area
@@ -111,7 +111,7 @@ class Forward:
         if sigma.ndim > thickness.ndim:
             thickness = thickness[:, None]
         self.thick = ((thickness+0j)[..., None, None]).to(self.device)
-        return self.forward().real*c.mu0
+        return self.forward()*c.mu0
 
 class DualMoment(Forward):
     def __init__(self, source, receiver, times, filterfunc, waveforms):

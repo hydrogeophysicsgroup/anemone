@@ -31,27 +31,27 @@ class Receiver:
             self.grid()
         else:
             npoints = max(len(self.x), len(self.y),len(self.z))
-            if len(self.x)==1: self.x = torch.ones(npoints)*self.x
-            if len(self.y)==1: self.y = torch.ones(npoints)*self.y
-            if len(self.z)==1: self.z = torch.ones(npoints)*self.z
+            if len(self.x)==1: self.X = torch.ones(npoints)*self.x
+            if len(self.y)==1: self.Y = torch.ones(npoints)*self.y
+            if len(self.z)==1: self.Z = torch.ones(npoints)*self.z
 
     def grid(self):
         X,Y,Z = torch.meshgrid(self.x, self.y, self.z, indexing='ij')
         self.shp = X.shape+(3,)
-        self.x = X.squeeze()
-        self.y = Y.squeeze()
-        self.z = Z.squeeze()
+        self.X = X.squeeze()
+        self.Y = Y.squeeze()
+        self.Z = Z.squeeze()
         return self
     
     @property
     def xyz(self):
         return torch.squeeze(torch.moveaxis(torch.stack((
-                            self.x.flatten(), 
-                            self.y.flatten(), 
-                            self.z.flatten())), 0, -1))
+                            self.X.flatten(), 
+                            self.Y.flatten(), 
+                            self.Z.flatten())), 0, -1))
 
     def __len__(self):
-        return self.x.numel()
+        return self.X.numel()
 
 class Loop:
     def __init__(self, x, y, z):
