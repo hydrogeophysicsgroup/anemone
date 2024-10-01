@@ -302,8 +302,8 @@ def transverse_magnetic_field_coefficients(sigma, thickness, omega, wave_length,
     euh_p = np.exp( u_n[:-1]*thickness)
     euh_m = np.exp(-u_n[:-1]*thickness)
     
-    Amat = np.zeros(u0.squeeze().shape+(2*n_layers, 2*n_layers), dtype=complex)
-    Bmat = np.zeros(u0.squeeze().shape+(2*n_layers,), dtype=complex)
+    Amat = np.zeros((omega.size, wave_length.size, 2*n_layers, 2*n_layers), dtype=complex)
+    Bmat = np.zeros((omega.size, wave_length.size, 2*n_layers,), dtype=complex)
 
 
     Amat[..., 0,0], Amat[..., 0,1], Amat[..., 0,2], Amat[..., 0,3] =  1.,  1.,    -1., -1.
@@ -329,7 +329,7 @@ def transverse_magnetic_field_coefficients(sigma, thickness, omega, wave_length,
     AB = np.linalg.solve(Amat, Bmat)
     res = (torch.from_numpy(np.moveaxis(AB[..., ::2], -1,0)), torch.from_numpy(np.moveaxis(AB[..., 1::2], -1,0)))
     if return_un:
-        res = res + (torch.from_numpy(np.vstack((u0, u_n))),)
+        res = res + (torch.from_numpy(np.vstack((u0[None, ...], u_n))),)
     return res
 
  
