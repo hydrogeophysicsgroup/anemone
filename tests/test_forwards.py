@@ -25,7 +25,7 @@ def test_40x40_aarhusInv_stepoff():
     thick = torch.tensor([10])
 
     fwr = Forward(lp, rx, times)
-    dbdt = fwr(sigma, thick);
+    dbdt = fwr(1./sigma, thick);
 
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
@@ -62,12 +62,12 @@ def test_Laplace_40x40_aarhusInv_stepoff():
     lp = Loop.square(40)
     rx = Receiver()
 
-    rho = 40
-    sigma = 1/torch.tensor([rho,rho], dtype=torch.float64)
-    thick = torch.tensor([10], dtype=torch.float64)
+    rho = torch.tensor([40,40])
+    thick = torch.tensor([40])
+
 
     fwr = ForwardLaplace(lp, rx, times, tolerance=1e-4)
-    dbdt = fwr(sigma, thick);
+    dbdt = fwr(rho, thick);
 
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
@@ -104,12 +104,12 @@ def test_40x40_aarhusInv_stepoff_hankel_tolerance():
     lp = Loop.square(40)
     rx = Receiver()
 
-    rho = 40
-    sigma = 1/torch.tensor([rho,rho])
+    
+    rho = torch.tensor([40,40])
     thick = torch.tensor([40])
 
     fwr = Forward(lp, rx, times, tolerance=1e-5)
-    dbdt = fwr(sigma, thick);
+    dbdt = fwr(rho, thick);
 
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
@@ -152,12 +152,12 @@ def test_40x40_aarhusInv_piecewise_waveform():
     lp = Loop.square(40)
     rx = Receiver()
 
-    rho = 40
-    sigma = 1/torch.tensor([rho,rho])
-    thick = torch.tensor([10])
+    rho = torch.tensor([40,40])
+    thick = torch.tensor([40])
+
 
     fwr = Forward(lp, rx, times, waveform=waveform)
-    dbdt = fwr(sigma, thick)
+    dbdt = fwr(rho, thick)
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
@@ -201,12 +201,12 @@ def test_Laplace_40x40_aarhusInv_piecewise_waveform():
     lp = Loop.square(40)
     rx = Receiver()
 
-    rho = 40
-    sigma = 1/torch.tensor([rho,rho], dtype=torch.float64)
-    thick = torch.tensor([10], dtype=torch.float64)
+    rho = torch.tensor([40,40])
+    thick = torch.tensor([40])
+
 
     fwr = ForwardLaplace(lp, rx, times, waveform=waveform)
-    dbdt = fwr(sigma, thick)
+    dbdt = fwr(rho, thick)
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
