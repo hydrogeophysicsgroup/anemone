@@ -140,14 +140,13 @@ class Loop:
     
     def s_of_r(self, rx, R):
         R = torch.tensor(R, dtype=torch.float64)
-        logR = torch.log10(R)
-        dR = R*torch.log(torch.tensor([10], dtype=torch.float64))*(logR.max()-logR.min())/R.numel()
+        dR = np.log(R[1]/R[0])
 
         rx_xyz = rx.xyz
         n_rec  = len(rx)
         s      = torch.zeros((n_rec, )+R.shape, dtype=torch.complex128)
         R      = R [None, None, :]
-        dR     = dR[None, None, :]
+        # dR     = dR[None, None, :]
         
         lp_xyz = self.xyz[:, None] - rx_xyz[None, :]
         
@@ -169,8 +168,7 @@ class Loop:
 
 
             cr = torch.sqrt(y1**2 + x_**2)
-            # theta = torch.atan2(y1, x_) # sin(theta) = y1/cr
-            phi = lamontagne((cr-R)/dR)
+            phi = lamontagne(np.log(cr/R)/dR)
             cs = y1 * phi * dx / cr
             s += cs.sum(axis=1, keepdims=False)
 
