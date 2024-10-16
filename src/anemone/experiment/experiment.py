@@ -2,6 +2,23 @@ import numpy as np
 import torch
 from .. import constants as c
 
+S1 = lambda x: 1 - (9/4)*x**2 * ( 1 - 2./9*x*(1 + 5/2*x*(1 - 2/5 * x)))
+S2 = lambda x: -1/2*x*(1 - 11/6*x*(1 - 2/11*x*(1 + 5/2*x*(1-2/5*x))))
+
+def lamontagne(x):
+    phi   = x*0.
+    xm2m1 = (-2 <= x)*(x < -1)
+    xm1m0 = (-1 <= x)*(x < 0)
+    x0p1  = (0 <= x)*(x <= 1)
+    x1p2  = (1 < x)*(x <= 2)
+    
+    phi[xm2m1] = S2(-x[xm2m1]-1)
+    phi[xm1m0] = S1(-x[xm1m0])
+    phi[x0p1] = S1(x[x0p1])
+    phi[x1p2] = S2(x[x1p2]-1)
+    
+    return phi
+
 class Receiver:
     def __init__(self, x=0., y=0., z=0., grid=True) -> None:
         self.x = torch.tensor(x, dtype=torch.float64)
@@ -117,70 +134,49 @@ class Loop:
     def __len__(self):
         return self.x.numel()
     
-    def s_of_r(self, rx, R):
-        # dR = torch.gradient(R)
-        
-        # s = torch.zeros_like(R)
-
-        # lp_xyz = self.xyz - rx.xyz[None, ...]
-
-        # for i in range(len(self)-1):
-        #     Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
-        #     p1 = torch.einsum('...i,...i->...', Rz, lp_xyz[i])
-        #     p2 = torch.einsum('...i,...i->...', Rz, lp_xyz[i+1])
-
-        #     r_perp = p1[1]
-        #     interval = box_filter(R, torch.abs(r_perp), p2[0])-box_filter(R, torch.abs(r_perp), p1[0])
-
-        #     ds = torch.nan_to_num(interval*R*dR/torch.sqrt(R**2 - r_perp**2))
-        #     ds *= torch.abs(p2[0]-p1[0])/torch.abs(torch.nansum(ds))
-        #     ds *= r_perp
-        #     s +=  ds
-        # return torch.nan_to_num(s)
-        dR_alpha = torch.sqrt(R[1]/R[0])
-        R_edge1 = (R/dR_alpha)**2
-        R_edge2 = (R*dR_alpha)**2
+    def geomz(self, rx, R):
+        logR = torch.log(R)
+        dR = logR[1]-logR[0]
 
         rx_xyz = rx.xyz
-        if len(rx_xyz.shape)==1:
-            s = torch.zeros(R.shape, dtype=torch.complex128)
-        else:
-            s = torch.zeros(rx_xyz.shape[:-1]+R.shape, dtype=torch.complex128)
+        n_rec  = len(rx)
 
+        geomz      = torch.zeros((n_rec, )+R.shape, dtype=torch.float64)
+
+        R      = R [None, None, :]
+        
         lp_xyz = self.xyz[:, None] - rx_xyz[None, :]
+        
         for i in range(len(self)-1):
+        
             Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
-            p1 = torch.einsum('...i,...i->...', Rz, lp_xyz[i])
-            p2 = torch.einsum('...i,...i->...', Rz, lp_xyz[i+1])
-            y2 = p1[1]**2
+            p1 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i])
+            p2 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i+1])
+            x1,y1 = p1[..., 0], p1[..., 1]
+            x2,y2 = p2[..., 0], p2[..., 1]
+            ix = int(3*torch.abs(x2-x1).max())
+            tmpx = torch.linspace(-1, 1, ix)
+            x_samp = tmpx
+            x_samp += 1.
+            length = torch.abs(x2-x1)/2
 
-            x1,x2 = min(torch.abs(p1[0]), torch.abs(p2[0])), max(torch.abs(p1[0]), torch.abs(p2[0]))
-            r1 = x1**2 + y2
-            r2 = x2**2 + y2
 
-            ds = torch.nan_to_num(torch.sqrt(R_edge2 - y2)) - torch.nan_to_num(torch.sqrt(R_edge1 - y2))
+            x_ = (x1[:,None] + length[:,None]*x_samp[None, :])
+            dx = (x_[..., 1] - x_[..., 0])[:,None]
+            
+            x1 = x1[:, None]
+            x2 = x2[:, None]
+            y1 = y1[:, None, None]
+            x_ = x_[:, :, None]
+            dx = dx[:, None]
 
-            ds1,ds2 = ds*1., ds*1.
-            
-            i_s = torch.searchsorted(R_edge1, r1)-1
-            ds1[i_s] = torch.nan_to_num(torch.sqrt(r1 -y2)) - torch.nan_to_num(torch.sqrt(R_edge1[i_s] -y2))
-            
-            ds1[i_s+1:] = 0
 
-            i_s = torch.searchsorted(R_edge1, r2)-1
-            ds2[i_s] = torch.nan_to_num(torch.sqrt(r2 -y2)) - torch.nan_to_num(torch.sqrt(R_edge1[i_s] -y2))
-            ds2[i_s+1:] = 0
-            
-            sign = torch.sign(p1[0])*torch.sign(p2[0])
-            # if torch.sign(p1[0])==torch.sign(p2[0]): multiplier = 1
-            # else: multiplier = 2
-            
-            ds = torch.nan_to_num(ds2) - torch.nan_to_num(sign*ds1)
-            ds *= torch.abs(p2[0]-p1[0])/torch.nansum(ds)
-            
-            s += p1[1]*ds/R
-
-        return s        
+            cr = torch.sqrt(y1**2 + x_**2)
+            phi = lamontagne((torch.log(cr)-logR)/dR)
+            cs =  -y1 * phi * dx / cr
+            geomz += cs.sum(axis=1, keepdims=False)
+        return geomz
+   
     
 def perp_distance_to_line(x,y, line_points):
 	((x1,y1), (x2,y2)) = line_points

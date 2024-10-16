@@ -78,7 +78,7 @@ def test_inversion():
     t = torch.logspace(-5, -3.5, 16, dtype=torch.double)
 
     fwr = Forward(tx, rx, t)
-    mtrue = FewLayerModel(1./torch.tensor([140, 50, 200]), torch.tensor([20, 40]))
+    mtrue = FewLayerModel(torch.tensor([140, 50, 200]), torch.tensor([20, 40]))
 
     dbdt = fwr(*mtrue.values)
     dbdt_err = compute_relstd(t, dbdt, moment=tx.area)
@@ -87,9 +87,55 @@ def test_inversion():
     m0 = FewLayerModel.starting_model(3)
     
 
+    from time import perf_counter
+    t0 = perf_counter()
     inv = Inversion(dbdt+dbdt*torch.randn(len(dbdt))*dbdt_err, dbdt*dbdt_err, m0, fwr, data_transform=torch.log10)
     dbdt_start = inv.mforward(m0.vec)
     resmod = inv.invert(iter_cap=7)
+    print(f'time for inversion: {perf_counter()-t0}')
+    dbdt_pred = inv.mforward(resmod.vec)
+
+
+
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        fig,axs = plt.subplots(1,2)
+        mtrue.plot(ax=axs[0], color='C0')
+        resmod.plot(ax=axs[0], color='C1')
+
+        m0.plot(ax=axs[0], linestyle=':', color='k')
+
+
+        axs[1].loglog(t.numpy(), 10**inv.data_observed.numpy())
+        axs[1].loglog(t.numpy(), 10**dbdt_pred.numpy())
+        axs[1].loglog(t.numpy(), 10**dbdt_start.numpy(), 'k:')        
+
+        plt.show()    
+    assert inv.misfits[-1] < 1, "misfit is not below one."
+
+def test_inversion_geomop():
+    from anemone.experiment import Loop, Receiver, compute_relstd
+    from anemone.forwards import ForwardGeomOp
+    tx = Loop.square(25)
+    rx = Receiver()
+    t = torch.logspace(-5, -3.5, 16, dtype=torch.double)
+
+    fwr = ForwardGeomOp(tx, rx, t)
+    mtrue = FewLayerModel(torch.tensor([140, 50, 200]), torch.tensor([20, 40]))
+
+    dbdt = fwr(*mtrue.values)
+    dbdt_err = compute_relstd(t, dbdt, moment=tx.area)
+
+
+    m0 = FewLayerModel.starting_model(3)
+    
+
+    from time import perf_counter
+    t0 = perf_counter()
+    inv = Inversion(dbdt+dbdt*torch.randn(len(dbdt))*dbdt_err, dbdt*dbdt_err, m0, fwr, data_transform=torch.log10)
+    dbdt_start = inv.mforward(m0.vec)
+    resmod = inv.invert(iter_cap=7)
+    print(f'time for geomop-based inversion: {perf_counter()-t0}')
     dbdt_pred = inv.mforward(resmod.vec)
 
 
@@ -220,5 +266,6 @@ def test_inversion_multi_model():
 if __name__ == '__main__':
     # test_model_smoothing_constraint()
     # test_inversion_multi_model()
-    # test_inversion()
-    test_inversion_noise_free()
+    test_inversion()
+    test_inversion_geomop()
+    # test_inversion_noise_free()
