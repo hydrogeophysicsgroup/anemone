@@ -403,7 +403,7 @@ class Inversion:
 
     @property
     def m(self):
-        return self.model.vec*1.
+        return self.model.vec
     
     @property
     def data_predicted(self):

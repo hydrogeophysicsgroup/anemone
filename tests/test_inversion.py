@@ -114,14 +114,14 @@ def test_inversion_multi_model():
     import matplotlib.pyplot as plt
 
     from anemone.experiment import Loop, Receiver, compute_relstd, Waveform
-    from anemone.forwards import Forward, ForwardLaplace
+    from anemone.forwards import Forward, ForwardLaplace2
     tx = Loop.square(25)
     rx = Receiver()
     t = torch.logspace(-5, -3.5, 16, dtype=torch.double)
     
 
-    gpu = torch.device('cpu')
-    fwr = ForwardLaplace(tx, rx, t.to(gpu), waveform=Waveform.example(), tolerance=1e-4)
+    gpu = torch.device('cuda')
+    fwr = ForwardLaplace2(tx, rx, t.to(gpu), waveform=Waveform.example(), tolerance=1e-5)
     print(fwr.device)
     
     n_layers = 31
@@ -129,7 +129,7 @@ def test_inversion_multi_model():
 
 
     z = np.arange(n_layers)[:,None]
-    x = np.arange(20)[None,:]
+    x = 30*np.arange(10)[None,:]
 
     rho = 300*np.ones_like(z+x)
     rho[(0.03*x-0.75*z+10)>0] = 10
@@ -144,12 +144,13 @@ def test_inversion_multi_model():
     thick = torch.logspace(-1, 1, len(z)-1).to(gpu)
     m_true = SmoothModels(sigma, thick, device=gpu)
     # fig,axs = plt.subplots(2,1,sharex=True, sharey=True)
-    if __name__ == '__main__':
-        m_true.plot(vmin=1, vmax=2.5, cmap='turbo')
-        plt.show()
+    # if __name__ == '__main__':
+    #     m_true.plot(vmin=1, vmax=2.5, cmap='turbo')
+    #     plt.show()
     sm,tm = m_true.modelize(m_true.vec)
     assert torch.allclose(sm,sigma), 'something is not right with the model'
     dbdt = fwr(sm,tm)
+
 
     n_data = len(dbdt.T.flatten())
 
@@ -161,10 +162,12 @@ def test_inversion_multi_model():
     m_start = m_true.copy()
     m_start.values[0] = torch.ones_like(m_start.values[0])*0.02
 
-    dbdt_obs = dbdt + dbdt*dbdt_err*torch.clamp(torch.randn(dbdt.shape,device=gpu), -1,1)/2
+    dbdt_obs = dbdt + dbdt*dbdt_err*torch.randn(dbdt.shape,device=gpu)
 
 
     inv = LCI(dbdt_obs, dbdt*dbdt_err5, m_start, fwr, data_transform=transform)
+    inv.data_misfit_acceptance_threshold = 0.9
+    print('fwr device is ', fwr.device)
     invm1 = inv.m*1.
     invm1[20:25] *= 2.
     dbdt_flat0 = inv.mforward(inv.m)
@@ -174,9 +177,13 @@ def test_inversion_multi_model():
     # plt.plot(dbdt_flat0.numpy())
     # plt.plot(dbdt_flat1.numpy())
     # plt.show()
-
+    from time import perf_counter
+    t0 = perf_counter()
     res_mod = inv.invert(smoothness=2e3, iter_cap=20)
+    delta_t = perf_counter()-t0
+    
     if __name__ == '__main__':
+        print(f'inversion took {delta_t:.2f} seconds.')
         fig,axs = plt.subplots(2,1,sharex=True, sharey=True)
         m_true.plot(ax=axs[0], vmin=1, vmax=2.5, cmap='turbo')
         res_mod.plot(ax=axs[1], vmin=1, vmax=2.5, cmap='turbo')
@@ -219,6 +226,6 @@ def test_inversion_multi_model():
 
 if __name__ == '__main__':
     # test_model_smoothing_constraint()
-    # test_inversion_multi_model()
+    test_inversion_multi_model()
     # test_inversion()
-    test_inversion_noise_free()
+    # test_inversion_noise_free()
