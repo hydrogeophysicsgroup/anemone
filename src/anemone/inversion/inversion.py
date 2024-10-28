@@ -386,7 +386,7 @@ class Inversion:
         """Create an inversion object, the necessary """
         self.data_transform = data_transform
         self.data_observed    = self.data_transform(data_observed)
-        self.data_error       = torch.abs(self.data_transform(data_observed+data_error)-self.data_transform(data_observed-data_error))
+        self.data_error       = torch.log10(1.+data_error/data_observed)
         self.model            = starting_model
         self.forward = forward_operator
         self.result        = None
@@ -493,7 +493,7 @@ class Inversion:
         self.iter_cap    = iter_cap
         self.misfits     = [np.inf]
         
-        NDamp = 0
+        NDamp = 1
 
         data_predicted = self.mforward(mvec)
         self.misfits.append(self.misfit(data_predicted))

@@ -154,18 +154,24 @@ def test_inversion_multi_model():
 
     n_data = len(dbdt.T.flatten())
 
-    def transform(d):
-        return d.reshape((-1,n_data)).squeeze()
+    def transform(d, skip_log=False):
+        if skip_log:
+            return d.reshape((-1,n_data)).squeeze()
+        else:
+            return torch.log10(torch.abs(d.reshape((-1,n_data)).squeeze()))
+    
+
     dbdt_err = compute_relstd(fwr.times, dbdt)
     dbdt_err5 = compute_relstd(fwr.times, dbdt, relative_noise=0.05)
 
     m_start = m_true.copy()
     m_start.values[0] = torch.ones_like(m_start.values[0])*0.02
 
-    dbdt_obs = dbdt + dbdt*dbdt_err*torch.randn(dbdt.shape,device=gpu)
+    dbdt_obs = transform(torch.abs(dbdt + dbdt*dbdt_err*torch.randn(dbdt.shape,device=gpu)), skip_log=True)
+    dbdt_err5 = transform(dbdt*dbdt_err5, skip_log=True)
 
 
-    inv = LCI(dbdt_obs, dbdt*dbdt_err5, m_start, fwr, data_transform=transform)
+    inv = LCI(dbdt_obs, dbdt_err5, m_start, fwr, data_transform=transform)
     inv.data_misfit_acceptance_threshold = 0.9
     print('fwr device is ', fwr.device)
     invm1 = inv.m*1.
@@ -179,7 +185,7 @@ def test_inversion_multi_model():
     # plt.show()
     from time import perf_counter
     t0 = perf_counter()
-    res_mod = inv.invert(smoothness=2e3, iter_cap=20)
+    res_mod = inv.invert(smoothness=1e2, iter_cap=20)
     delta_t = perf_counter()-t0
     
     if __name__ == '__main__':
