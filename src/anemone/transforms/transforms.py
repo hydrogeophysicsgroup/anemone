@@ -285,7 +285,7 @@ class Hankel:
         imin = int(torch.floor(self.r_to_idx(rmin)) - 2)
         imax = int(torch.ceil(self.r_to_idx(rmax))  + 2)
         i_offsets = torch.arange(imin, imax, device=self.device)
-        rout = self.idx_to_r(i_offsets)
+        rout = self.idx_to_r(i_offsets).to(self.lamda.dtype)
         HR = torch.zeros(self.func_results.shape[:-1] + rout.shape, dtype=self.func_results.dtype, device=self.device)
         if self.device is not None:
             rout = rout.to(self.device)

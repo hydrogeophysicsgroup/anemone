@@ -580,3 +580,56 @@ class Forward2(Forward):
             return cbft.integrate(self.t_st, self.t_end, normalize=True)
         else:
             return cbft(self.times)#.T
+
+
+from anemone.experiment import lamontagne
+
+
+def wv_to_t(t_eval, t_sampled, waveform=None):
+    t_eval = t_eval.to(t_sampled.dtype)
+
+    logT = torch.log(t_sampled).cpu()
+    dT = logT[1]-logT[0]
+    if waveform is None:
+        t2t = lamontagne((torch.log(t_eval)[:,None]-logT[None,:])/dT)
+    else:
+        t2t = torch.zeros(t_eval.shape+t_sampled.shape, device=t_sampled.device, dtype=t_eval.dtype)
+
+        for t_wv,k_wv in zip(waveform.time, waveform.d2wdt2):
+            t2t += k_wv*lamontagne((torch.log(t_eval-t_wv)[:,None]-logT[None,:])/dT)
+    return t2t
+
+
+class Forward3(Forward):
+    sofr=None
+    t2t =None
+    def forward(self):
+        def frq_integrand(f):
+            omega = c.twopi*f[None,:,None]
+
+            def wvlngth_integrand(wave_length):
+                """ Hz from horizontal electric dipole. """
+                lmb = wave_length[None, None, :]
+                
+                tmp_u0 = u0(omega, lmb)
+                intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
+                intg *= lmb**2 / tmp_u0
+            
+                if self.filterfunc is not None:
+                    intg *= self.filterfunc.omega_filter(omega)
+                return torch.squeeze(intg/c.fourpi)
+            
+            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=self.tolerance)
+            r,HR = hkl1._range(self.rmin, self.rmax)
+            if self.sofr is None:
+                self.sofr = self.source.s_of_r(self.receiver, r).to(torch.complex128)
+            res = torch.einsum('...i,...i', HR, self.sofr)
+            if self.waveform is not None:
+                res /= -1j*omega.squeeze()
+            return res
+        
+        cbft=invFourier(frq_integrand, smp_per_decade=16, device=self.device, tolerance=self.tolerance)
+        t,Ht = cbft.range(self.tmin, self.tmax)
+        if self.t2t is None:
+            self.t2t = wv_to_t(self.times, t, waveform=self.waveform)
+        return torch.einsum('...i,...i', Ht.real, self.t2t)

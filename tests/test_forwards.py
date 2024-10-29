@@ -2,7 +2,7 @@ import torch
 
 def test_40x40_aarhusInv_stepoff():
     from anemone.experiment import Loop, Receiver
-    from anemone.forwards import Forward2 as Forward
+    from anemone.forwards import Forward3 as Forward
     import torch
 
 
@@ -129,7 +129,7 @@ def test_40x40_aarhusInv_stepoff_hankel_tolerance():
 
 def test_40x40_aarhusInv_piecewise_waveform():
     from anemone.experiment import Loop, Receiver, Waveform
-    from anemone.forwards import Forward
+    from anemone.forwards import Forward3 as Forward
     import torch
 
 
@@ -381,7 +381,7 @@ def test_forward_speed_laplace():
 
 def test_forward_speed():
     from anemone.experiment import Loop, Receiver, Waveform
-    from anemone.forwards import Forward2, Forward
+    from anemone.forwards import Forward2, Forward, Forward3
     import torch
 
 
@@ -404,9 +404,11 @@ def test_forward_speed():
 
     fwr1 = Forward(lp, rx, times, waveform=waveform)
     fwr2 = Forward2(lp, rx, times, waveform=waveform)
+    fwr3 = Forward3(lp, rx, times, waveform=waveform)
 
     _ = fwr1(sigma, thick)
     _ = fwr2(sigma, thick)
+    _ = fwr3(sigma, thick)
 
     from time import perf_counter
     
@@ -414,19 +416,25 @@ def test_forward_speed():
     for i in range(10):
         dbdt = fwr1(sigma, thick)
     t2 = perf_counter()
-    print('Laplace: ', t2-t1)
+    print('Forward: ', t2-t1)
 
     t1 = perf_counter()
     for i in range(10):
         dbdt = fwr2(sigma, thick)
     t2 = perf_counter()
-    print('Laplace2: ', t2-t1)
+    print('Forward2: ', t2-t1)
 
+    t1 = perf_counter()
+    for i in range(10):
+        dbdt = fwr3(sigma, thick)
+    t2 = perf_counter()
+    print('Forward3: ', t2-t1)
 
 if __name__ == '__main__':
     # test_IPforward()
-    test_40x40_aarhusInv_stepoff()
+    # test_40x40_aarhusInv_stepoff()
+    # test_40x40_aarhusInv_piecewise_waveform()
     #test_40x40_aarhusInv_stepoff()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_Laplace2_40x40_aarhusInv_piecewise_waveform()
-    # test_forward_speed()
+    test_forward_speed()

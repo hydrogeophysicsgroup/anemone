@@ -500,7 +500,11 @@ class Inversion:
         Cdi = torch.diag(self.recip_error_squared)
         H = torch.from_numpy(self.model.H()).to(mvec.device)
         HtH = (H.T @ H)*smoothness
+        dM = torch.zeros_like(mvec)
 
+        G = self.jacobian(mvec)
+        GtG = G.T @ Cdi @ G
+        max_diag = torch.max(torch.diag(GtG))/self.diag_normalizer
 
         while not self.stop_inversion:
             if self.misfits[-1]<self.misfits[-2]:
