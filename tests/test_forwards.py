@@ -435,13 +435,14 @@ def test_forward_timingGP():
     dt1 = t1-t0
     assert dt1 < 0.2, "forward calculation took too long"
 
-    res = res[:, None] + 10*torch.arange(10)[None, :]
+    n = 100
+    res = res[:, None] + (10/n)*torch.arange(n)[None, :]
     dbdt = fwr(res, thk)
     t2 = perf_counter()
     dbdt = fwr(res, thk)
     t3 = perf_counter()
-    dt2 = (t3-t2)/10
-    print('time for 10 forward calculations Geom: ', dt2*10)
+    dt2 = (t3-t2)/n
+    print(f'time for {n} forward calculations Geom: {dt2*n:0.3f} s', )
     assert dt2 < 0.2, "forward calculation took too long"    
 
 
