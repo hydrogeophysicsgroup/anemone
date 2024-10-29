@@ -120,7 +120,7 @@ def test_inversion_multi_model():
     t = torch.logspace(-5, -3.5, 16, dtype=torch.double)
     
 
-    gpu = torch.device('cuda')
+    gpu = torch.device('cpu')
     fwr = ForwardLaplace2(tx, rx, t.to(gpu), waveform=Waveform.example(), tolerance=1e-5)
     print(fwr.device)
     
@@ -162,7 +162,7 @@ def test_inversion_multi_model():
     
 
     dbdt_err = compute_relstd(fwr.times, dbdt)
-    dbdt_err5 = compute_relstd(fwr.times, dbdt, relative_noise=0.05)
+    dbdt_err5 = compute_relstd(fwr.times, dbdt, relative_noise=0.03)
 
     m_start = m_true.copy()
     m_start.values[0] = torch.ones_like(m_start.values[0])*0.02
@@ -175,7 +175,7 @@ def test_inversion_multi_model():
     inv.data_misfit_acceptance_threshold = 0.9
     print('fwr device is ', fwr.device)
     invm1 = inv.m*1.
-    invm1[20:25] *= 2.
+    invm1[20:25] *= 1.1
     dbdt_flat0 = inv.mforward(inv.m)
     dbdt_flat1 = inv.mforward(invm1)
 
@@ -185,7 +185,7 @@ def test_inversion_multi_model():
     # plt.show()
     from time import perf_counter
     t0 = perf_counter()
-    res_mod = inv.invert(smoothness=1e2, iter_cap=20)
+    res_mod = inv.invert(smoothness=1e3, iter_cap=20)
     delta_t = perf_counter()-t0
     
     if __name__ == '__main__':
