@@ -1,4 +1,5 @@
 import torch
+from anemone.experiment import *
 
 def test_40x40_aarhusInv_stepoff():
     from anemone.experiment import Loop, Receiver
@@ -336,6 +337,22 @@ def test_IPforward():
         plt.show()
     assert torch.allclose(ainv_dbdt, dbdt, rtol=1e-2), "aarhus inv and pytorch forward do not match within 1 percent"
 
+def test_multirx():
+    
+    from anemone.forwards import Forward
+
+    lp = Loop.square(40)
+    rx = Receiver(x=torch.linspace(-20, 20, 5))
+    waveform = Waveform.example()
+    times = torch.logspace(-5, -3, 31, dtype=torch.double)
+    fwr = Forward(lp, rx, times, waveform=waveform)
+    sigma = 1/torch.tensor([40, 40])
+    thick = torch.tensor([10])
+    dbdt = fwr(sigma, thick)
+    print('shape of dbdt: ', dbdt.shape)
+
+
+
 def test_forward_speed_laplace():
     from anemone.experiment import Loop, Receiver, Waveform
     from anemone.forwards import ForwardLaplace2, ForwardLaplace
@@ -437,4 +454,4 @@ if __name__ == '__main__':
     #test_40x40_aarhusInv_stepoff()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_Laplace2_40x40_aarhusInv_piecewise_waveform()
-    test_forward_speed()
+    test_multirx()
