@@ -601,7 +601,8 @@ class Forward2(Forward):
             r,HR = hkl1._range(self.rmin, self.rmax)
             if self.sofr is None:
                 self.sofr = self.source.s_of_r(self.receiver, r).to(torch.complex128)
-            res = torch.einsum('...i,...i', HR, self.sofr)
+            
+            res = torch.einsum('...ik,...jk',  self.sofr, HR)
             if self.waveform is not None:
                 res /= -1j*omega.squeeze()
             return res
