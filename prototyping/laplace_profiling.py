@@ -1,5 +1,6 @@
 from anemone.experiment import *
 from anemone.transforms import invLaplace
+from anemone.forwards import Forward, ForwardLaplace
 
 
 tx = Loop.square(40)

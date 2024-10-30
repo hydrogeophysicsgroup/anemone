@@ -386,7 +386,7 @@ class Inversion:
         """Create an inversion object, the necessary """
         self.data_transform = data_transform
         self.data_observed    = self.data_transform(data_observed)
-        self.data_error       = torch.abs(self.data_transform(data_observed+data_error)-self.data_transform(data_observed-data_error))
+        self.data_error       = torch.log10(1.+data_error/data_observed)
         self.model            = starting_model
         self.forward = forward_operator
         self.result        = None
@@ -403,7 +403,7 @@ class Inversion:
 
     @property
     def m(self):
-        return self.model.vec*1.
+        return self.model.vec
     
     @property
     def data_predicted(self):
@@ -493,14 +493,18 @@ class Inversion:
         self.iter_cap    = iter_cap
         self.misfits     = [np.inf]
         
-        NDamp = 0
+        NDamp = 1
 
         data_predicted = self.mforward(mvec)
         self.misfits.append(self.misfit(data_predicted))
         Cdi = torch.diag(self.recip_error_squared)
         H = torch.from_numpy(self.model.H()).to(mvec.device)
         HtH = (H.T @ H)*smoothness
+        dM = torch.zeros_like(mvec)
 
+        G = self.jacobian(mvec)
+        GtG = G.T @ Cdi @ G
+        max_diag = torch.max(torch.diag(GtG))/self.diag_normalizer
 
         while not self.stop_inversion:
             if self.misfits[-1]<self.misfits[-2]:
@@ -573,8 +577,16 @@ class LCI(Inversion):
         for i in range(n_mods):
             dm_mat[i*n_layers:(i+1)*n_layers] = torch.diag(dm[i*n_layers:(i+1)*n_layers])
         
-        m_pert    = dm_mat + mvec[:, None]
-        d_data    = self.mforward(m_pert.T)
+        m_pert    = (dm_mat + mvec[:, None]).T
+        # n_Mjac = m_pert.shape[1]
+        # if n_Mjac < self.max_parallel_models:
+        d_data    = self.mforward(m_pert)
+        # else:
+        #     d_data  = torch.hstack([self.mforward(m_pert[:, i*n_layers:(i+1)*n_layers]) for i in range(n_mods)])
+        # print('shape of d_data: ', d_data.shape)
+
+        
+
         for i in range(n_mods):
             Gt[i*n_layers:(i+1)*n_layers, i*n_data:(i+1)*n_data] = d_data[:, i*n_data:(i+1)*n_data]-c_data[i*n_data:(i+1)*n_data]
         Gt /= dm[:, None]
