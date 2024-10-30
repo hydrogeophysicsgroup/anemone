@@ -577,8 +577,16 @@ class LCI(Inversion):
         for i in range(n_mods):
             dm_mat[i*n_layers:(i+1)*n_layers] = torch.diag(dm[i*n_layers:(i+1)*n_layers])
         
-        m_pert    = dm_mat + mvec[:, None]
-        d_data    = self.mforward(m_pert.T)
+        m_pert    = (dm_mat + mvec[:, None]).T
+        # n_Mjac = m_pert.shape[1]
+        # if n_Mjac < self.max_parallel_models:
+        d_data    = self.mforward(m_pert)
+        # else:
+        #     d_data  = torch.hstack([self.mforward(m_pert[:, i*n_layers:(i+1)*n_layers]) for i in range(n_mods)])
+        # print('shape of d_data: ', d_data.shape)
+
+        
+
         for i in range(n_mods):
             Gt[i*n_layers:(i+1)*n_layers, i*n_data:(i+1)*n_data] = d_data[:, i*n_data:(i+1)*n_data]-c_data[i*n_data:(i+1)*n_data]
         Gt /= dm[:, None]

@@ -588,7 +588,7 @@ from anemone.experiment import lamontagne
 def wv_to_t(t_eval, t_sampled, waveform=None):
     t_eval = t_eval.to(t_sampled.dtype)
 
-    logT = torch.log(t_sampled).cpu()
+    logT = torch.log(t_sampled)#.cpu()
     dT = logT[1]-logT[0]
     if waveform is None:
         t2t = lamontagne((torch.log(t_eval)[:,None]-logT[None,:])/dT)
@@ -603,6 +603,7 @@ def wv_to_t(t_eval, t_sampled, waveform=None):
 class Forward3(Forward):
     sofr=None
     t2t =None
+    
     def forward(self):
         def frq_integrand(f):
             omega = c.twopi*f[None,:,None]
@@ -619,8 +620,8 @@ class Forward3(Forward):
                     intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
             
-            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=self.tolerance)
-            r,HR = hkl1._range(self.rmin, self.rmax)
+            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=1e-6)
+            r,HR = hkl1.range(self.rmin, self.rmax)
             if self.sofr is None:
                 self.sofr = self.source.s_of_r(self.receiver, r).to(torch.complex128)
             res = torch.einsum('...i,...i', HR, self.sofr)
@@ -628,8 +629,12 @@ class Forward3(Forward):
                 res /= -1j*omega.squeeze()
             return res
         
-        cbft=invFourier(frq_integrand, smp_per_decade=16, device=self.device, tolerance=self.tolerance)
-        t,Ht = cbft.range(self.tmin, self.tmax)
+        cbft=invFourier(frq_integrand, smp_per_decade=16, device=self.device)
+        self.t_sampled,Ht = cbft.range(self.tmin, self.tmax)
+
         if self.t2t is None:
-            self.t2t = wv_to_t(self.times, t, waveform=self.waveform)
-        return torch.einsum('...i,...i', Ht.real, self.t2t)
+            self.t2t = wv_to_t(self.times, self.t_sampled, waveform=self.waveform)
+        if len(Ht.shape)==1:
+            return torch.einsum('...i,...i', Ht.real, self.t2t)
+        else:
+            return torch.einsum('...ik,...jk->...ij', Ht.real, self.t2t)
