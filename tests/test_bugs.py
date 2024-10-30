@@ -44,7 +44,7 @@ def test_mulirx_symmetry():
     tx = Loop.square(2)
     from anemone.forwards import Forward
     
-    X,Y = torch.linspace(-1, 1, 51), np.linspace(-1, 1, 51)
+    X,Y = torch.linspace(-1, 1, 10)*0.98, np.linspace(-1, 1, 10)*0.98
 
     
 
@@ -54,30 +54,32 @@ def test_mulirx_symmetry():
 
     lm_gates = torch.logspace(-6, -3, 32)
 
-    resp = torch.zeros(X.shape+Y.shape)
-    rx = Receiver(x=1., y=1.)
-    dbdt = Forward(tx,rx,lm_gates)(sigma,thk)
-
-    if __name__ == '__main__':
-        import matplotlib.pyplot as plt
-        fig,ax = plt.subplots(1,1)
-        ax.loglog(lm_gates, -dbdt)
-        plt.show()
-
+    # resp = torch.zeros(X.shape+Y.shape)
+    
     # for ix,x in enumerate(X):
     #     for iy,y in enumerate(Y):
     #         rx = Receiver(x=x, y=y)
     #         fwr = Forward(tx,rx,lm_gates)
-    #         print('rmin rmax: ', fwr.rmin, fwr.rmax)
+    #         # print('rmin rmax: ', fwr.rmin, fwr.rmax)
     #         dbdt = fwr(sigma,thk)
     #         resp[ix,iy] = dbdt[0]
 
-    # if __name__ == '__main__':
+    rx1 = Receiver(x=X, y=Y)
+    fwr = Forward(tx,rx1,lm_gates)
+    dbdt = fwr(sigma,thk)
+    print(dbdt.shape)
 
-    #     import matplotlib.pyplot as plt
-    #     fig,ax = plt.subplots(1,1)
-    #     ax.pcolor(x,y, torch.log10(resp))
-    #     plt.show()
+
+
+    if __name__ == '__main__':
+
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots(1,1)
+        pcm=ax.pcolor(X,Y, resp-resp.T)
+        plt.colorbar(pcm)
+        plt.show()
+
+    assert torch.allclose(resp, resp.T), "broken symmetry in multi-receiver forward"
 
 
 if __name__ == '__main__':
