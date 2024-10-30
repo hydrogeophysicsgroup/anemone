@@ -112,7 +112,7 @@ class Loop:
         for i in range(len(self)):
             cdist2 = torch.max((self.x[i]-rx.x)**2 + (self.y[i]-rx.y)**2)
             if cdist2 > overall_max: overall_max = cdist2*1
-        return torch.sqrt(cdist2)
+        return torch.sqrt(overall_max)
 
     def __len__(self):
         return self.x.numel()

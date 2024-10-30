@@ -52,25 +52,32 @@ def test_mulirx_symmetry():
     sigma = 1./rho
     thk = torch.tensor([20, 20])
 
-    lm_gates = torch.tensor([3e-6, 5e-6, 1e-5], dtype=torch.double)
+    lm_gates = torch.logspace(-6, -3, 32)
 
     resp = torch.zeros(X.shape+Y.shape)
-
-    for ix,x in enumerate(X):
-        for iy,y in enumerate(Y):
-            rx = Receiver(x=x, y=y)
-            print('')
-            fwr = Forward(tx,rx,lm_gates)
-            print('rmin rmax: ', fwr.rmin, fwr.rmax)
-            dbdt = fwr(sigma,thk)
-            resp[ix,iy] = dbdt[0]
+    rx = Receiver(x=1., y=1.)
+    dbdt = Forward(tx,rx,lm_gates)(sigma,thk)
 
     if __name__ == '__main__':
-
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,1)
-        ax.pcolor(x,y, torch.log10(resp))
+        ax.loglog(lm_gates, -dbdt)
         plt.show()
+
+    # for ix,x in enumerate(X):
+    #     for iy,y in enumerate(Y):
+    #         rx = Receiver(x=x, y=y)
+    #         fwr = Forward(tx,rx,lm_gates)
+    #         print('rmin rmax: ', fwr.rmin, fwr.rmax)
+    #         dbdt = fwr(sigma,thk)
+    #         resp[ix,iy] = dbdt[0]
+
+    # if __name__ == '__main__':
+
+    #     import matplotlib.pyplot as plt
+    #     fig,ax = plt.subplots(1,1)
+    #     ax.pcolor(x,y, torch.log10(resp))
+    #     plt.show()
 
 
 if __name__ == '__main__':
