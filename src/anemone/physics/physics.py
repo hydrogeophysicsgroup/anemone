@@ -217,3 +217,119 @@ def colecole(rho_o, m, tau, c, omega):
     tmp = 1. - m*tmp
     rho = rho_o*tmp
     return rho
+
+
+def transverse_electric_field_coefficients(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, return_un=False):
+    import numpy as np
+
+    sigma       = sigma.numpy()
+    thickness   = thickness.numpy()
+    omega       = omega.numpy()
+    wave_length = wave_length.numpy()
+
+    if isinstance(mu, float):
+        mu = np.ones_like(sigma)*np.array(mu)
+    if isinstance(epsilon, float):
+        epsilon = np.ones_like(sigma)*np.array(epsilon)
+
+    n_layers=len(sigma)+1
+
+    lambda2 = wave_length**2
+    
+    u0 = np.sqrt(lambda2 - omega**2 * c.mu0*c.epsilon0 + 0j)
+    
+    k2 = mu*omega*(epsilon*omega - 1j*sigma)
+
+    u_n   = np.sqrt(lambda2 - k2)
+    euh_p = np.exp( u_n[:-1]*thickness)
+    euh_m = np.exp(-u_n[:-1]*thickness)
+    
+    Amat = np.zeros((omega.size, wave_length.size, 2*n_layers, 2*n_layers), dtype=complex)
+    Bmat = np.zeros((omega.size, wave_length.size, 2*n_layers,), dtype=complex)
+
+
+    Amat[..., 0,0], Amat[..., 0,1], Amat[..., 0,2], Amat[..., 0,3] =  1.,  1.,    -1., -1.
+    Amat[..., 1,0], Amat[..., 1,1], Amat[..., 1,2], Amat[..., 1,3] = -u0,  u0, u_n[0], -u_n[0]
+    
+    for i in range(1, n_layers-1):
+        Amat[..., i*2,i*2]   = euh_m[i-1]
+        Amat[..., i*2,i*2+1] = euh_p[i-1]
+        Amat[..., i*2,i*2+2] = -1.
+        Amat[..., i*2,i*2+3] = -1.
+
+        Amat[..., i*2+1,i*2  ] = -u_n[i-1]*euh_m[i-1]
+        Amat[..., i*2+1,i*2+1] =  euh_p[i-1]*u_n[i-1]
+
+        Amat[..., i*2+1,i*2+2] =  u_n[i]
+        Amat[..., i*2+1,i*2+3] = -u_n[i]
+
+    Amat[..., -2,-1] = 1.
+    Amat[..., -1, 0] = 1.
+
+    Bmat[..., -1] = 1.
+    Amat = np.nan_to_num(Amat)
+
+    AB = np.linalg.solve(Amat, Bmat)
+    res = (torch.from_numpy(np.moveaxis(AB[..., ::2], -1,0)), torch.from_numpy(np.moveaxis(AB[..., 1::2], -1,0)))
+    if return_un:
+        res = res + (torch.from_numpy(np.vstack((u0[None, ...], u_n))),)
+    return res
+
+def transverse_magnetic_field_coefficients(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, return_un=False):
+    import numpy as np
+
+    sigma       = sigma.numpy()
+    thickness   = thickness.numpy()
+    omega       = omega.numpy()
+    wave_length = wave_length.numpy()
+
+    if isinstance(mu, float):
+        mu = np.ones_like(sigma)*np.array(mu)
+    if isinstance(epsilon, float):
+        epsilon = np.ones_like(sigma)*np.array(epsilon)
+
+    n_layers=len(sigma)+1
+
+    lambda2 = wave_length**2
+    
+    u0 = np.sqrt(lambda2 - omega**2 * c.mu0*c.epsilon0 + 0j)
+    
+    k2 = mu*omega*(epsilon*omega - 1j*sigma)
+    zhat,yhat = calc_zy(sigma, omega)
+    yhat0 = yhat[0]-yhat[0].real
+
+    u_n   = np.sqrt(lambda2 - k2)
+    euh_p = np.exp( u_n[:-1]*thickness)
+    euh_m = np.exp(-u_n[:-1]*thickness)
+    
+    Amat = np.zeros((omega.size, wave_length.size, 2*n_layers, 2*n_layers), dtype=complex)
+    Bmat = np.zeros((omega.size, wave_length.size, 2*n_layers,), dtype=complex)
+
+
+    Amat[..., 0,0], Amat[..., 0,1], Amat[..., 0,2], Amat[..., 0,3] =  1.,  1.,    -1., -1.
+    Amat[..., 1,0], Amat[..., 1,1], Amat[..., 1,2], Amat[..., 1,3] = -u0/yhat0,  u0/yhat0, u_n[0]/yhat[0], -u_n[0]/yhat[0]
+    
+    for i in range(1, n_layers-1):
+        Amat[..., i*2,i*2]   = euh_m[i-1]
+        Amat[..., i*2,i*2+1] = euh_p[i-1]
+        Amat[..., i*2,i*2+2] = -1.
+        Amat[..., i*2,i*2+3] = -1.
+
+        Amat[..., i*2+1,i*2  ] = -u_n[i-1]*euh_m[i-1]/yhat[i-1]
+        Amat[..., i*2+1,i*2+1] =  euh_p[i-1]*u_n[i-1]/yhat[i-1]
+        Amat[..., i*2+1,i*2+2] =  u_n[i]/yhat[i]
+        Amat[..., i*2+1,i*2+3] = -u_n[i]/yhat[i]
+
+    Amat[..., -2,-1] = 1.
+    Amat[..., -1, 0] = 1.
+
+    Bmat[..., -1] = 1.
+    Amat = np.nan_to_num(Amat)
+
+    AB = np.linalg.solve(Amat, Bmat)
+    res = (torch.from_numpy(np.moveaxis(AB[..., ::2], -1,0)), torch.from_numpy(np.moveaxis(AB[..., 1::2], -1,0)))
+    if return_un:
+        res = res + (torch.from_numpy(np.vstack((u0[None, ...], u_n))),)
+    return res
+
+ 

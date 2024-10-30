@@ -399,7 +399,7 @@ class Inversion:
         for attr_name in self.__dict__:
             attr_value = getattr(self, attr_name)
             if torch.is_tensor(attr_value):
-                setattr(self, attr_name, attr_value.to(self.device))
+                setattr(self, attr_name, attr_value.to(self.device).to(torch.double))
 
     @property
     def m(self):
@@ -483,6 +483,7 @@ class Inversion:
             import matplotlib.pyplot as plt
             plt.colorbar(pcm, ax=ax, label='sensitivity factor')
         return ax
+    
 
     def invert(self, smoothness=0., iter_cap=10, **kwargs):
         from torch.linalg import inv, solve
@@ -498,6 +499,7 @@ class Inversion:
         data_predicted = self.mforward(mvec)
         self.misfits.append(self.misfit(data_predicted))
         Cdi = torch.diag(self.recip_error_squared)
+
         H = torch.from_numpy(self.model.H()).to(mvec.device)
         HtH = (H.T @ H)*smoothness
         dM = torch.zeros_like(mvec)
@@ -542,10 +544,10 @@ class Inversion:
                 
             
             if damping_attempts==0 and self.iteration>1:
-                self.log('increased max step')
+                # self.log('increased max step')
                 self.max_step += 0.5
             elif damping_attempts==20:
-                self.log('decreased max step')
+                # self.log('decreased max step')
                 self.max_step -= 0.1
         
             mvec                += dM

@@ -13,7 +13,12 @@ class Forward:
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(times.device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(times.device)
         self.srcz = torch.tensor([source.z[0]], dtype=torch.float64)
-        self.rz = self.receiver.z
+        if receiver.z.numel()>1:
+            self.rz = receiver.z.flatten()[0]
+            assert torch.all(receiver.z==self.rz), "Receiver z coordinates are not the same"
+        else:
+            self.rz = self.receiver.z
+
         self.pfield_dz = torch.abs(self.srcz-self.rz)
         self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)
 
@@ -52,9 +57,7 @@ class Forward:
     def forward(self):
         def frq_integrand(f):
             omega = c.twopi*f[None,:,None]
-
             def wvlngth_integrand(wave_length):
-                """ Hz from horizontal electric dipole. """
                 lmb = wave_length[None, None, :]
                 
                 tmp_u0 = u0(omega, lmb)
@@ -86,9 +89,9 @@ class Forward:
             else:
                 return dbdt
         if self.t_gatewidth is not None:
-            return cbft.integrate(self.t_st, self.t_end, normalize=True)
+            return cbft.integrate(self.t_st, self.t_end, normalize=True).real
         else:
-            return cbft(self.times)#.T
+            return cbft(self.times).real
 
     def compute_relstd(self, sigma, thickness, noise_slope_exponent=-0.5, noise_level_at_1ms=1e-8, moment=1, relative_noise=0.03):
         moment = self.source.area
@@ -107,7 +110,7 @@ class Forward:
         if sigma.ndim > thickness.ndim:
             thickness = thickness[:, None]
         self.thick = ((thickness+0j)[..., None, None]).to(self.device)
-        return self.forward().real*c.mu0
+        return self.forward()*c.mu0
 
 class DualMoment(Forward):
     def __init__(self, source, receiver, times, filterfunc, waveforms):
@@ -416,9 +419,9 @@ class ForwardFD(Forward):
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(freqs.device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(freqs.device)
         self.srcz = torch.tensor([source.z[0]], dtype=torch.float64)
-        self.rz = self.receiver.z
-        self.pfield_dz = torch.abs(self.srcz-self.rz)
-        self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)
+        self.rz = self.receiver.z.flatten()[0]
+        self.pfield_dz = torch.abs(self.srcz-self.rz)#[:, None, None]
+        self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)#[:, None, None]
 
         self.filterfunc = filterfunc
         self.waveform = waveform
@@ -431,11 +434,11 @@ class ForwardFD(Forward):
 
     def forward(self):
         def frq_integrand(f):
-            omega = c.twopi*f[None,:,None]
+            omega = c.twopi*f[:,None]
 
             def wvlngth_integrand(wave_length):
                 """ Hz from horizontal electric dipole. """
-                lmb = wave_length[None, None, :]
+                lmb = wave_length[None, :]
                 
                 tmp_u0 = u0(omega, lmb)
                 intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
@@ -449,7 +452,48 @@ class ForwardFD(Forward):
             res = integrate_around_loop(self.source, self.receiver, hkl1)
             if self.waveform is not None:
                 res /= -1j*omega.squeeze()
-            return res
+            return res.squeeze()
+        
+        H = frq_integrand(self.freqs)
+
+        if self.waveform is not None:
+            return H*self.waveform.fourier_d2wdt2(self.freqs)
+        else:
+            return H
+        
+    def __call__(self, sigma, thickness):
+        if isinstance(sigma, ndarray): sigma = torch.from_numpy(sigma)
+        if isinstance(thickness, ndarray): thickness = torch.from_numpy(thickness)
+        self.sigma = ((sigma+0j)[..., None, None]).to(self.device)
+        if sigma.ndim > thickness.ndim:
+            thickness = thickness[:, None]
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
+        return self.forward()*c.mu0
+
+class ForwardFD2(ForwardFD):
+    sofr = None
+    def forward(self):
+        def frq_integrand(f):
+            omega = c.twopi*f[:,None]
+
+            def wvlngth_integrand(wave_length):
+                """ Hz from horizontal electric dipole. """
+                lmb = wave_length[None, :]
+                
+                tmp_u0 = u0(omega, lmb)
+                intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
+                intg *= lmb**2 / tmp_u0
+            
+                if self.filterfunc is not None:
+                    intg *= self.filterfunc.omega_filter(omega)
+                return torch.squeeze(intg/c.fourpi)
+            
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=16, device=self.device, tolerance=self.tolerance)
+            r,HR = hkl1.range(self.rmin/2, self.rmax*2)
+            HR = HR[:, None, :]
+            if self.sofr is None:
+                self.sofr = self.source.s_of_r(self.receiver, r)[None, :, :]
+            return - torch.einsum('...i,...i->...', HR, self.sofr)
         
         H = frq_integrand(self.freqs)
 
@@ -510,12 +554,12 @@ class ForwardLaplace2(Forward):
                     intg /= -1j*omega.squeeze()                    
                 return torch.squeeze(intg).real
             cbft = invLaplace(s_integrand, device=self.device)
-            return cbft(self.t_eval)
+            return cbft(self.t_eval).real
 
         hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=self.tolerance)
         r,HR = hkl1._range(self.rmin, self.rmax)
         if self.sofr is None:
-            self.sofr = self.source.s_of_r(self.receiver, r)
+            self.sofr = self.source.s_of_r(self.receiver, r).real
         res = torch.einsum('...i,...i', HR, self.sofr)
         cbft=CubicSpline(self.t_eval, res.T, transform=torch.log10, integrate=False)
 
@@ -624,13 +668,16 @@ class Forward3(Forward):
             r,HR = hkl1.range(self.rmin, self.rmax)
             if self.sofr is None:
                 self.sofr = self.source.s_of_r(self.receiver, r).to(torch.complex128)
-            res = torch.einsum('...i,...i', HR, self.sofr)
+
+            res = torch.einsum('...ik,...jk', self.sofr, HR)
             if self.waveform is not None:
                 res /= -1j*omega.squeeze()
             return res
         
         cbft=invFourier(frq_integrand, smp_per_decade=16, device=self.device)
         self.t_sampled,Ht = cbft.range(self.tmin, self.tmax)
+
+
 
         if self.t2t is None:
             self.t2t = wv_to_t(self.times, self.t_sampled, waveform=self.waveform)

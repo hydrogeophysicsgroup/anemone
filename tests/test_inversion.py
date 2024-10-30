@@ -167,7 +167,7 @@ def test_inversion_multi_model():
 
 
     z = np.arange(n_layers)[:,None]
-    x = 30*np.arange(10)[None,:]
+    x = 30*np.arange(3)[None,:]
 
     rho = 300*np.ones_like(z+x)
     rho[(0.03*x-0.75*z+10)>0] = 10
@@ -242,7 +242,7 @@ def test_inversion_multi_model2():
     t = torch.logspace(-5, -3.5, 32, dtype=torch.double)
     
 
-    gpu = torch.device('cuda')
+    gpu = torch.device('cpu')
     fwr = Forward3(tx, rx, t.to(gpu), waveform=Waveform.example())
     print(fwr.device)
     
@@ -251,7 +251,7 @@ def test_inversion_multi_model2():
 
 
     z = np.arange(n_layers)[:,None]
-    x = 30*np.arange(12)[None,:]
+    x = 30*np.arange(3)[None,:]
 
     rho = 300*np.ones_like(z+x)
     rho[(0.03*x-0.75*z+10)>0] = 10

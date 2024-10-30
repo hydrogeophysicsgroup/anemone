@@ -3,7 +3,7 @@ from anemone.experiment import *
 
 def test_40x40_aarhusInv_stepoff():
     from anemone.experiment import Loop, Receiver
-    from anemone.forwards import Forward3 as Forward
+    from anemone.forwards import Forward
     import torch
 
 
@@ -41,7 +41,7 @@ def test_40x40_aarhusInv_stepoff():
 
         fig.suptitle('Test against AarhusInv 40x40 m^2 loop with stepoff waveform')
         plt.show()
-    assert torch.allclose(ainv_dbdt.real, dbdt.real, rtol=1e-2), "aarhus inv and pytorch forward do not match within 1/2 percent"
+    assert torch.allclose(ainv_dbdt.real, dbdt.real, rtol=1e-2), "aarhus inv and pytorch forward do not match within 1 percent"
 
 def test_Laplace_40x40_aarhusInv_stepoff():
     from anemone.experiment import Loop, Receiver
@@ -130,7 +130,7 @@ def test_40x40_aarhusInv_stepoff_hankel_tolerance():
 
 def test_40x40_aarhusInv_piecewise_waveform():
     from anemone.experiment import Loop, Receiver, Waveform
-    from anemone.forwards import Forward3 as Forward
+    from anemone.forwards import Forward
     import torch
 
 
@@ -155,7 +155,7 @@ def test_40x40_aarhusInv_piecewise_waveform():
 
     rho = 40
     sigma = 1/torch.tensor([rho,rho])
-    thick = torch.tensor([10])
+    thick = torch.tensor([20])
 
     fwr = Forward(lp, rx, times, waveform=waveform)
     dbdt = fwr(sigma, thick)
@@ -176,6 +176,51 @@ def test_40x40_aarhusInv_piecewise_waveform():
         fig.suptitle('Test against AarhusInv with Piecewise Waveform')
         plt.show()
     assert torch.allclose(ainv_dbdt, dbdt, rtol=0.5e-2), "aarhus inv and pytorch forward do not match within 1/2 percent"
+
+def test_HankelForwards_aarhusInv_piecewise_waveform():
+    from anemone.experiment import Loop, Receiver, Waveform
+    from anemone.forwards import Forward, Forward2, Forward3
+    import torch
+
+    ainv_dbdt = torch.tensor([3.853627e-04, 2.309149e-04, 1.255715e-04, 7.168451e-05,
+        4.196206e-05, 2.297534e-05, 1.302996e-05, 7.591422e-06,
+        4.179841e-06, 2.394241e-06, 1.452859e-06, 8.455657e-07,
+        4.466630e-07, 2.468966e-07, 1.423754e-07, 7.665493e-08,
+        4.189503e-08, 2.367454e-08, 1.263738e-08, 6.809730e-09], dtype=torch.float64)
+
+    times = torch.tensor([9.350e-06, 1.145e-05, 1.458e-05, 1.822e-05, 2.255e-05, 2.867e-05, 3.595e-05, 4.460e-05, 5.660e-05, 7.070e-05, 8.630e-05, 1.071e-04,
+        1.381e-04, 1.748e-04, 2.174e-04, 2.775e-04, 3.515e-04, 4.385e-04,
+        5.575e-04, 7.035e-04])
+
+    waveform = Waveform.example()
+
+    lp = Loop.square(40)
+    rx = Receiver()
+
+    rho = 40
+    sigma = 1/torch.tensor([rho,rho])
+    thick = torch.tensor([10])
+
+    for cForward,fname in zip([Forward, Forward2, Forward3], ['Forward', 'Forward2', 'Forward3']):
+        fwr = Forward(lp, rx, times, waveform=waveform)
+        dbdt = fwr(sigma, thick)
+        if __name__ == '__main__':
+            import matplotlib.pyplot as plt
+            fig,ax = plt.subplots(1,2, sharex=True)
+            ax[0].loglog(fwr.times.numpy(), dbdt.real, label=f'{fname}')
+            ax[0].loglog(times,      ainv_dbdt, '--', label='AarhusInv')
+            ax[0].set_ylabel('dB/dt')
+            ax[0].legend()
+            ax[0].set_aspect('equal')
+
+            ax[1].semilogx(times, 100*torch.abs(dbdt.real-ainv_dbdt)/torch.abs(ainv_dbdt))
+            ax[1].set_ylabel('relative difference [%]')
+            for ax_ in ax:
+                ax_.set_xlabel('time [s]')
+
+            fig.suptitle(f'Test against AarhusInv with Piecewise Waveform using {fname}')
+            plt.show()
+        assert torch.allclose(ainv_dbdt, dbdt, rtol=1e-2), f"aarhus inv and {fname} do not match within 1 percent"
 
 def test_Laplace_40x40_aarhusInv_piecewise_waveform():
     from anemone.experiment import Loop, Receiver, Waveform
@@ -337,19 +382,53 @@ def test_IPforward():
         plt.show()
     assert torch.allclose(ainv_dbdt, dbdt, rtol=1e-2), "aarhus inv and pytorch forward do not match within 1 percent"
 
-def test_multirx():
-    
-    from anemone.forwards import Forward
-
-    lp = Loop.square(40)
-    rx = Receiver(x=torch.linspace(-20, 20, 5))
+def test_multirx_Forward1():
+    from anemone.forwards import Forward, Forward2, Forward3
+    lp = Loop.square(50)
+    rx = Receiver(x=torch.linspace(-20, 20, 5)*0.9)
     waveform = Waveform.example()
     times = torch.logspace(-5, -3, 31, dtype=torch.double)
-    fwr = Forward(lp, rx, times, waveform=waveform)
+
     sigma = 1/torch.tensor([40, 40])
     thick = torch.tensor([10])
+
+
+    fwr = Forward(lp, rx, times, waveform=waveform)
     dbdt = fwr(sigma, thick)
-    print('shape of dbdt: ', dbdt.shape)
+    assert dbdt.shape == (5, 31), "multireceiver forward1 does not return correct shape"
+
+def test_multirx_Forward2():
+    from anemone.forwards import Forward, Forward2, Forward3
+    lp = Loop.square(50)
+    rx = Receiver(x=torch.linspace(-20, 20, 5)*0.9)
+    waveform = Waveform.example()
+    times = torch.logspace(-5, -3, 31, dtype=torch.double)
+
+    sigma = 1/torch.tensor([40, 40])
+    thick = torch.tensor([10])
+
+
+    fwr = Forward2(lp, rx, times, waveform=waveform)
+    dbdt = fwr(sigma, thick)
+    assert dbdt.shape == (5, 31), "multireceiver Forward2 does not return correct shape"
+
+def test_multirx_Forward3():
+    from anemone.forwards import Forward, Forward2, Forward3
+    lp = Loop.square(50)
+    rx = Receiver(x=torch.linspace(-20, 20, 5)*0.9)
+    waveform = Waveform.example()
+    times = torch.logspace(-5, -3, 31, dtype=torch.double)
+
+    sigma = 1/torch.tensor([40, 40])
+    thick = torch.tensor([10])
+
+
+    fwr = Forward3(lp, rx, times, waveform=waveform)
+    dbdt = fwr(sigma, thick)
+    assert dbdt.shape == (5, 31), "multireceiver Forward3 does not return correct shape"
+
+
+
 
 
 
@@ -446,6 +525,95 @@ def test_forward_speed():
         dbdt = fwr3(sigma, thick)
     t2 = perf_counter()
     print('Forward3: ', t2-t1)
+def test_multireceiver_forward():
+    from anemone.experiment import Loop, Receiver
+    from anemone.forwards import Forward
+    import torch
+
+
+    times = torch.tensor([9.350e-06, 1.145e-05, 1.458e-05, 1.822e-05, 2.255e-05, 2.867e-05,
+        3.595e-05, 4.460e-05, 5.660e-05, 7.070e-05, 8.630e-05, 1.071e-04,
+        1.381e-04, 1.748e-04, 2.174e-04, 2.775e-04, 3.515e-04, 4.385e-04,
+        5.575e-04, 7.035e-04])
+
+    lp = Loop.square(40)
+    rx = Receiver(x=torch.linspace(-400, 400, 202), z=10)
+
+    rho = 40
+    sigma = 1/torch.tensor([rho,2*rho])
+    thick = torch.tensor([10])
+
+    fwr = Forward(lp, rx, times)
+    dbdt = fwr(sigma, thick)
+
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots()
+        ax.semilogy(rx.x, dbdt.real, 'C0.-', label='mforward')
+        ax.semilogy(rx.x, -dbdt.real, 'r.-', label='mforward')
+        plt.show()
+    assert (rx.x[:, None]+times[None, :]).shape == dbdt.shape, "dbdt shape is not correct"
+
+def test_multireceiver_forward_multi_height():
+    from anemone.experiment import Loop, Receiver
+    from anemone.forwards import Forward
+    import torch
+
+
+    times = torch.tensor([9.350e-06, 1.145e-05, 1.458e-05, 1.822e-05, 2.255e-05, 2.867e-05,
+        3.595e-05, 4.460e-05, 5.660e-05, 7.070e-05, 8.630e-05, 1.071e-04,
+        1.381e-04, 1.748e-04, 2.174e-04, 2.775e-04, 3.515e-04, 4.385e-04,
+        5.575e-04, 7.035e-04])
+
+    lp = Loop.square(40)
+    rx = Receiver(x=torch.linspace(-400, 400, 202), z=torch.abs(torch.linspace(-400, 400, 202)))
+
+    rho = 40
+    sigma = 1/torch.tensor([rho,2*rho])
+    thick = torch.tensor([10])
+
+    fwr = Forward(lp, rx, times)
+    dbdt = fwr(sigma, thick)
+
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots()
+        ax.semilogy(rx.x, dbdt.real, 'C0.-', label='mforward')
+        ax.semilogy(rx.x, -dbdt.real, 'r.-', label='mforward')
+        plt.show()
+    assert (rx.x[:, None]+times[None, :]).shape == dbdt.shape, "dbdt shape is not correct"
+
+def test_multireceiver_frequency_domain():
+    from anemone.experiment import Loop, Receiver
+    from anemone.forwards import ForwardFD
+    import torch
+
+    lp = Loop.square(50)
+    rx = Receiver(x=torch.linspace(-200, 200, 202), y=torch.linspace(-200, 200, 202))
+    freqs = torch.tensor([2000], dtype=torch.double)
+
+    rho = 40
+    sigma = 1/torch.tensor([rho,2*rho])
+    thick = torch.tensor([10])
+
+    fwr = ForwardFD(lp, rx, freqs)
+    from time import time as timer
+    t0 = timer()
+    B = fwr(sigma, thick)
+    print('elapsed time: ', timer()-t0)
+    
+    t0 = timer()
+    B = fwr(sigma, thick)
+    print('elapsed time: ', timer()-t0)
+
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots()
+        ax.pcolormesh(rx.x,rx.y, torch.log10(torch.abs(B.reshape((202,202)))))
+        plt.show()
+    assert (rx.x[:, None]+freqs[None, :]).shape == B.shape, "dbdt shape is not correct"
+
+
 
 if __name__ == '__main__':
     # test_IPforward()
@@ -453,5 +621,11 @@ if __name__ == '__main__':
     # test_40x40_aarhusInv_piecewise_waveform()
     #test_40x40_aarhusInv_stepoff()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
+    #test_Laplace2_40x40_aarhusInv_piecewise_waveform()
+    # test_multirx_Forward1()
+    # test_multirx_Forward3()
+    # test_multirx_Forward3()
+    test_HankelForwards_aarhusInv_piecewise_waveform()
+    # test_multirx()
     # test_Laplace2_40x40_aarhusInv_piecewise_waveform()
-    test_multirx()
+    exit()

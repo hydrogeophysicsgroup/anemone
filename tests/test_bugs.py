@@ -40,11 +40,12 @@ def test_gate_sampling():
         plt.show()
 
 
-def test_mulirx_symmetry():
+def test_multirx():
     tx = Loop.square(2)
     from anemone.forwards import Forward
+    import numpy as np
     
-    X,Y = torch.linspace(-1, 1, 10)*0.98, np.linspace(-1, 1, 10)*0.98
+    X,Y = torch.linspace(-1, 1, 7)*0.98, np.linspace(-1, 1, 7)*0.98
 
     
 
@@ -54,35 +55,75 @@ def test_mulirx_symmetry():
 
     lm_gates = torch.logspace(-6, -3, 32)
 
-    # resp = torch.zeros(X.shape+Y.shape)
+    resp = torch.zeros(X.shape+Y.shape, dtype=torch.float64)
     
-    # for ix,x in enumerate(X):
-    #     for iy,y in enumerate(Y):
-    #         rx = Receiver(x=x, y=y)
-    #         fwr = Forward(tx,rx,lm_gates)
-    #         # print('rmin rmax: ', fwr.rmin, fwr.rmax)
-    #         dbdt = fwr(sigma,thk)
-    #         resp[ix,iy] = dbdt[0]
+    for ix,x in enumerate(X):
+        for iy,y in enumerate(Y):
+            rx = Receiver(x=x, y=y)
+            fwr = Forward(tx,rx,lm_gates)
+            # print('rmin rmax: ', fwr.rmin, fwr.rmax)
+            dbdt = fwr(sigma,thk)
+            resp[ix,iy] = dbdt[0]
 
     rx1 = Receiver(x=X, y=Y)
     fwr = Forward(tx,rx1,lm_gates)
     dbdt = fwr(sigma,thk)
-    print(dbdt.shape)
+
+    resp2 = dbdt[..., 0].reshape(X.shape+Y.shape)
+
+    assert torch.allclose(resp, resp2, rtol=5e-3), 'multi-receiver forward not consistent with single-receiver forwards within 1/2 percent'
+    
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots(1,3)
+        pcm=ax[0].pcolor(X,Y, resp)
+        plt.colorbar(pcm, ax=ax[0])
+        pcm=ax[1].pcolor(X,Y, resp2)
+        plt.colorbar(pcm, ax=ax[1])
+        pcm=ax[2].pcolor(X,Y, (resp-resp2) / resp)
+        plt.colorbar(pcm, ax=ax[2])
+        plt.show()
+        
 
 
+
+def test_multirx_symmetry():
+    tx = Loop.square(2)
+    from anemone.forwards import Forward3
+    import numpy as np
+    
+    X,Y = torch.linspace(-1, 1, 25)*0.9, np.linspace(-1, 1, 25)*0.9
+
+    
+
+    rho = torch.tensor([40, 50, 80])
+    sigma = 1./rho
+    thk = torch.tensor([20, 20])
+
+    lm_gates = torch.tensor([1e-5, 2e-5])
+
+    rx1 = Receiver(x=X, y=Y)
+    fwr = Forward3(tx,rx1,lm_gates)
+    dbdt = fwr(sigma,thk)
+    
+
+    resp = dbdt[..., 0].reshape(X.shape+Y.shape).cpu().numpy()
+    assert np.allclose(resp, resp[::-1, ::-1]), 'both axes flipped symmetry'
+    assert np.allclose(resp, resp[::-1]), 'x axis flipped symmetry'
+    assert np.allclose(resp, resp[:, ::-1]), 'y axis flipped symmetry'
+    assert np.allclose(resp, resp.T), 'transpose symmetry'
 
     if __name__ == '__main__':
 
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,1)
-        pcm=ax.pcolor(X,Y, resp-resp.T)
+        pcm=ax.pcolor(X,Y, resp)
         plt.colorbar(pcm)
         plt.show()
 
-    assert torch.allclose(resp, resp.T), "broken symmetry in multi-receiver forward"
-
 
 if __name__ == '__main__':
+    # test_multirx()
     #test_gate_sampling()
-    test_mulirx_symmetry()
+    test_multirx_symmetry()
 
