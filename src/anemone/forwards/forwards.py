@@ -221,7 +221,7 @@ class ForwardLaplace(Forward):
             self.tmin += -self.waveform.time.max()
             self.tmax += -self.waveform.time.min()
             if self.tmin<0: 
-                self.tmin = torch.tensor([0.25e-6])
+                self.tmin = torch.tensor([0.1e-6])
                 Warning('tmin is less than 0, setting tmin to 0.25e-6')
             waveform.time = waveform.time.to(self.device)
             waveform.amplitude = waveform.amplitude.to(self.device)
@@ -498,7 +498,7 @@ class ForwardGeomOpLaplace(ForwardLaplace):
             return cbft(self.t_eval)
 
         hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=self.tolerance)
-        r,HR = hkl1.range(self.rmin, self.rmax)
+        r,HR = hkl1._range(self.rmin, self.rmax)
         if self.geomz is None:
             self.geomz = self.source.geomz(self.receiver, r)
             self.r = r
@@ -673,7 +673,7 @@ class Forward3(Forward):
                     intg *= self.filterfunc.omega_filter(omega)
                 return torch.squeeze(intg/c.fourpi)
             
-            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=1e-6)
+            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=1e-6, smp_per_decade=10)
             r,HR = hkl1.range(self.rmin, self.rmax)
             if self.geomz is None:
                 self.geomz = self.source.geomz(self.receiver, r).to(torch.complex128)
@@ -686,7 +686,7 @@ class Forward3(Forward):
                 res /= -1j*omega.squeeze()
             return res
         
-        cbft=invFourier(frq_integrand, smp_per_decade=16, device=self.device)
+        cbft=invFourier(frq_integrand, smp_per_decade=10, device=self.device)
         self.t_sampled,Ht = cbft.range(self.tmin, self.tmax)
 
 
@@ -704,7 +704,7 @@ class ForwardLaplace3(ForwardLaplace):
     geomz = None
     t2t   = None
 
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, t_smp_per_decade=10):
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, t_smp_per_decade=8):
         super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance, t_smp_per_decade)
 
     def forward(self):

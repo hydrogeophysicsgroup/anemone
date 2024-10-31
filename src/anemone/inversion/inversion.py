@@ -384,8 +384,8 @@ class Inversion:
 
     def __init__(self, data_observed, data_error, starting_model,  forward_operator, logger=print, data_transform=passthrough, device=None):
         """Create an inversion object, the necessary """
-        self.data_transform = data_transform
-        self.data_observed    = self.data_transform(data_observed)
+        self.data_transform   = data_transform
+        self.data_observed    = data_transform(data_observed)
         self.data_error       = torch.log10(1.+data_error/data_observed)
         self.model            = starting_model
         self.forward = forward_operator
