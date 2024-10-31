@@ -138,13 +138,15 @@ class Loop:
     def __len__(self):
         return self.x.numel()
     
-    def s_of_r(self, rx, R):
-        R = torch.tensor(R, dtype=torch.float64)
-        dR = np.log(R[1]/R[0])
+    def geomz(self, rx, R):
+        logR = torch.log(R)
+        dR = logR[1]-logR[0]
 
         rx_xyz = rx.xyz
         n_rec  = len(rx)
-        s      = torch.zeros((n_rec, )+R.shape, dtype=torch.complex128)
+
+        geomz      = torch.zeros((n_rec, )+R.shape, dtype=torch.float64)
+
         R      = R [None, None, :]
         
         lp_xyz = self.xyz[:, None] - rx_xyz[None, :]
@@ -156,7 +158,14 @@ class Loop:
             p2 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i+1])
             x1,y1 = p1[..., 0], p1[..., 1]
             x2,y2 = p2[..., 0], p2[..., 1]
-            x_ = x1[:,None] + (x2-x1)[:,None]*torch.linspace(0, 1, 1001)[None, :]
+            ix = int(3*torch.abs(x2-x1).max())
+            tmpx = torch.linspace(-1, 1, ix)
+            x_samp = tmpx
+            x_samp += 1.
+            length = torch.abs(x2-x1)/2
+
+
+            x_ = (x1[:,None] + length[:,None]*x_samp[None, :])
             dx = (x_[..., 1] - x_[..., 0])[:,None]
             
             x1 = x1[:, None]
@@ -167,11 +176,11 @@ class Loop:
 
 
             cr = torch.sqrt(y1**2 + x_**2)
-            phi = lamontagne(np.log(cr/R)/dR)
-            cs = -y1 * phi * dx / cr
-            s += cs.sum(axis=1, keepdims=False)
-
-        return s
+            phi = lamontagne((torch.log(cr)-logR)/dR)
+            cs =  -y1 * phi * dx / cr
+            geomz += cs.sum(axis=1, keepdims=False)
+        return geomz
+   
     
 def perp_distance_to_line(x,y, line_points):
 	((x1,y1), (x2,y2)) = line_points
