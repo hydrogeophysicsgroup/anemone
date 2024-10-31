@@ -533,9 +533,9 @@ def test_multireceiver_frequency_domain():
 
 
 if __name__ == '__main__':
-    # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
+    test_Laplace3_40x40_aarhusInv_piecewise_waveform()
     # test_multirx_Laplace3()
     # test_forwardlaplace3_parallel_models()
-    test_forward_speeds()
+    # test_forward_speeds()
 
     exit()

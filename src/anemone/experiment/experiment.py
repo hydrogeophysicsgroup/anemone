@@ -139,7 +139,7 @@ class Loop:
         return self.x.numel()
     
     def geomz(self, rx, R):
-        logR = torch.log(R)
+        logR = torch.log(R).cpu()
         dR = logR[1]-logR[0]
 
         rx_xyz = rx.xyz
@@ -179,7 +179,7 @@ class Loop:
             phi = lamontagne((torch.log(cr)-logR)/dR)
             cs =  -y1 * phi * dx / cr
             geomz += cs.sum(axis=1, keepdims=False)
-        return geomz
+        return geomz.to(R.device)
    
     
 def perp_distance_to_line(x,y, line_points):

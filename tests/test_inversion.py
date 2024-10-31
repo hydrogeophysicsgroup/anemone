@@ -360,22 +360,23 @@ def test_inversion_multi_model2():
     import matplotlib.pyplot as plt
 
     from anemone.experiment import Loop, Receiver, compute_relstd, Waveform
-    from anemone.forwards import ForwardLaplace3
+    from anemone.forwards import Forward3, ForwardLaplace3
     tx = Loop.square(40)
     rx = Receiver()
     t = torch.logspace(-5, -3.5, 32, dtype=torch.double)
     
 
     gpu = torch.device('cpu')
-    fwr = ForwardLaplace3(tx, rx, t.to(gpu), waveform=Waveform.example(), t_smp_per_decade=16)
+    fwr = ForwardLaplace3(tx, rx, t.to(gpu), waveform=Waveform.example())
     print(fwr.device)
     
     n_layers = 31
     thick = torch.logspace(-1, 1, n_layers-1).to(gpu)
 
+    n_mod = 15
 
     z = np.arange(n_layers)[:,None]
-    x = 30*np.arange(3)[None,:]
+    x = (300/n_mod)*np.arange(n_mod)[None,:]
 
     rho = 300*np.ones_like(z+x)
     rho[(0.03*x-0.75*z+10)>0] = 10
@@ -392,23 +393,26 @@ def test_inversion_multi_model2():
 
     print('shape of data is :', dbdt.shape)
     # should be >>> shape of data is : torch.Size([10, 16])
+    plt.figure()
+    plt.semilogy(dbdt.cpu())
+    plt.show()
 
 
 
-    n_data = len(dbdt.T.flatten())
+    n_data = len(dbdt.flatten())
 
     def transform(d, skip_log=False):
         if skip_log:
-            return d.reshape((-1,n_data)).squeeze()
+            return torch.abs(d.reshape((-1,n_data)).squeeze())
         else:
             return torch.log10(torch.abs(d.reshape((-1,n_data)).squeeze()))
     
 
     dbdt_err = compute_relstd(fwr.times, dbdt)
-    dbdt_err5 = compute_relstd(fwr.times, dbdt, relative_noise=0.03)
+    dbdt_err5 = compute_relstd(fwr.times, dbdt)
 
     m_start = m_true.copy()
-    m_start.values[0] = torch.ones_like(m_start.values[0])*0.02
+    m_start.values[0] = torch.ones_like(m_start.values[0])*torch.mean(m_start.values[0])
 
     dbdt_obs = transform(torch.abs(dbdt + dbdt*dbdt_err*torch.randn(dbdt.shape,device=gpu)), skip_log=True)
 
@@ -423,7 +427,7 @@ def test_inversion_multi_model2():
 
     from time import perf_counter
     t0 = perf_counter()
-    res_mod = inv.invert(smoothness=1e3, iter_cap=20)
+    res_mod = inv.invert(smoothness=5e2, iter_cap=20)
     delta_t = perf_counter()-t0
     
     if __name__ == '__main__':

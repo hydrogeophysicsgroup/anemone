@@ -1,7 +1,6 @@
-from em1d.inversion import *
-
-from em1d.experiment import Loop, Receiver, Waveform
-from em1d.forwards import Forward, ForwardLaplace
+from anemone.inversion import *
+from anemone.experiment import Loop, Receiver, Waveform
+from anemone.forwards import Forward, ForwardLaplace
 tx = Loop.square(25)
 rx = Receiver()
 t = torch.logspace(-5, -3.5, 16, dtype=torch.double)
