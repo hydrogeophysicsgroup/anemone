@@ -265,14 +265,14 @@ def test_inversion_multi_model():
     import matplotlib.pyplot as plt
 
     from anemone.experiment import Loop, Receiver, compute_relstd, Waveform
-    from anemone.forwards import Forward, ForwardLaplace, ForwardGeomOp
+    from anemone.forwards import Forward3#, ForwardLaplace, ForwardGeomOp
     tx = Loop.square(25)
     rx = Receiver()
     t = torch.logspace(-5, -3, 32, dtype=torch.double)
     
 
     gpu = torch.device('cpu')
-    fwr = ForwardGeomOp(tx, rx, t.to(gpu), waveform=Waveform.example(), tolerance=1e-6)
+    fwr = Forward3(tx, rx, t.to(gpu), waveform=Waveform.example(), tolerance=1e-6)
     print(fwr.device)
     
     n_layers = 31
@@ -411,6 +411,7 @@ def test_inversion_multi_model2():
     m_start.values[0] = torch.ones_like(m_start.values[0])*0.02
 
     dbdt_obs = transform(torch.abs(dbdt + dbdt*dbdt_err*torch.randn(dbdt.shape,device=gpu)), skip_log=True)
+
     dbdt_err5 = transform(dbdt*dbdt_err5, skip_log=True)
 
 
@@ -438,10 +439,10 @@ def test_inversion_multi_model2():
 if __name__ == '__main__':
     # test_model_smoothing_constraint()
     
-    # test_inversion_multi_model()
+    test_inversion_multi_model2()
 
     # test_inversion()
     # test_inversion()
     # test_inversionGM()
-    test_inversion_multi_model2()
+    # test_inversion_multi_model2()
 

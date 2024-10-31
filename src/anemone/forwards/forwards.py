@@ -703,7 +703,7 @@ class Forward3(Forward):
 class ForwardLaplace3(ForwardLaplace):
     geomz = None
     t2t   = None
-    
+
     def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, t_smp_per_decade=10):
         super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance, t_smp_per_decade)
 
@@ -748,7 +748,13 @@ class ForwardLaplace3(ForwardLaplace):
         if self.t2t is None:
             self.t2t = wv_to_t(self.times, self.t_eval, waveform=self.waveform)
 
+        # for x,xname in zip([self.geomz, HR, self.t2t, Ht], 'geomz, HR, t2t, Ht'.split(', ')):
+        #     print(f'the shape of {xname} is {x.shape}')
+
+
         if len(Ht.shape)==1:
-            return torch.einsum('...i,...i', Ht.real, self.t2t).squeeze()
+            return torch.einsum('...i,...i', Ht, self.t2t).mT.squeeze()
+        elif len(Ht.shape)==3:
+            return torch.einsum('...ik,...jk->...ij', Ht.squeeze().T, self.t2t).squeeze()
         else:
-            return torch.einsum('...ik,...jk->...ij', Ht.real, self.t2t).squeeze()
+            return torch.einsum('...ik,...jk->...ij', Ht, self.t2t).squeeze()

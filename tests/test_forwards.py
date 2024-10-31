@@ -92,6 +92,85 @@ def aarhusInv_piecewise_comparison(ForwardMaker, **kwargs):
         plt.show()
     assert torch.allclose(ainv_dbdt.real, dbdt.real, rtol=rtol), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
 
+
+def check_parallel_models(ForwardMaker):
+    name = ForwardMaker.__name__
+    from anemone.experiment import Loop, Receiver, Waveform
+    lp = Loop.square(40)
+    rx = Receiver()
+    waveform = Waveform.example()
+    times = torch.logspace(-5, -3, 31, dtype=torch.double)
+
+    rho = torch.ones(3)*40.
+    rho_change = torch.linspace(-30, 260, 94)
+    rho = rho[:, None] + rho_change[None, :]
+    rho[0, :] = 40.
+    rho[2, :] = 40.
+
+    thick = np.ones_like(rho)[:-1, :]*20
+
+    fwr = ForwardMaker(lp, rx, times, waveform=waveform)
+    dbdt = fwr(rho, thick)
+    print('dbdt shape: ', dbdt.shape)
+    
+    if __name__ == '__main__':
+        
+        import matplotlib.pyplot as plt
+        plt.figure()
+        plt.semilogy(dbdt)
+        plt.show()
+
+    assert dbdt.shape == (94, 31), f"{name} running parallel models does not return correct shape"
+
+
+
+
+def check_forward_speeds(ForwardMaker):
+    name = ForwardMaker.__name__
+    from anemone.experiment import Loop, Receiver, Waveform
+    lp = Loop.square(40)
+    rx = Receiver()
+    waveform = Waveform.example()
+    times = torch.logspace(-5, -3, 31, dtype=torch.double)
+
+    rho = torch.ones(3)*40.
+    rho_change = torch.linspace(-30, 260, 100)
+    rho = rho[:, None] + rho_change[None, :]
+    rho[0, :] = 40.
+    rho[2, :] = 40.
+
+    thick = np.ones_like(rho)[:-1, :]*20
+
+    fwr = ForwardMaker(lp, rx, times, waveform=waveform)
+    dbdt = fwr(torch.ones(3)*40, torch.ones(2)*20)
+
+
+    from time import perf_counter
+    t0 = perf_counter()
+    dbdt = fwr(rho, thick)
+    t1 = perf_counter()
+    dt = t1-t0
+    print(f'{name} {len(rho_change)} forward calculation took {dt:0.3f} s')
+
+def test_forward_speeds():
+    from anemone.forwards import Forward, ForwardGeomOp, Forward3, ForwardLaplace, ForwardLaplace2, ForwardLaplace3
+    for cForward in [ForwardGeomOp, Forward3, ForwardLaplace3]:
+        check_forward_speeds(cForward)
+
+
+def test_hankel_forward_parallel_models():
+    from anemone.forwards import Forward3
+    check_parallel_models(Forward3)
+
+def test_ForwardGeoOp_parallel_models():
+    from anemone.forwards import ForwardGeomOp
+    check_parallel_models(ForwardGeomOp)
+    
+
+def test_forwardlaplace3_parallel_models():
+    from anemone.forwards import ForwardLaplace3
+    check_parallel_models(ForwardLaplace3)
+
 def test_40x40_aarhusInv_stepoff():
     from anemone.forwards import Forward
     aarhusInv_stepoff_comparison(Forward)
@@ -137,6 +216,8 @@ def test_Laplace2_40x40_aarhusInv_piecewise_waveform():
 def test_Laplace3_40x40_aarhusInv_piecewise_waveform():
     from anemone.forwards import ForwardLaplace3
     aarhusInv_piecewise_comparison(ForwardLaplace3, rtol=2e-2)
+
+
 
 
 def test_IPforward():
@@ -358,100 +439,9 @@ def test_multirx_Forward3():
     from anemone.forwards import Forward3
     multi_rx_forward_shape_check(Forward3)
 
-
-def test_forward_speed_laplace():
-    from anemone.experiment import Loop, Receiver, Waveform
-    from anemone.forwards import ForwardLaplace2, ForwardLaplace
-    import torch
-
-
-    times = torch.tensor([9.350e-06, 1.145e-05, 1.458e-05, 1.822e-05, 2.255e-05, 2.867e-05, 3.595e-05, 4.460e-05, 5.660e-05, 7.070e-05, 8.630e-05, 1.071e-04,
-        1.381e-04, 1.748e-04, 2.174e-04, 2.775e-04, 3.515e-04, 4.385e-04,
-        5.575e-04, 7.035e-04], dtype=torch.float64)
-
-    t = torch.tensor([-1.0526e-03, -9.2963e-04,  0.0000e+00,  2.5000e-06], dtype=torch.float64)
-    wv = torch.tensor([0, 1, 1, 0], dtype=torch.float64)
-
-    waveform = Waveform(t, wv)
-
-
-    lp = Loop.square(40)
-    rx = Receiver()
-
-    rho = 40
-    sigma = 1/torch.tensor([rho,rho], dtype=torch.float64)
-    thick = torch.tensor([10], dtype=torch.float64)
-
-    fwr1 = ForwardLaplace(lp, rx, times, waveform=waveform)
-    fwr2 = ForwardLaplace2(lp, rx, times, waveform=waveform)
-
-    _ = fwr1(sigma, thick)
-    _ = fwr2(sigma, thick)
-
-    from time import perf_counter
-    
-    t1 = perf_counter()
-    for i in range(10):
-        dbdt = fwr1(sigma, thick)
-    t2 = perf_counter()
-    print('Laplace: ', t2-t1)
-
-    t1 = perf_counter()
-    for i in range(10):
-        dbdt = fwr2(sigma, thick)
-    t2 = perf_counter()
-    print('Laplace2: ', t2-t1)
-
-def test_forward_speed():
-    from anemone.experiment import Loop, Receiver, Waveform
-    from anemone.forwards import Forward2, Forward, Forward3
-    import torch
-
-
-    times = torch.tensor([9.350e-06, 1.145e-05, 1.458e-05, 1.822e-05, 2.255e-05, 2.867e-05, 3.595e-05, 4.460e-05, 5.660e-05, 7.070e-05, 8.630e-05, 1.071e-04,
-        1.381e-04, 1.748e-04, 2.174e-04, 2.775e-04, 3.515e-04, 4.385e-04,
-        5.575e-04, 7.035e-04], dtype=torch.float64)
-
-    t = torch.tensor([-1.0526e-03, -9.2963e-04,  0.0000e+00,  2.5000e-06], dtype=torch.float64)
-    wv = torch.tensor([0, 1, 1, 0], dtype=torch.float64)
-
-    waveform = Waveform(t, wv)
-
-
-    lp = Loop.square(40)
-    rx = Receiver()
-
-    rho = 40
-    sigma = 1/torch.tensor([rho,rho], dtype=torch.float64)
-    thick = torch.tensor([10], dtype=torch.float64)
-
-    fwr1 = Forward(lp, rx, times, waveform=waveform)
-    fwr2 = Forward2(lp, rx, times, waveform=waveform)
-    fwr3 = Forward3(lp, rx, times, waveform=waveform)
-
-    _ = fwr1(sigma, thick)
-    _ = fwr2(sigma, thick)
-    _ = fwr3(sigma, thick)
-
-    from time import perf_counter
-    
-    t1 = perf_counter()
-    for i in range(10):
-        dbdt = fwr1(sigma, thick)
-    t2 = perf_counter()
-    print('Forward: ', t2-t1)
-
-    t1 = perf_counter()
-    for i in range(10):
-        dbdt = fwr2(sigma, thick)
-    t2 = perf_counter()
-    print('Forward2: ', t2-t1)
-
-    t1 = perf_counter()
-    for i in range(10):
-        dbdt = fwr3(sigma, thick)
-    t2 = perf_counter()
-    print('Forward3: ', t2-t1)
+def test_multirx_Laplace3():
+    from anemone.forwards import ForwardLaplace3
+    multi_rx_forward_shape_check(ForwardLaplace3)
 
 def test_multireceiver_forward():
     from anemone.experiment import Loop, Receiver
@@ -543,24 +533,9 @@ def test_multireceiver_frequency_domain():
 
 
 if __name__ == '__main__':
-    # test_forward_timing()
-    # test_forward_timingGP()
-    # test_forward_timingGPLP()
-    # test_40x40_aarhusInv_stepoffGeomOpLaplace()
     # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
-    # test_40x40_aarhusInv_stepoffGeomOp()
-#    test_40x40_aarhusInv_stepoffGeomOpLaplace()
-    # # test_IPforward()
-    # test_40x40_aarhusInv_stepoff()
-    # test_40x40_aarhusInv_piecewise_waveform()
-    #test_40x40_aarhusInv_stepoff()
-    # test_Laplace_40x40_aarhusInv_piecewise_waveform()
-    #test_Laplace2_40x40_aarhusInv_piecewise_waveform()
-    # test_multirx_Forward1()
-    # test_multirx_Forward2()
-    # test_multirx_Forward3()
-    # test_HankelForwards_aarhusInv_piecewise_waveform()
-    # test_multirx()
-    # test_Laplace2_40x40_aarhusInv_piecewise_waveform()
-    test_multireceiver_forward()
+    # test_multirx_Laplace3()
+    # test_forwardlaplace3_parallel_models()
+    test_forward_speeds()
+
     exit()
