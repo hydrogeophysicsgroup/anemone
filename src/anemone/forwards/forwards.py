@@ -638,7 +638,8 @@ from anemone.experiment import lamontagne
 
 
 def wv_to_t(t_eval, t_sampled, waveform=None):
-    t_eval = t_eval.to(t_sampled.dtype)
+    t_eval = t_eval.to(torch.double)
+    t_sampled = t_sampled.to(torch.double)
 
     logT = torch.log(t_sampled)#.cpu()
     dT = logT[1]-logT[0]
@@ -702,6 +703,9 @@ class Forward3(Forward):
 class ForwardLaplace3(ForwardLaplace):
     geomz = None
     t2t   = None
+    
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, t_smp_per_decade=10):
+        super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance, t_smp_per_decade)
 
     def forward(self):
         def wvlngth_integrand(wave_length):
