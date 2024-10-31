@@ -375,7 +375,7 @@ def test_inversion_multi_model2():
 
 
     z = np.arange(n_layers)[:,None]
-    x = 30*np.arange(3)[None,:]
+    x = 30*np.arange(10)[None,:]
 
     rho = 300*np.ones_like(z+x)
     rho[(0.03*x-0.75*z+10)>0] = 10
@@ -435,6 +435,81 @@ def test_inversion_multi_model2():
        
     assert inv.misfits[-1] < 1, "misfit is not below one."
 
+
+def test_inversion_multi_model2():
+    import matplotlib.pyplot as plt
+
+    from anemone.experiment import Loop, Receiver, compute_relstd, Waveform
+    from anemone.forwards import ForwardLaplace3
+    tx = Loop.square(40)
+    rx = Receiver()
+    t = torch.logspace(-5, -3.5, 32, dtype=torch.double)
+    
+
+    gpu = torch.device('cuda')
+    fwr = ForwardLaplace3(tx, rx, t.to(gpu), waveform=Waveform.example())
+    
+    n_layers = 31
+    thick = torch.logspace(-1, 1, n_layers-1).to(gpu)
+
+
+    z = np.arange(n_layers)[:,None]
+    x = 30*np.arange(10)[None,:]
+
+    rho = 300*np.ones_like(z+x)
+    rho[(0.03*x-0.75*z+10)>0] = 10
+    rho[(0.075*x-1.25*z+5)>0] = 40
+
+    rho = torch.from_numpy(rho.astype(float)).to(gpu)
+    thick = torch.logspace(-1, 1, len(z)-1).to(gpu)
+    m_true = SmoothModels(rho, thick, device=gpu)
+
+    rm,tm = m_true.modelize(m_true.vec)
+    assert torch.allclose(rm, rho), 'something is not right with the model'
+    dbdt = fwr(rm,tm)
+    print('shape of data is :', dbdt.shape)
+
+
+
+    n_data = len(dbdt.T.flatten())
+
+    def transform(d, skip_log=False):
+        if skip_log:
+            return d.reshape((-1,n_data)).squeeze()
+        else:
+            return torch.log10(torch.abs(d.reshape((-1,n_data)).squeeze()))
+    
+
+    dbdt_err = compute_relstd(fwr.times, dbdt)
+    dbdt_err5 = compute_relstd(fwr.times, dbdt, relative_noise=0.03)
+
+    m_start = m_true.copy()
+    m_start.values[0] = torch.ones_like(m_start.values[0])*0.02
+
+    dbdt_obs = transform(torch.abs(dbdt + dbdt*dbdt_err*torch.randn(dbdt.shape,device=gpu)), skip_log=True)
+
+    dbdt_err5 = transform(dbdt*dbdt_err5, skip_log=True)
+
+
+    inv = LCI(dbdt_obs, dbdt_err5, m_start, fwr, data_transform=transform)
+    inv.data_misfit_acceptance_threshold = 0.9
+    print('fwr device is ', fwr.device)
+    invm1 = inv.m*1.
+    invm1[20:25] /= 1.1
+
+    from time import perf_counter
+    t0 = perf_counter()
+    res_mod = inv.invert(smoothness=1e1, iter_cap=10)
+    delta_t = perf_counter()-t0
+    
+    if __name__ == '__main__':
+        print(f'inversion took {delta_t:.2f} seconds.')
+        fig,axs = plt.subplots(2,1,sharex=True, sharey=True)
+        m_true.plot(ax=axs[0], vmin=1, vmax=2.5, cmap='turbo')
+        res_mod.plot(ax=axs[1], vmin=1, vmax=2.5, cmap='turbo')
+        plt.show() 
+       
+    assert inv.misfits[-1] < 1, "misfit is not below one."
 
 if __name__ == '__main__':
     # test_model_smoothing_constraint()
