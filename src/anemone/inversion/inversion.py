@@ -65,9 +65,9 @@ class EarthModel:
         else: raise NotImplementedError()
 
     def H1d(self, values):
-        H = np.eye(len(values))-np.eye(len(values), k=1)
-        #H = np.eye(len(values))-2*np.eye(len(values), k=1)+np.eye(len(values), k=2)
-        return H[:-1]
+        H = (np.eye(len(values))-np.eye(len(values), k=-1))[1:]
+        # H = (np.eye(len(values))-2*np.eye(len(values), k=1)+np.eye(len(values), k=2))[2:-2]
+        return H
 
     def H2d(self, matrix):
         Hv = block_diag(*[self.H1d(matrix[:, i]) for i in range(matrix.shape[1])])
@@ -123,11 +123,11 @@ class EarthModel:
 
 
 class FewLayerModel(EarthModel):
-    def __init__(self, sigma, thick, device=None):
-        lbnds = [torch.ones_like(sigma)*5e-5, torch.ones_like(thick)*0.1]
-        ubnds = [torch.ones_like(sigma)*1e1,  torch.ones_like(thick)*5e2]
-        super().__init__([sigma, thick], ['cond', 'thick'], lower_bounds=lbnds, upper_bounds=ubnds, device=device)
-        self.n_layers = len(sigma)
+    def __init__(self, res, thick, device=None):
+        lbnds = [torch.ones_like(res)*5e-5, torch.ones_like(thick)*0.1]
+        ubnds = [torch.ones_like(res)*1e1,  torch.ones_like(thick)*5e2]
+        super().__init__([res, thick], ['resistivity', 'thick'], lower_bounds=lbnds, upper_bounds=ubnds, device=device)
+        self.n_layers = len(res)
         if device is not None:
             for attr_name in self.__dict__:
                 attr_value = getattr(self, attr_name)
@@ -136,10 +136,10 @@ class FewLayerModel(EarthModel):
         self.device=device
 
     @classmethod
-    def starting_model(cls, n_layers, **kwargs):
-        sigma = (1./40)*torch.ones(n_layers)
+    def starting_model(cls, n_layers, rho=40., **kwargs):
+        res = rho*torch.ones(n_layers)
         thick = torch.logspace(0, 0.75, n_layers-1)*5        
-        return cls(sigma, thick, **kwargs)
+        return cls(res, thick, **kwargs)
     
     @staticmethod
     def vectorize(list_of_arrays):
@@ -169,11 +169,11 @@ class FewLayerModel(EarthModel):
 
 
 class SmoothModel(EarthModel):
-    def __init__(self, sigma, thick, device=None):
-        lbnds = [torch.ones_like(sigma)*5e-5]
-        ubnds = [torch.ones_like(sigma)*1e1]
-        super().__init__([sigma], ['cond'], lower_bounds=lbnds, upper_bounds=ubnds, device=device)
-        self.n_layers = len(sigma)
+    def __init__(self, res, thick, device=None):
+        lbnds = [torch.ones_like(res)*5e-5]
+        ubnds = [torch.ones_like(res)*1e1]
+        super().__init__([res], ['resistivity'], lower_bounds=lbnds, upper_bounds=ubnds, device=device)
+        self.n_layers = len(res)
         self.thick = thick
         if device is not None:
             for attr_name in self.__dict__:
@@ -185,10 +185,10 @@ class SmoothModel(EarthModel):
     
     @classmethod
     def starting_model(cls, n_layers, depth_bottom=150, rho=40, **kwargs):
-        sigma = (1./rho)*torch.ones(n_layers)
-        thick = torch.logspace(-1, 1, n_layers-1)
+        res = rho*torch.ones(n_layers)
+        thick = torch.logspace(-1, 1, n_layers-1)*2
         thick *= depth_bottom/thick.sum()
-        return cls(sigma, thick, **kwargs)
+        return cls(res, thick, **kwargs)
     
     @staticmethod
     def vectorize(list_of_arrays):
@@ -324,11 +324,11 @@ class FewLayerColeCole(EarthModel):
         return rho, tau, m, c, thick
 
 class SmoothModels(EarthModel):
-    def __init__(self, sigma, thick, device=None):
-        lbnds = [torch.ones_like(sigma)*5e-5]
-        ubnds = [torch.ones_like(sigma)*1e1]
-        super().__init__([sigma], ['cond'], lower_bounds=lbnds, upper_bounds=ubnds, device=device)
-        self.n_layers,self.n_models = sigma.shape
+    def __init__(self, res, thick, device=None):
+        lbnds = [torch.ones_like(res)]
+        ubnds = [torch.ones_like(res)*1e3]
+        super().__init__([res], ['resistivity'], lower_bounds=lbnds, upper_bounds=ubnds, device=device)
+        self.n_layers,self.n_models = res.shape
         self.thick = thick
         if device is not None:
             for attr_name in self.__dict__:
@@ -339,11 +339,11 @@ class SmoothModels(EarthModel):
 
     
     @classmethod
-    def starting_model(cls, n_layers, n_models, depth_bottom=150, rho=40, **kwargs):
-        sigma = (1./rho)*torch.ones((n_layers, n_models))
+    def starting_model(cls, n_layers, n_models, rho=40., depth_bottom=150.,  **kwargs):
+        res = rho*torch.ones((n_layers, n_models))
         thick = torch.logspace(-1, 1, n_layers-1)
         thick *= depth_bottom/thick.sum()
-        return cls(sigma, thick, **kwargs)
+        return cls(res, thick, **kwargs)
     
     @staticmethod
     def vectorize(list_of_arrays):
@@ -365,7 +365,7 @@ class SmoothModels(EarthModel):
         v,thk = self.modelize(self.vec)
         z1 = np.insert(np.cumsum(thk.cpu().numpy()), 0,0)
         xdist = np.arange(v.shape[1])
-        pcm=ax.pcolor(xdist, z1, np.log10(1./v.cpu().numpy()), **kwargs)
+        pcm=ax.pcolor(xdist, z1, np.log10(v.cpu().numpy()), **kwargs)
         plt.colorbar(pcm)
         ax.set_ylim(z1.max(), z1.min())
         return ax
@@ -399,7 +399,7 @@ class Inversion:
         for attr_name in self.__dict__:
             attr_value = getattr(self, attr_name)
             if torch.is_tensor(attr_value):
-                setattr(self, attr_name, attr_value.to(self.device))
+                setattr(self, attr_name, attr_value.to(self.device).to(torch.double))
 
     @property
     def m(self):
@@ -483,6 +483,7 @@ class Inversion:
             import matplotlib.pyplot as plt
             plt.colorbar(pcm, ax=ax, label='sensitivity factor')
         return ax
+    
 
     def invert(self, smoothness=0., iter_cap=10, **kwargs):
         from torch.linalg import inv, solve
@@ -498,6 +499,7 @@ class Inversion:
         data_predicted = self.mforward(mvec)
         self.misfits.append(self.misfit(data_predicted))
         Cdi = torch.diag(self.recip_error_squared)
+
         H = torch.from_numpy(self.model.H()).to(mvec.device)
         HtH = (H.T @ H)*smoothness
         dM = torch.zeros_like(mvec)
@@ -542,10 +544,10 @@ class Inversion:
                 
             
             if damping_attempts==0 and self.iteration>1:
-                self.log('increased max step')
+                # self.log('increased max step')
                 self.max_step += 0.5
             elif damping_attempts==20:
-                self.log('decreased max step')
+                # self.log('decreased max step')
                 self.max_step -= 0.1
         
             mvec                += dM

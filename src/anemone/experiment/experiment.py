@@ -2,6 +2,8 @@ import numpy as np
 import torch
 from .. import constants as c
 
+# the lamontagne quintic spline...
+
 S1 = lambda x: 1 - (9/4)*x**2 * ( 1 - 2./9*x*(1 + 5/2*x*(1 - 2/5 * x)))
 S2 = lambda x: -1/2*x*(1 - 11/6*x*(1 - 2/11*x*(1 + 5/2*x*(1-2/5*x))))
 
@@ -29,27 +31,29 @@ class Receiver:
             self.grid()
         else:
             npoints = max(len(self.x), len(self.y),len(self.z))
-            if len(self.x)==1: self.x = torch.ones(npoints)*self.x
-            if len(self.y)==1: self.y = torch.ones(npoints)*self.y
-            if len(self.z)==1: self.z = torch.ones(npoints)*self.z
+            if len(self.x)==1: self.X = torch.ones(npoints)*self.x
+            if len(self.y)==1: self.Y = torch.ones(npoints)*self.y
+            if len(self.z)==1: self.Z = torch.ones(npoints)*self.z
 
     def grid(self):
         X,Y,Z = torch.meshgrid(self.x, self.y, self.z, indexing='ij')
         self.shp = X.shape+(3,)
-        self.x = X.squeeze()
-        self.y = Y.squeeze()
-        self.z = Z.squeeze()
+        self.X = X.squeeze()
+        self.Y = Y.squeeze()
+        self.Z = Z.squeeze()
         return self
     
     @property
     def xyz(self):
         return torch.squeeze(torch.moveaxis(torch.stack((
-                            self.x.flatten(), 
-                            self.y.flatten(), 
-                            self.z.flatten())), 0, -1))
+                            self.X.flatten(), 
+                            self.Y.flatten(), 
+                            self.Z.flatten())), 0, -1))
+
+
 
     def __len__(self):
-        return self.x.numel()
+        return self.X.numel()
 
 class Loop:
     def __init__(self, x, y, z):
@@ -118,7 +122,7 @@ class Loop:
             line_dist = v1x*v2x + v1y*v2y
             
             # conditional to check to ensure rx points lies between the two end points.
-            if ((0 < line_dist)*(line_dist<v2r)).any():
+            if ((0 <= line_dist)*(line_dist<=v2r)).any():
                 numerator = torch.abs(v1x*v2y-v2x*v1y)
                 cmin = torch.min(numerator/torch.sqrt(v2r))
                 if cmin < overall_min: overall_min = cmin*1
@@ -129,22 +133,19 @@ class Loop:
         for i in range(len(self)):
             cdist2 = torch.max((self.x[i]-rx.x)**2 + (self.y[i]-rx.y)**2)
             if cdist2 > overall_max: overall_max = cdist2*1
-        return torch.sqrt(cdist2)
+        return torch.sqrt(overall_max)
 
     def __len__(self):
         return self.x.numel()
     
-    def s_of_r(self, rx, R):
-        device = R.device
-
-        R = R.cpu()
-        dR = torch.log(R[1]/R[0])
+    def geomz(self, rx, R):
+        logR = torch.log(R)
+        dR = logR[1]-logR[0]
 
         rx_xyz = rx.xyz
         n_rec  = len(rx)
-        # self.x      = torch.zeros((n_rec, )+R.shape)
-        # self.y      = torch.zeros((n_rec, )+R.shape)
-        z      = torch.zeros((n_rec, )+R.shape, dtype=torch.float64)
+
+        geomz      = torch.zeros((n_rec, )+R.shape, dtype=torch.float64)
 
         R      = R [None, None, :]
         
@@ -157,7 +158,7 @@ class Loop:
             p2 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i+1])
             x1,y1 = p1[..., 0], p1[..., 1]
             x2,y2 = p2[..., 0], p2[..., 1]
-            ix = (3*torch.abs(x2-x1).max()).int()
+            ix = int(3*torch.abs(x2-x1).max())
             tmpx = torch.linspace(-1, 1, ix)
             x_samp = tmpx
             x_samp += 1.
@@ -175,11 +176,11 @@ class Loop:
 
 
             cr = torch.sqrt(y1**2 + x_**2)
-            phi = lamontagne((torch.log(cr)-torch.log(R))/dR)
-
+            phi = lamontagne((torch.log(cr)-logR)/dR)
             cs =  -y1 * phi * dx / cr
-            z += cs.sum(axis=1, keepdims=False)
-        return z.to(device)
+            geomz += cs.sum(axis=1, keepdims=False)
+        return geomz
+   
     
 def perp_distance_to_line(x,y, line_points):
 	((x1,y1), (x2,y2)) = line_points
@@ -200,8 +201,8 @@ def box_filter(r, r_min, r_par_max):
     y *= torch.sign(r_par_max)
     return y
 
-def norm(tensor, axis=-1):
-    return torch.sqrt(torch.sum(tensor**2, axis=axis))
+def norm(tensor, axis=-1, keepdim=False):
+    return torch.sqrt(torch.sum(tensor**2, axis=axis, keepdim=keepdim))
 
 
 def getRz(P,Q):
@@ -229,37 +230,48 @@ def integrate_around_loop(lp, rx, hr):
     if 'radius' in dir(lp):
         return 2*c.pi*lp.radius*hr(lp.radius)
     else:
-
-        lp_xyz = lp.xyz - rx.xyz[None, ...]
         
-        HR = torch.zeros_like(hr(0.))
+        
+        if rx.xyz.numel()==3:
+            lp_xyz = lp.xyz - rx.xyz
+            hr_example = hr(0.)
+            HR = torch.zeros_like(hr_example).reshape((1,)+hr_example.shape)
+        else:
+            lp_xyz = lp.xyz[:, None, :]-rx.xyz[None,:,:]
+            hr_example = hr(torch.ones(len(rx.xyz)))
+            HR = torch.zeros_like(hr_example)
+            
+
         n_dipoles = 0
-        wire_length=0
+        wire_length= torch.zeros(len(rx.xyz))
         for i in range(len(lp)-1):
             Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
-            p1 = torch.einsum('...i,...i->...', Rz, lp_xyz[i])
-            p2 = torch.einsum('...i,...i->...', Rz, lp_xyz[i+1])
+
+            p1 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i])
+            p2 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i+1])
 
             p12 = p2-p1
-            tdist = norm(p12)
+            tdist = norm(p12, keepdim=True)
             p12 /= tdist
             cp = p1
-            cdist = 0
 
-            while cdist < tdist:
-                cR = norm(cp)
+            tdist = tdist.squeeze()
+            cdist = torch.zeros_like(tdist)
+
+            while torch.any(cdist < tdist):
+                still_to_go = cdist < tdist
+                cR = norm(cp[still_to_go])
                 ds = cR/15
-                if cdist+ds > tdist:
-                    ds = tdist-cdist
-                    cdist += cR/15
-                else:
-                    cdist += ds
-                wire_length+=ds
-                resp = hr(cR)
-                HR += -1*ds*cp[1]*resp/cR
-                cp += ds*p12
-                n_dipoles +=1
-        return HR
+                if torch.any(cdist[still_to_go]+ds > tdist[still_to_go]):
+                    go_back = cdist[still_to_go]+ds > tdist[still_to_go]
+                    ds[go_back] = (tdist-cdist)[still_to_go][go_back]
+                cdist[still_to_go]       += ds
+                wire_length[still_to_go] += ds
+                resp                      = hr(cR)
+                HR[..., still_to_go]     += -1*ds*cp[still_to_go, 1]*resp/cR
+                cp[still_to_go]          += (ds[:, None]*p12[still_to_go])
+                n_dipoles                += 1
+        return HR.T.squeeze()
 
 
 
