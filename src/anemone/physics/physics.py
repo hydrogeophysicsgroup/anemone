@@ -157,6 +157,64 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=c.mu0, eps
     rte = (adm_freespace - adm_boundary) / (adm_freespace + adm_boundary)
     return rte
 
+def refl_transverse_electric_memopt(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    """ rte = (Y_0 - hat Y_1)/(Y_0 + hat Y_1) - W&H eq 4.19 (pg 205)
+        where Y_0 is the intrinsic admittance
+        and hat Y_1 is the surface or boundary admittance
+        
+        assumes nd-arrays have been appropriately broadcasted with axis ordered as:
+        sigma, omega, wave_length
+
+    Args:
+        sigma         (nd-array): conductivity of each layer
+        thickness     (nd-array): thickness of each layer
+        omega         (nd-array): angular frequency
+        wave_length   (nd-array): wave_length (lambda)
+        mu      (float/nd-array): Defaults to mu0.
+        epsilon (float/nd-array): Defaults to epsilon0.
+
+    Returns:
+        reflection coefficients for transverse electric mode
+    """
+    if isinstance(mu, float):
+        mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
+    if isinstance(epsilon, float):
+        epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
+
+    n_layers=len(sigma)
+
+    lambda2 = wave_length**2
+    
+    adm_freespace = torch.sqrt(lambda2 - omega**2 * c.mu0*c.epsilon0 + 0j)/(1j*omega*c.mu0)
+    
+    # k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
+    # zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
+
+    # # this is u_n (misnamed temporarily, will divide by zn soon.)
+    # adm_intrinsic = torch.sqrt(lambda2 - k2)
+    # tanh_un_thick = torch.tanh(adm_intrinsic[:-1]*thickness)
+    # adm_intrinsic/= zn
+
+    c_k2 = calc_wavenumber(sigma[-1], omega[-1], mu=mu[-1], epsilon=epsilon[-1], sqrt=False)
+    c_zn = calc_zy(sigma[-1], omega[-1], mu=mu[-1], epsilon=epsilon[-1])[0]
+    c_adm_instrinsic = torch.sqrt(lambda2[-1]-c_k2) / c_zn
+
+    adm_boundary = c_adm_instrinsic*1.
+    
+    for i in range(n_layers-2, -1, -1):
+        c_k2 = calc_wavenumber(sigma[i], omega[-1], mu=mu[i], epsilon=epsilon[i], sqrt=False)
+        c_zn = calc_zy(sigma[i], omega[-1], mu=mu[i], epsilon=epsilon[i])[0]
+        c_adm_instrinsic = torch.sqrt(lambda2[-1]-c_k2)
+        c_tanh_un_thick = torch.tanh(c_adm_instrinsic*thickness[i])
+        c_adm_instrinsic /= c_zn        
+        adm_boundary = c_adm_instrinsic \
+                        *(adm_boundary + c_adm_instrinsic*c_tanh_un_thick) \
+                        /(c_adm_instrinsic  + adm_boundary*c_tanh_un_thick)
+
+    rte = (adm_freespace - adm_boundary) / (adm_freespace + adm_boundary)
+    return rte
+
+
 def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     """ rtm = (Z_0 - hat Z_1)/(Z_0 + hat Z_1) - W&H eq 4.20 (pg 206)
         where Z_0 is the intrinsic impedance
