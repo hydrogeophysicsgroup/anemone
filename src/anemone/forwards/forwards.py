@@ -1,5 +1,5 @@
 from anemone.transforms import Hankel, invFourier, CubicSpline, invLaplace
-from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0, colecole
+from anemone.physics import refl_transverse_electric_memopt as rte, freespace_u0 as u0, colecole
 from anemone import constants as c
 from anemone.experiment import integrate_around_loop
 import torch

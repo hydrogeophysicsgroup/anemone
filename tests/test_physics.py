@@ -30,7 +30,7 @@ def test_frequency_response():
 
     assert np.allclose(hz, hz_analytical), "hankel transform results do not match analytical solution"
 
-def test_rte_convergence():
+def check_rte_convergence(rte_func):
     from anemone import constants as c
 
     print('it would be wise to expand the range the frequencies or adjust the conductivity so that it does not converge so fast')
@@ -58,8 +58,15 @@ def test_rte_convergence():
         assert not np.allclose(rte_halfspace.numpy(), c_rte.numpy()), f'unexpected convergence at {thickness} m'
     
     thick = torch.tensor([100, 10], dtype=torch.complex128)
-    c_rte = torch.squeeze(physics.refl_transverse_electric(sigma[:,None,None], thick[:, None,None], omega[None,:,None], wave_length[None,None,:]))        
-    assert np.allclose(rte_halfspace.numpy(), c_rte.numpy()), 'rte did not converge as expected'
+    c_rte = torch.squeeze(rte_func(sigma[:,None,None], thick[:, None,None], omega[None,:,None], wave_length[None,None,:]))        
+    assert np.allclose(rte_halfspace.numpy(), c_rte.numpy()), f'{rte_func.__name__} did not converge as expected'
+
+def test_rte_convergence():
+    check_rte_convergence(physics.refl_transverse_electric)
+
+def test_rte_memop_convergence():
+    check_rte_convergence(physics.refl_transverse_electric_memopt)
+
 
 def test_rtm_convergence():
     from anemone import constants as c
@@ -91,4 +98,4 @@ def test_rtm_convergence():
     assert np.allclose(rtm_halfspace.numpy(), c_rte.numpy()), 'rtm did not converge as expected'
 
 if __name__ == '__main__':
-    test_rtm_convergence()
+    test_rte_memop_convergence()

@@ -360,20 +360,20 @@ def test_inversion_multi_model2():
     import matplotlib.pyplot as plt
 
     from anemone.experiment import Loop, Receiver, compute_relstd, Waveform
-    from anemone.forwards import Forward3, ForwardLaplace3
+    from anemone.forwards import ForwardLaplace3
     tx = Loop.square(40)
     rx = Receiver()
     t = torch.logspace(-5, -3.5, 32, dtype=torch.double)
     
 
-    gpu = torch.device('cpu')
+    gpu = torch.device('cuda')
     fwr = ForwardLaplace3(tx, rx, t.to(gpu), waveform=Waveform.example())
     print(fwr.device)
     
     n_layers = 31
     thick = torch.logspace(-1, 1, n_layers-1).to(gpu)
 
-    n_mod = 15
+    n_mod = 200
 
     z = np.arange(n_layers)[:,None]
     x = (300/n_mod)*np.arange(n_mod)[None,:]
@@ -427,7 +427,7 @@ def test_inversion_multi_model2():
 
     from time import perf_counter
     t0 = perf_counter()
-    res_mod = inv.invert(smoothness=5e2, iter_cap=20)
+    res_mod = inv.invert(smoothness=2e3, iter_cap=20)
     delta_t = perf_counter()-t0
     
     if __name__ == '__main__':
