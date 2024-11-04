@@ -100,6 +100,16 @@ class Forward:
             return cbft.integrate(self.t_st, self.t_end, normalize=True).real
         else:
             return cbft(self.times).real
+        
+    @classmethod
+    def example(cls, tx=None, rx=None, times=None, waveform=None):
+        from anemone.experiment import Loop, Receiver, Waveform
+        if tx is None: tx = Loop.square(40)
+        if rx is None: rx = Receiver()
+        if times is None: times = torch.logspace(-6, -3, 32)
+        if waveform is None: waveform = Waveform.example()
+        return cls(tx, rx, times, waveform=waveform)
+        
 
     def compute_relstd(self, sigma, thickness, noise_slope_exponent=-0.5, noise_level_at_1ms=1e-8, moment=1, relative_noise=0.03):
         moment *= self.source.area
@@ -157,7 +167,7 @@ class DualMoment(Forward):
 
             def wvlngth_integrand(wave_length):
                 """ Hz from horizontal electric dipole. """
-                lmb = wave_length[None, None, :]
+                self.lmb = wave_length[None, None, :]
                 tmp_u0 = u0(self.omega, lmb)
                 cRTE = rte(self.sigma, self.thick, self.omega, lmb)
                 intg = torch.exp(-tmp_u0*self.pfield_dz)+cRTE*torch.exp(-tmp_u0*self.sfield_dz)
@@ -228,7 +238,7 @@ class ForwardLaplace(Forward):
             waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
             self.t_smp_per_decade = t_smp_per_decade
             
-            self.t_eval = torch.logspace(torch.log10(self.tmin), torch.log10(self.tmax), int(t_smp_per_decade*torch.log10(self.tmax/self.tmin)), dtype=torch.double)
+            self.t_eval = torch.logspace(torch.log10(self.tmin).item(), torch.log10(self.tmax).item(), int(t_smp_per_decade*torch.log10(self.tmax/self.tmin)), dtype=torch.double)
 
         else:
             self.t_eval = self.times
@@ -414,56 +424,6 @@ class IPForwardFD(IPForward, ForwardFD):
     def __call__(self, rho, tau, m, C, thickness):
         return IPForward.__call__(self, rho, tau, m, C, thickness)
 
-# class ForwardGeomOp(Forward):
-#     geomz=None
-#     def forward(self):
-#         def frq_integrand(f):
-#             self.omega = c.twopi*f[None,:,None]
-
-#             def wvlngth_integrand(wave_length):
-#                 """ Hz from horizontal electric dipole. """
-#                 self.lamda = wave_length[None, None, :]
-                
-#                 tmp_u0 = u0(self.omega, self.lamda)
-#                 intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, self.omega, self.lamda)*torch.exp(-tmp_u0*self.sfield_dz)
-#                 intg *= self.lamda**2 / tmp_u0
-            
-#                 if self.filterfunc is not None:
-#                     intg *= self.filterfunc.omega_filter(self.omega)
-#                 return torch.squeeze(intg/c.fourpi)
-            
-#             hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=self.tolerance, smp_per_decade=6)
-#             r,HR = hkl1._range(self.rmin, self.rmax)
-            
-#             if self.geomz is None:
-#                 self.geomz = self.source.geomz(self.receiver, r).to(torch.complex128)
-#                 self.r = r
-#             else:
-#                 assert torch.all(self.r==r)
-            
-#             res = torch.einsum('...ij,...j->...i', HR, self.geomz)
-#             if self.waveform is not None:
-#                 res /= -1j*self.omega.squeeze()
-#             return res.squeeze()
-        
-#         cbft=invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device, tolerance=self.tolerance)
-
-#         if self.t_gatewidth is None:
-#             t = self.times
-
-
-#         if self.waveform is not None:
-#             t_eval = t[:, None] - self.waveform.time[None, :]
-#             resp_step = cbft(t_eval).real
-#             dbdt = resp_step @ self.waveform.d2wdt2
-#             if self.t_gatewidth is not None:
-#                 cbft = CubicSpline(t, dbdt, transform=torch.log10)
-#             else:
-#                 return dbdt
-#         if self.t_gatewidth is not None:
-#             return cbft.integrate(self.t_st, self.t_end, normalize=True).real
-#         else:
-#             return cbft(self.times).real
 
 class ForwardGeomOpLaplace(ForwardLaplace):
     geomz=None
@@ -635,7 +595,6 @@ class ForwardGeomOp(Forward):
 
 
 from anemone.experiment import lamontagne
-
 
 def wv_to_t(t_eval, t_sampled, waveform=None):
     t_eval = t_eval.to(torch.double)
