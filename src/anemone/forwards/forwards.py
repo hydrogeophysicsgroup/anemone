@@ -188,7 +188,6 @@ class IPForward(Forward):
 
     def __call__(self, rho, tau, m, C, thickness):
         self.rho   =       rho.to(self.device).to(torch.complex128)[..., None,None]
-        # self.thick = thickness.to(self.device).to(torch.complex128)[..., None,None]
         self.m     =         m.to(self.device).to(torch.complex128)[..., None,None]
         self.tau   =       tau.to(self.device).to(torch.complex128)[..., None,None]
         self.c     =         C.to(self.device).to(torch.complex128)[..., None,None]
@@ -197,7 +196,31 @@ class IPForward(Forward):
         self.thick = ((thickness+0j)[..., None, None]).to(self.device)
 
         return self.forward()*c.mu0
-    
+
+class ForwardCPA(Forward):
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, drake_model=True):
+        super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance)
+        
+        if drake_model:
+            self.omega_L = c.twopi*1e-5
+        else:
+            self.omega_L = 0.
+
+    @property
+    def sigma(self):
+        b = -2.*self.phi / c.pi
+        k = self.rho * self.omega_L**b
+        return k*(1j*self.omega + self.omega_L)**(-b)
+
+    def __call__(self, rho, phi, thickness):
+        self.rho   =       rho.to(self.device).to(torch.complex128)[..., None,None]
+        self.phi     =     phi.to(self.device).to(torch.complex128)[..., None,None]
+        if rho.ndim > thickness.ndim:
+            thickness = thickness[:, None]
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
+        return self.forward()*c.mu0
+
+
 class ForwardMPA(Forward):
     @property
     def sigma(self):
