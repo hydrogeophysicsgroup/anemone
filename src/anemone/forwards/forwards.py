@@ -166,10 +166,10 @@ class DualMoment(Forward):
                     intg *= self.filterfunc.omega_filter(self.omega)
                 return torch.squeeze(intg/c.fourpi)
 
-            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, range=(self.rmin, self.rmax), device=self.device, tolerance=1e-5)
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, range=(self.rmin, self.rmax), device=self.device, tolerance=1e-6)
             return -integrate_around_loop(self.source, self.receiver, hkl1)/(1j*self.omega.squeeze())
         
-        cbft = invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device, tolerance=1e-6)
+        cbft = invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device)
         
         dbdts = []
         for i in range(2):
@@ -179,6 +179,7 @@ class DualMoment(Forward):
             dbdt = resp_step.real @ self.waveforms[i].d2wdt2
             dbdts.append(dbdt.T)
         return torch.concatenate(dbdts).T    
+
 
 class IPForward(Forward):
 
@@ -238,6 +239,9 @@ class ForwardMPA(Forward):
         return self.forward()*c.mu0
     
 class ForwardLaplace(Forward):
+    sfield_rte = None
+    pfield = None
+    tmp_u0 = None
     def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, t_smp_per_decade=6):
         super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance)
         if waveform is not None:
@@ -268,28 +272,20 @@ class ForwardLaplace(Forward):
             lmb = wave_length[None, :, None]
             def s_integrand(s):
                 """ Hz from horizontal electric dipole. """
-                omega = -1j*s
+                omega = -1j*s[None, None, :]
                 
-                if 'tmp_u0' not in self.save: 
-                    self.save['tmp_u0'] = u0(omega, lmb)
-                tmp_u0 = self.save['tmp_u0']
+                if self.tmp_u0 is None: self.tmp_u0 = u0(omega, lmb)
+                if self.sfield_rte is None: self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)*lmb**2 / self.tmp_u0 / c.fourpi
+                if self.pfield is None: self.pfield = torch.exp(-self.tmp_u0*self.pfield_dz)*lmb**2 / self.tmp_u0 / c.fourpi
 
-                if 'pfield' not in self.save:
-                    self.save['pfield'] = (torch.exp(-tmp_u0*self.pfield_dz)*lmb**2 / tmp_u0 / c.fourpi)#.real
-                pfield = self.save['pfield']     
-
-                if 'sfield/rte' not in self.save:
-                    self.save['sfield/rte'] = torch.exp(-tmp_u0*self.sfield_dz)*lmb**2 / tmp_u0 / c.fourpi
-                sfield_rte = self.save['sfield/rte']
-
-                intg = pfield + rte(self.sigma, self.thick, omega, lmb)*sfield_rte
+                intg = self.pfield +  rte(self.sigma, self.thick, omega, lmb)*self.sfield_rte
 
                 if self.filterfunc is not None:
                     intg *= self.filterfunc.omega_filter(omega)
                 if self.waveform is not None:
-                    intg /= -1j*omega.squeeze()                    
+                    intg /= -1j*omega
                 return torch.squeeze(intg).real
-            cbft = invLaplace(s_integrand, device=self.device)
+            cbft = invLaplace(s_integrand, device=self.device, n_coefficients=8)
             return cbft(self.t_eval)
 
         hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
@@ -722,6 +718,48 @@ class Forward3(Forward):
             return torch.einsum('...ik,...jk->...ij', Ht.real, self.t2t).squeeze()
 
 
+class DualMoment3(DualMoment):
+    geomz=None
+    t2t =None
+
+    def forward(self):
+        def frq_integrand(f):
+            omega = c.twopi*f[None,:,None]
+
+            def wvlngth_integrand(wave_length):
+                """ Hz from horizontal electric dipole. """
+                lmb = wave_length[None, None, :]
+                
+                tmp_u0 = u0(omega, lmb)
+                intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
+                intg *= lmb**2 / tmp_u0
+            
+                if self.filterfunc is not None:
+                    intg *= self.filterfunc.omega_filter(omega)
+                return torch.squeeze(intg/c.fourpi)
+            
+            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device)
+            r,HR = hkl1.range(self.rmin, self.rmax)
+            if self.geomz is None:
+                self.geomz = self.source.geomz(self.receiver, r).to(torch.complex128)
+                self.r = r
+            else:
+                assert torch.all(self.r==r)
+            
+            res = torch.einsum('...ij,...j->...i', HR, self.geomz)
+            res /= -1j*omega.squeeze()
+            return res
+        
+        cbft=invFourier(frq_integrand, smp_per_decade=10, device=self.device)
+        self.t_sampled,Ht = cbft.range(self.tmin, self.tmax)
+
+        if self.t2t is None:
+            self.t2t = torch.vstack([wv_to_t(self.times[0], self.t_sampled, waveform=self.waveforms[0]),
+                                     wv_to_t(self.times[1], self.t_sampled, waveform=self.waveforms[1])])
+        if len(Ht.shape)==1:
+            return torch.einsum('...i,...i', Ht.real, self.t2t).squeeze()
+        else:
+            return torch.einsum('...ik,...jk->...ij', Ht.real, self.t2t).squeeze()
 
 class ForwardLaplace3(ForwardLaplace):
     geomz = None
@@ -735,28 +773,20 @@ class ForwardLaplace3(ForwardLaplace):
             lmb = wave_length[None, :, None]
             def s_integrand(s):
                 """ Hz from horizontal electric dipole. """
-                omega = -1j*s
+                omega = -1j*s[None, None, :]
                 
-                if 'tmp_u0' not in self.save: 
-                    self.save['tmp_u0'] = u0(omega, lmb)
-                tmp_u0 = self.save['tmp_u0']
-
-                if 'pfield' not in self.save:
-                    self.save['pfield'] = (torch.exp(-tmp_u0*self.pfield_dz)*lmb**2 / tmp_u0 / c.fourpi)#.real
-                pfield = self.save['pfield']     
-
-                if 'sfield/rte' not in self.save:
-                    self.save['sfield/rte'] = torch.exp(-tmp_u0*self.sfield_dz)*lmb**2 / tmp_u0 / c.fourpi
-                sfield_rte = self.save['sfield/rte']
-
-                intg = pfield + rte(self.sigma, self.thick, omega, lmb)*sfield_rte
+                if self.tmp_u0 is None: self.tmp_u0 = u0(omega, lmb)
+                if self.sfield_rte is None: self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)*lmb**2 / self.tmp_u0 / c.fourpi
+                if self.pfield is None: self.pfield = (torch.exp(-self.tmp_u0*self.pfield_dz)*lmb**2 / self.tmp_u0 / c.fourpi)
+                intg = self.pfield +  (rte(self.sigma, self.thick, omega, lmb)*self.sfield_rte)
 
                 if self.filterfunc is not None:
                     intg *= self.filterfunc.omega_filter(omega)
                 if self.waveform is not None:
-                    intg /= -1j*omega.squeeze()                    
+                    intg /= -1j*omega
                 return torch.squeeze(intg).real
-            cbft = invLaplace(s_integrand, device=self.device)
+
+            cbft = invLaplace(s_integrand, device=self.device, n_coefficients=8)
             return cbft(self.t_eval).real.squeeze()
 
         hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=1e-6, smp_per_decade=6)
@@ -770,9 +800,6 @@ class ForwardLaplace3(ForwardLaplace):
 
         if self.t2t is None:
             self.t2t = wv_to_t(self.times, self.t_eval, waveform=self.waveform)
-
-        # for x,xname in zip([self.geomz, HR, self.t2t, Ht], 'geomz, HR, t2t, Ht'.split(', ')):
-        #     print(f'the shape of {xname} is {x.shape}')
 
 
         if len(Ht.shape)==1:

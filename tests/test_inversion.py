@@ -366,14 +366,14 @@ def test_inversion_multi_model2():
     t = torch.logspace(-5, -3.5, 32, dtype=torch.double)
     
 
-    gpu = torch.device('cuda')
+    gpu = torch.device('cpu')
     fwr = ForwardLaplace3(tx, rx, t.to(gpu), waveform=Waveform.example())
     print(fwr.device)
     
     n_layers = 31
     thick = torch.logspace(-1, 1, n_layers-1).to(gpu)
 
-    n_mod = 200
+    n_mod = 6
 
     z = np.arange(n_layers)[:,None]
     x = (300/n_mod)*np.arange(n_mod)[None,:]

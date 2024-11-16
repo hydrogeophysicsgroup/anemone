@@ -156,7 +156,7 @@ def test_forward_speeds():
     from anemone.forwards import Forward, ForwardGeomOp, Forward3, ForwardLaplace, ForwardLaplace2, ForwardLaplace3
     for cForward in [ForwardGeomOp, Forward3, ForwardLaplace3]:
         check_forward_speeds(cForward)
-
+test_forward_speeds()
 
 def test_hankel_forward_parallel_models():
     from anemone.forwards import Forward3
@@ -533,7 +533,10 @@ def test_multireceiver_frequency_domain():
 
 
 if __name__ == '__main__':
-    test_Laplace3_40x40_aarhusInv_piecewise_waveform()
+    test_Laplace_40x40_aarhusInv_piecewise_waveform()
+    # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
+    # test_40x40_aarhusInv_stepoff_laplace()
+    # test_40x40_aarhusInv_stepoff()
     # test_multirx_Laplace3()
     # test_forwardlaplace3_parallel_models()
     # test_forward_speeds()

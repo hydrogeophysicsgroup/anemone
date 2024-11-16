@@ -424,8 +424,6 @@ class invLaplace:
             
         res1 = q[0,:]*respt1@self.v
         res = torch.zeros(t.shape+res1.shape, dtype=respt1.dtype, device=self.device)
-        #if respt1.dtype==torch.complex128:
-
         res[0] = res1
         for i_t in range(1, t.shape[-1]):
             res[i_t] = q[i_t,:]*self.func(q[i_t,:]*self.i)@self.v
