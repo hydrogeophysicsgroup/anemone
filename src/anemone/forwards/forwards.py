@@ -255,7 +255,7 @@ class ForwardLaplace(Forward):
             waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
             self.t_smp_per_decade = t_smp_per_decade
             
-            self.t_eval = torch.logspace(torch.log10(self.tmin), torch.log10(self.tmax), int(t_smp_per_decade*torch.log10(self.tmax/self.tmin)), dtype=torch.double)
+            self.t_eval = torch.logspace(torch.log10(self.tmin).item(), torch.log10(self.tmax).item(), int(t_smp_per_decade*torch.log10(self.tmax/self.tmin)), dtype=torch.double)
 
         else:
             self.t_eval = self.times
