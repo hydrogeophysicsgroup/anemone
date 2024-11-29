@@ -550,7 +550,7 @@ class Inversion:
                 # self.log('decreased max step')
                 self.max_step -= 0.1
         
-            mvec                += dM
+            mvec                += torch.nan_to_num(dM)
             self.iteration      += 1
             data_predicted     = self.mforward(mvec)
             self.misfits.append(self.misfit(data_predicted))

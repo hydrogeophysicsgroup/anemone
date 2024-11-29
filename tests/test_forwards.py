@@ -111,7 +111,6 @@ def check_parallel_models(ForwardMaker):
 
     fwr = ForwardMaker(lp, rx, times, waveform=waveform)
     dbdt = fwr(rho, thick)
-    print('dbdt shape: ', dbdt.shape)
     
     if __name__ == '__main__':
         
@@ -153,10 +152,9 @@ def check_forward_speeds(ForwardMaker):
     print(f'{name} {len(rho_change)} forward calculation took {dt:0.3f} s')
 
 def test_forward_speeds():
-    from anemone.forwards import Forward, ForwardGeomOp, Forward3, ForwardLaplace, ForwardLaplace2, ForwardLaplace3
-    for cForward in [ForwardGeomOp, Forward3, ForwardLaplace3]:
+    from anemone.forwards import Forward, ForwardGeomOp, Forward3, ForwardLaplace, ForwardLaplace2, ForwardLaplace3, ForwardLaplace4
+    for cForward in [Forward, ForwardGeomOp, Forward3, ForwardLaplace3, ForwardLaplace4]:
         check_forward_speeds(cForward)
-test_forward_speeds()
 
 def test_hankel_forward_parallel_models():
     from anemone.forwards import Forward3
@@ -280,6 +278,56 @@ def test_IPforward():
         fig.suptitle('Test against AarhusInv with Piecewise Waveform')
         plt.show()
     assert torch.allclose(ainv_dbdt, dbdt, rtol=1e-2), "aarhus inv and pytorch forward do not match within 1 percent"
+
+def test_colecole_parallel_models():
+    from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
+    from anemone.forwards import IPForward
+    name = IPForward.__name__
+
+    sq = Loop.square(40)
+    rx = Receiver()
+    waveform = Waveform.example()
+    recfilter = FilterChain([
+        ButterworthFilter(2.4e5, 1),
+        ButterworthFilter(6.2e5, 1),
+        ButterworthFilter(4.5e5, 2)
+    ])
+    t0 = torch.logspace(-5, -3, 31, dtype=torch.double)
+    pyfwr = IPForward(sq, rx, t0, waveform=waveform, filterfunc=recfilter)    
+
+    rho  = torch.tensor([4.0e+02, 4.0e+02, 5.0e+02], dtype=torch.double)
+    m0   = torch.tensor([2.0e+02, 9.0e+02, 5.0e+02], dtype=torch.double)*1e-3
+    tau  = torch.tensor([1.0e-04, 2.0e-04, 3.0e-04], dtype=torch.double)
+    chg  = torch.tensor([6.0e-01, 5.0e-01, 9.0e-01], dtype=torch.double)
+    thick=torch.tensor([20, 30], dtype=torch.double)
+
+    sweep = torch.linspace(0.9, 1.1, 94)
+    fixed = torch.ones(94)[None, :]
+
+    
+    rho = rho[:, None] * fixed
+    rho[1] = rho[1]*sweep
+
+    m0 = m0[:, None] * fixed
+    tau = tau[:, None] * fixed
+    chg = chg[:, None] * fixed
+    thick = thick[:, None] * fixed
+    
+    dbdt = pyfwr(rho, tau, m0, chg, thick)
+
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots(1,1)
+        ax.loglog(t0,  dbdt.T, '-')
+        ax.loglog(t0, -dbdt.T, '--')
+
+        ax.set_ylabel('dB/dt')
+        ax.legend()
+        ax.set_aspect('equal')
+        ax.set_xlabel('time [s]')
+
+        plt.show()
+    assert dbdt.shape == (94, 31), f"{name} running parallel models does not return correct shape"
 
 def test_forward_timing():
     from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
@@ -533,12 +581,12 @@ def test_multireceiver_frequency_domain():
 
 
 if __name__ == '__main__':
-    test_Laplace_40x40_aarhusInv_piecewise_waveform()
+    # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_stepoff_laplace()
     # test_40x40_aarhusInv_stepoff()
     # test_multirx_Laplace3()
     # test_forwardlaplace3_parallel_models()
-    # test_forward_speeds()
-
+    test_Laplace2_40x40_aarhusInv_piecewise_waveform()
+    test_colecole_parallel_models()
     exit()

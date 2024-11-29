@@ -1,5 +1,5 @@
 from anemone.transforms import Hankel, invFourier, CubicSpline, invLaplace
-from anemone.physics import refl_transverse_electric_memopt as rte, freespace_u0 as u0, colecole
+from anemone.physics import refl_transverse_electric_memopt as rte, freespace_u0 as u0, colecole, mpa2colecole
 from anemone import constants as c
 from anemone.experiment import integrate_around_loop
 import torch
@@ -71,16 +71,16 @@ class Forward:
                 tmp_u0 = u0(self.omega, self.lamda)
                 intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, self.omega, self.lamda)*torch.exp(-tmp_u0*self.sfield_dz)
                 intg *= self.lamda**2 / tmp_u0
-            
+                
+                if self.waveform is not None:
+                    intg /= -1j*self.omega
                 if self.filterfunc is not None:
                     intg *= self.filterfunc.omega_filter(self.omega)
-                return torch.squeeze(intg/c.fourpi)
+                return intg/c.fourpi
             
             hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
             res = integrate_around_loop(self.source, self.receiver, hkl1)
-            if self.waveform is not None:
-                res /= -1j*self.omega.squeeze()
-            return res
+            return res.T
         
         cbft=invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device, tolerance=self.tolerance)
 
@@ -221,21 +221,21 @@ class ForwardCPA(Forward):
         self.thick = ((thickness+0j)[..., None, None]).to(self.device)
         return self.forward()*c.mu0
 
-
 class ForwardMPA(Forward):
     @property
     def sigma(self):
-        raise NotImplementedError
+        rho, tau_cc, m_new, C = mpa2colecole(self.rho, self.phi_max, self.tau_phi, self.c, self.omega)
+        rho_complex = colecole(rho, m_new, tau_cc, C, self.omega)
+        return 1./rho_complex
 
-    def __call__(self, rho, tau, m, C, thickness):
-        self.rho   =       rho.to(self.device).to(torch.complex128)[..., None,None]
-        self.m     =         m.to(self.device).to(torch.complex128)[..., None,None]
-        self.tau   =       tau.to(self.device).to(torch.complex128)[..., None,None]
-        self.c     =         C.to(self.device).to(torch.complex128)[..., None,None]
+    def __call__(self, rho, phi_max, tau_phi, C, thickness):
+        self.rho     =     rho.to(self.device)[..., None,None]
+        self.phi_max = phi_max.to(self.device)[..., None,None]
+        self.tau_phi = tau_phi.to(self.device)[..., None,None]
+        self.c       =       C.to(self.device)[..., None,None]
         if rho.ndim > thickness.ndim:
             thickness = thickness[:, None]
         self.thick = ((thickness+0j)[..., None, None]).to(self.device)
-
         return self.forward()*c.mu0
     
 class ForwardLaplace(Forward):
@@ -367,7 +367,6 @@ class DualMomentLaplace(DualMoment):
             dbdts.append(dbdt.T)
         return torch.concatenate(dbdts).T    
 
-    
 class ForwardFD(Forward):
     def __init__(self, source, receiver, freqs, waveform=None, filterfunc=None, tolerance=None):
         self.source = source
@@ -551,7 +550,7 @@ class ForwardLaplace2(ForwardLaplace):
             lmb = wave_length[None, :, None]
             def s_integrand(s):
                 """ Hz from horizontal electric dipole. """
-                omega = -1j*s
+                omega = -1j*s[None, None, :]
                 
                 if 'tmp_u0' not in self.save: 
                     self.save['tmp_u0'] = u0(omega, lmb)
@@ -650,7 +649,7 @@ class ForwardGeomOp(Forward):
         if self.t_gatewidth is not None:
             return cbft.integrate(self.t_st, self.t_end, normalize=True)
         else:
-            return cbft(self.times).squeeze()
+            return cbft(self.times).squeeze().real
 
 
 from anemone.experiment import lamontagne
@@ -767,6 +766,7 @@ class ForwardLaplace3(ForwardLaplace):
 
     def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, t_smp_per_decade=8):
         super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance, t_smp_per_decade)
+        self.t2t = wv_to_t(self.times, self.t_eval, waveform=self.waveform)
 
     def forward(self):
         def wvlngth_integrand(wave_length):
@@ -789,7 +789,7 @@ class ForwardLaplace3(ForwardLaplace):
             cbft = invLaplace(s_integrand, device=self.device, n_coefficients=8)
             return cbft(self.t_eval).real.squeeze()
 
-        hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=1e-6, smp_per_decade=6)
+        hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=1e-7, smp_per_decade=10)
         r,HR = hkl1.range(self.rmin, self.rmax)
         if self.geomz is None:
             self.geomz = self.source.geomz(self.receiver, r).to(torch.double)
@@ -798,8 +798,7 @@ class ForwardLaplace3(ForwardLaplace):
             assert torch.all(self.r==r)
         Ht = torch.einsum('...ik,...jk',  self.geomz, HR)
 
-        if self.t2t is None:
-            self.t2t = wv_to_t(self.times, self.t_eval, waveform=self.waveform)
+
 
 
         if len(Ht.shape)==1:
@@ -808,3 +807,53 @@ class ForwardLaplace3(ForwardLaplace):
             return torch.einsum('...ik,...jk->...ij', Ht.squeeze().T, self.t2t).squeeze()
         else:
             return torch.einsum('...ik,...jk->...ij', Ht, self.t2t).squeeze()
+        
+class ForwardLaplace4(ForwardLaplace):
+    geomz = None
+    t2t   = None
+
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, t_smp_per_decade=8):
+        super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance, t_smp_per_decade)
+        self.t2t = wv_to_t(self.times, self.t_eval, waveform=self.waveform).to_sparse()
+
+    def forward(self):
+        def wvlngth_integrand(wave_length):
+            lmb = wave_length[None, :, None]
+            def s_integrand(s):
+                """ Hz from horizontal electric dipole. """
+                omega = -1j*s[None, None, :]
+                
+                if self.tmp_u0 is None: self.tmp_u0 = u0(omega, lmb)
+                if self.sfield_rte is None: self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)*lmb**2 / self.tmp_u0 / c.fourpi
+                if self.pfield is None: self.pfield = (torch.exp(-self.tmp_u0*self.pfield_dz)*lmb**2 / self.tmp_u0 / c.fourpi)
+                intg = self.pfield +  (rte(self.sigma, self.thick, omega, lmb)*self.sfield_rte)
+
+                if self.filterfunc is not None:
+                    intg *= self.filterfunc.omega_filter(omega)
+                if self.waveform is not None:
+                    intg /= -1j*omega
+                return torch.squeeze(intg).real
+
+            cbft = invLaplace(s_integrand, device=self.device, n_coefficients=8)
+            return cbft(self.t_eval).real.squeeze()
+
+        hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=1e-7, smp_per_decade=10)
+        r,HR = hkl1.range(self.rmin, self.rmax)
+        if self.geomz is None:
+            self.geomz = self.source.geomz(self.receiver, r).to(torch.double)
+            self.r=r
+        else:
+            assert torch.all(self.r==r)
+        Ht = torch.einsum('...ik,...jk',  self.geomz, HR).squeeze()
+
+
+        return self.t2t @ Ht
+
+        # if len(Ht.shape)==1:
+        #     return torch.einsum('...i,...i', Ht, self.t2t).to_dense().mT.squeeze()
+        # elif len(Ht.shape)==3:
+        #     return torch.einsum('...ik,...jk->...ij', Ht.squeeze().T, self.t2t).to_dense().squeeze()
+        # else:
+        #     return torch.einsum('...ik,...jk->...ij', Ht, self.t2t).to_dense().squeeze()
+        
+# class VertMagDipole(rx, times, waveform, recfilters):
