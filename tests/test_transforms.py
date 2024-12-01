@@ -298,5 +298,5 @@ if __name__ == '__main__':
     # test_fourier()
     # test_spline_integration()
     test_invlaplace()
-    # test_invlaplace_Hz_center_of_circular_loop_halfspace()
-    # test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
+    test_invlaplace_Hz_center_of_circular_loop_halfspace()
+    test_invlaplace_dHzdt_center_of_circular_loop_halfspace()

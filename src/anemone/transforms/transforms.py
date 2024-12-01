@@ -239,7 +239,7 @@ class Hankel:
         if self.func_results is None:
             self.func_results = self.func(self.lamda)
         self.r, self.resp = self.range(rmin, rmax)
-        self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log10)
+        self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log10, integrate=False)
     
     
     def r_to_idx(self, r):
@@ -424,8 +424,6 @@ class invLaplace:
             
         res1 = q[0,:]*respt1@self.v
         res = torch.zeros(t.shape+res1.shape, dtype=respt1.dtype, device=self.device)
-        #if respt1.dtype==torch.complex128:
-
         res[0] = res1
         for i_t in range(1, t.shape[-1]):
             res[i_t] = q[i_t,:]*self.func(q[i_t,:]*self.i)@self.v

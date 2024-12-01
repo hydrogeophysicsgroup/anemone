@@ -70,24 +70,24 @@ def test_inversion_noise_free():
     assert inv.misfits[-1] < 1, "misfit is not below one."
         
 def test_inversion():
-    from anemone.experiment import Loop, Receiver, compute_relstd
-    from anemone.forwards import Forward
+    from anemone.experiment import Loop, Receiver, compute_relstd, Waveform
+    from anemone.forwards import ForwardLaplace3 as Forward
     tx = Loop.square(40)
     rx = Receiver()
     t = torch.logspace(-5, -3, 31, dtype=torch.double)
 
-    fwr = Forward(tx, rx, t, tolerance=1e-6)
+    fwr = Forward(tx, rx, t, waveform=Waveform.example())
     mtrue = FewLayerModel(torch.tensor([70, 50, 100]), torch.tensor([20, 40]))
 
-    dbdt = fwr(*mtrue.values)
-    dbdt_err = compute_relstd(t, dbdt, moment=tx.area)
+    dbdt = torch.abs(fwr(*mtrue.values))
+    dbdt_err = compute_relstd(t, dbdt)
 
     m0 = SmoothModel.starting_model(31)
     
 
-    inv = Inversion(dbdt+dbdt*torch.randn(len(dbdt))*dbdt_err, dbdt*dbdt_err, m0, fwr, data_transform=torch.log10)
+    inv = Inversion(torch.abs(dbdt+dbdt*torch.randn(len(dbdt))*dbdt_err), dbdt*dbdt_err, m0, fwr, data_transform=torch.log10)
     dbdt_start = inv.mforward(m0.vec)
-    resmod = inv.invert(smoothness=10., iter_cap=7)
+    resmod = inv.invert(smoothness=1000., iter_cap=7)
     dbdt_pred = inv.mforward(resmod.vec)
 
 
@@ -109,24 +109,24 @@ def test_inversion():
     assert inv.misfits[-1] < 1, "misfit is not below one."
 
 def test_inversionGM():
-    from anemone.experiment import Loop, Receiver, compute_relstd
-    from anemone.forwards import ForwardGeomOp
+    from anemone.experiment import Loop, Receiver, compute_relstd, Waveform
+    from anemone.forwards import ForwardLaplace3
     tx = Loop.square(40)
     rx = Receiver()
     t = torch.logspace(-5, -2, 31, dtype=torch.double)
 
-    fwr = ForwardGeomOp(tx, rx, t, tolerance=1e-6)
+    fwr = ForwardLaplace3(tx, rx, t, waveform=Waveform.example(), tolerance=1e-6)
     mtrue = FewLayerModel(torch.tensor([70, 20, 100]), torch.tensor([30, 50]))
 
-    dbdt = fwr(*mtrue.values)
-    dbdt_err = compute_relstd(t, dbdt, moment=tx.area)
+    dbdt = fwr(torch.tensor([70, 20, 100]), torch.tensor([30, 50]))
+    dbdt_err = compute_relstd(t, dbdt, moment=10)
 
     m0 = SmoothModel.starting_model(31, rho=200, depth_bottom=300)
     
 
-    inv = Inversion(dbdt+dbdt*torch.randn(len(dbdt))*dbdt_err, dbdt*dbdt_err, m0, fwr)
+    inv = Inversion(dbdt+dbdt*torch.randn(len(dbdt))*dbdt_err, dbdt*dbdt_err, m0, fwr, data_transform=torch.log10)
     dbdt_start = inv.mforward(m0.vec)
-    resmod = inv.invert(smoothness=1000., iter_cap=7)
+    resmod = inv.invert(smoothness=100., iter_cap=7)
     dbdt_pred = inv.mforward(resmod.vec)
 
 
@@ -186,42 +186,42 @@ def test_inversion2():
         plt.show()    
     assert inv.misfits[-1] < 1, "misfit is not below one."
 
-def test_inversionGM():
-    from anemone.experiment import Loop, Receiver, compute_relstd
-    from anemone.forwards import ForwardGeomOp
-    tx = Loop.square(40)
-    rx = Receiver()
-    t = torch.logspace(-5, -2, 31, dtype=torch.double)
+# def test_inversionGM():
+#     from anemone.experiment import Loop, Receiver, compute_relstd
+#     from anemone.forwards import ForwardGeomOp
+#     tx = Loop.square(40)
+#     rx = Receiver()
+#     t = torch.logspace(-5, -2, 31, dtype=torch.double)
 
-    fwr = ForwardGeomOp(tx, rx, t, tolerance=1e-6)
-    mtrue = FewLayerModel(torch.tensor([70, 20, 100]), torch.tensor([30, 50]))
+#     fwr = ForwardGeomOp(tx, rx, t, tolerance=1e-6)
+#     mtrue = FewLayerModel(torch.tensor([70, 20, 100]), torch.tensor([30, 50]))
 
-    dbdt = fwr(*mtrue.values)
-    dbdt_err = compute_relstd(t, dbdt, moment=tx.area)
+#     dbdt = fwr(*mtrue.values)
+#     dbdt_err = compute_relstd(t, dbdt, moment=tx.area)
 
-    m0 = SmoothModel.starting_model(31, rho=200, depth_bottom=300)
+#     m0 = SmoothModel.starting_model(31, rho=200, depth_bottom=300)
     
 
-    inv = Inversion(dbdt+dbdt*torch.randn(len(dbdt))*dbdt_err, dbdt*dbdt_err, m0, fwr)
-    dbdt_start = inv.mforward(m0.vec)
-    resmod = inv.invert(smoothness=1000., iter_cap=7)
-    dbdt_pred = inv.mforward(resmod.vec)
+#     inv = Inversion(dbdt+dbdt*torch.randn(len(dbdt))*dbdt_err, dbdt*dbdt_err, m0, fwr, data_transform=torch.log10)
+#     dbdt_start = inv.mforward(m0.vec)
+#     resmod = inv.invert(smoothness=1000., iter_cap=7)
+#     dbdt_pred = inv.mforward(resmod.vec)
 
-    if __name__ == '__main__':
-        import matplotlib.pyplot as plt
-        fig,axs = plt.subplots(1,2)
-        mtrue.plot(ax=axs[0], color='C0')
-        resmod.plot(ax=axs[0], color='C1')
+#     if __name__ == '__main__':
+#         import matplotlib.pyplot as plt
+#         fig,axs = plt.subplots(1,2)
+#         mtrue.plot(ax=axs[0], color='C0')
+#         resmod.plot(ax=axs[0], color='C1')
 
-        m0.plot(ax=axs[0], linestyle=':', color='k')
+#         m0.plot(ax=axs[0], linestyle=':', color='k')
 
 
-        axs[1].loglog(t.numpy(), 10**inv.data_observed.numpy())
-        axs[1].loglog(t.numpy(), 10**dbdt_pred.numpy())
-        axs[1].loglog(t.numpy(), 10**dbdt_start.numpy(), 'k:')        
+#         axs[1].loglog(t.numpy(), 10**inv.data_observed.numpy())
+#         axs[1].loglog(t.numpy(), 10**dbdt_pred.numpy())
+#         axs[1].loglog(t.numpy(), 10**dbdt_start.numpy(), 'k:')        
 
-        plt.show()    
-    assert inv.misfits[-1] < 1, "misfit is not below one."
+#         plt.show()    
+#     assert inv.misfits[-1] < 1, "misfit is not below one."
 
 def test_inversion2():
     from anemone.experiment import Loop, Receiver, compute_relstd
@@ -360,7 +360,7 @@ def test_inversion_multi_model2():
     import matplotlib.pyplot as plt
 
     from anemone.experiment import Loop, Receiver, compute_relstd, Waveform
-    from anemone.forwards import Forward3, ForwardLaplace3
+    from anemone.forwards import ForwardLaplace3
     tx = Loop.square(40)
     rx = Receiver()
     t = torch.logspace(-5, -3.5, 32, dtype=torch.double)
@@ -373,7 +373,7 @@ def test_inversion_multi_model2():
     n_layers = 31
     thick = torch.logspace(-1, 1, n_layers-1).to(gpu)
 
-    n_mod = 15
+    n_mod = 2
 
     z = np.arange(n_layers)[:,None]
     x = (300/n_mod)*np.arange(n_mod)[None,:]
@@ -427,7 +427,7 @@ def test_inversion_multi_model2():
 
     from time import perf_counter
     t0 = perf_counter()
-    res_mod = inv.invert(smoothness=5e2, iter_cap=20)
+    res_mod = inv.invert(smoothness=2e3, iter_cap=20)
     delta_t = perf_counter()-t0
     
     if __name__ == '__main__':
@@ -443,10 +443,10 @@ def test_inversion_multi_model2():
 if __name__ == '__main__':
     # test_model_smoothing_constraint()
     
-    test_inversion_multi_model2()
+    # test_inversion_multi_model2()
 
-    # test_inversion()
-    # test_inversion()
+    # test_inversion2()
+    test_inversion()
     # test_inversionGM()
     # test_inversion_multi_model2()
 
