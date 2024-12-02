@@ -239,7 +239,7 @@ class Hankel:
         if self.func_results is None:
             self.func_results = self.func(self.lamda)
         self.r, self.resp = self.range(rmin, rmax)
-        self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log10)
+        self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log10, integrate=False)
     
     
     def r_to_idx(self, r):

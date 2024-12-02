@@ -276,6 +276,26 @@ def colecole(rho_o, m, tau, c, omega):
     rho = rho_o*tmp
     return rho
 
+def mpa2colecole(rho, phi_max, tau_phi, C):
+    n = 0
+    m0 = torch.zeros_like(phi_max)
+    m_new = torch.ones_like(phi_max)
+    
+    tan_phi = torch.tan(-phi_max)
+
+    while torch.all(torch.abs(m_new-m0)/m_new > 1e-3) and n < 10:
+        if n>0: m0 = m_new*1.
+        tau_cc = tau_phi*(1.-m0)**(-0.5/C)
+        ab = 1./(1.+(1j*tau_cc/tau_phi)**C)
+        m_new = tan_phi / ((1.-ab.real)*tan_phi + ab.imag)
+        n += 1
+    return rho, tau_cc, m_new, C
+
+def colecole2mpa(rho, tau_cc, m, C):
+    tau_phi = tau_cc * (1-m)**(0.5/C)
+    rho_cmplx = colecole(rho, m, tau_cc, C, 1./tau_phi)
+    phi_max =  -torch.arctan(rho_cmplx.imag/rho_cmplx.real)
+    return rho, phi_max, tau_phi, C          
 
 def transverse_electric_field_coefficients(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, return_un=False):
     import numpy as np
