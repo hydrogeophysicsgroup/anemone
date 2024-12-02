@@ -416,7 +416,7 @@ class ForwardFD(Forward):
         if self.waveform is not None:
             return H*self.waveform.fourier_d2wdt2(self.freqs)
         else:
-            return H
+            return H.T
         
 class IPForwardFD(IPForward, ForwardFD):
     def __init__(self, source, receiver, freqs, waveform=None, filterfunc=None, tolerance=None):
