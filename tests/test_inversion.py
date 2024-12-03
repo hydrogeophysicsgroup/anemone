@@ -1,4 +1,5 @@
 from anemone.inversion import *
+from anemone.forwards import *
 
 def test_default_model_class():
     exp = EarthModel([torch.ones(1), torch.ones(1)], ['amp', 'rate'])
@@ -68,26 +69,27 @@ def test_inversion_noise_free():
 
         plt.show()
     assert inv.misfits[-1] < 1, "misfit is not below one."
-        
-def test_inversion():
-    from anemone.experiment import Loop, Receiver, compute_relstd, Waveform
-    from anemone.forwards import ForwardLaplace3 as Forward
-    tx = Loop.square(40)
-    rx = Receiver()
-    t = torch.logspace(-5, -3, 31, dtype=torch.double)
 
-    fwr = Forward(tx, rx, t, waveform=Waveform.example())
+def check_inversion(ForwardMaker, **kwargs):
+    from anemone.experiment import Loop, Receiver, compute_relstd, Waveform
+    kwargs.setdefault('source', Loop.square(40))
+    kwargs.setdefault('receiver', Receiver())
+    kwargs.setdefault('times', torch.logspace(-5, -3, 31, dtype=torch.double))
+    kwargs.setdefault('waveform', Waveform.example())
+
+    t = kwargs['times']
+    fwr = ForwardMaker(**kwargs)
     mtrue = FewLayerModel(torch.tensor([70, 50, 100]), torch.tensor([20, 40]))
 
     dbdt = torch.abs(fwr(*mtrue.values))
-    dbdt_err = compute_relstd(t, dbdt)
+    dbdt_err = compute_relstd(kwargs['times'], dbdt)
 
-    m0 = SmoothModel.starting_model(31)
+    m0 = SmoothModel.starting_model(31, rho=100)
     
 
     inv = Inversion(torch.abs(dbdt+dbdt*torch.randn(len(dbdt))*dbdt_err), dbdt*dbdt_err, m0, fwr, data_transform=torch.log10)
     dbdt_start = inv.mforward(m0.vec)
-    resmod = inv.invert(smoothness=1000., iter_cap=7)
+    resmod = inv.invert(smoothness=1000., iter_cap=10)
     dbdt_pred = inv.mforward(resmod.vec)
 
 
@@ -107,6 +109,19 @@ def test_inversion():
 
         plt.show()    
     assert inv.misfits[-1] < 1, "misfit is not below one."
+
+
+def test_inversion_DefaultForward():
+    check_inversion(Forward)
+
+def test_inversion_LaplaceForward():
+    check_inversion(ForwardLaplace)
+
+def test_inversion_3Forward():
+    check_inversion(Forward3, tolerance=1e-6)
+
+def test_inversion_ForwardLaplace3():
+    check_inversion(ForwardLaplace3, tolerance=1e-6)
 
 def test_inversionGM():
     from anemone.experiment import Loop, Receiver, compute_relstd, Waveform
@@ -446,7 +461,8 @@ if __name__ == '__main__':
     # test_inversion_multi_model2()
 
     # test_inversion2()
-    test_inversion()
+    # test_inversion_ForwardLaplace3()
+    test_inversion_3Forward()
     # test_inversionGM()
     # test_inversion_multi_model2()
 

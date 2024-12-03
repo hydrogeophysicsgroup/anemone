@@ -289,9 +289,9 @@ def mpa2colecole(rho, phi_max, tau_phi, C):
         ab = 1./(1.+(1j*tau_cc/tau_phi)**C)
         m_new = tan_phi / ((1.-ab.real)*tan_phi + ab.imag)
         n += 1
-    return rho, tau_cc, m_new, C
+    return rho, m_new, tau_cc,  C
 
-def colecole2mpa(rho, tau_cc, m, C):
+def colecole2mpa(rho, m, tau_cc, C):
     tau_phi = tau_cc * (1-m)**(0.5/C)
     rho_cmplx = colecole(rho, m, tau_cc, C, 1./tau_phi)
     phi_max =  -torch.arctan(rho_cmplx.imag/rho_cmplx.real)
