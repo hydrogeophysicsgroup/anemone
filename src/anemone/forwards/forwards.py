@@ -127,10 +127,10 @@ class Forward:
     def __call__(self, rho, thickness):
         if isinstance(rho, ndarray): rho = torch.from_numpy(rho)
         if isinstance(thickness, ndarray): thickness = torch.from_numpy(thickness)
-        self.rho = ((rho+0j)[..., None, None]).to(self.device)
+        self.rho = ((rho+0j)[..., None, None])#.to(self.device)
         if rho.ndim > thickness.ndim:
             thickness = thickness[:, None]
-        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
+        self.thick = ((thickness+0j)[..., None, None])#.to(self.device)
         return self.forward()*c.mu0
 
     @classmethod
@@ -308,7 +308,7 @@ class ForwardLaplace(Forward):
                 if self.waveform is not None:
                     intg /= -1j*omega
                 return torch.squeeze(intg).real
-            cbft = invLaplace(s_integrand, device=self.device, n_coefficients=8)
+            cbft = invLaplace(s_integrand, device=self.device, n_coefficients=16)
             return cbft(self.t_eval)
 
         hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
@@ -572,24 +572,24 @@ class ForwardLaplace3(ForwardLaplace):
 
     def forward(self):
         def wvlngth_integrand(wave_length):
-            lmb = wave_length[None, :, None]
+            self.lmb = wave_length[None, :, None]
             def s_integrand(s):
                 """ Hz from horizontal electric dipole. """
-                omega = -1j*s[None, None, :]
+                self.omega = -1j*s[None, None, :]
                 
-                if self.tmp_u0 is None: self.tmp_u0 = u0(omega, lmb)
-                if self.sfield_rte is None: self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)*lmb**2 / self.tmp_u0 / c.fourpi
-                if self.pfield is None: self.pfield = (torch.exp(-self.tmp_u0*self.pfield_dz)*lmb**2 / self.tmp_u0 / c.fourpi)
-                intg = self.pfield +  (rte(self.sigma, self.thick, omega, lmb)*self.sfield_rte)
+                if self.tmp_u0 is None: self.tmp_u0 = u0(self.omega, self.lmb)
+                if self.sfield_rte is None: self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)*self.lmb**2 / self.tmp_u0 / c.fourpi
+                if self.pfield is None: self.pfield = (torch.exp(-self.tmp_u0*self.pfield_dz)*self.lmb**2 / self.tmp_u0 / c.fourpi)
+                intg = self.pfield +  (rte(self.sigma, self.thick, self.omega, self.lmb)*self.sfield_rte)
 
                 if self.filterfunc is not None:
-                    intg *= self.filterfunc.omega_filter(omega)
+                    intg *= self.filterfunc.omega_filter(self.omega)
                 if self.waveform is not None:
-                    intg /= -1j*omega
+                    intg /= -1j*self.omega
                 return torch.squeeze(intg).real
 
-            cbft = invLaplace(s_integrand, device=self.device, n_coefficients=8)
-            return cbft(self.t_eval).real.squeeze()
+            res = invLaplace(s_integrand, device=self.device, n_coefficients=8)(self.t_eval)
+            return res.swapaxes(-2,-1)
 
         hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=self.tolerance, smp_per_decade=10)
         r,HR = hkl1.range(self.rmin, self.rmax)
@@ -602,7 +602,61 @@ class ForwardLaplace3(ForwardLaplace):
 
         if len(Ht.shape)==1:
             return torch.einsum('...i,...i', Ht, self.t2t).mT.squeeze()
-        elif len(Ht.shape)==3:
-            return torch.einsum('...ik,...jk->...ij', Ht.squeeze().T, self.t2t).squeeze()
         else:
             return torch.einsum('...ik,...jk->...ij', Ht, self.t2t).squeeze()        
+        
+def intMat(t_in, t_out):
+    t_out = t_out.to(t_in.dtype)
+    logT = torch.log(t_in)#.cpu()
+    dT = logT[1]-logT[0]
+    t2t = torch.nan_to_num(lamontagne((torch.log(t_out)[:,None]-logT[None,:])/dT))
+    return t2t
+
+class ForwardLaplace4(ForwardLaplace):
+    geomz = None
+    t2t   = None
+    lmbInt = None
+
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, t_smp_per_decade=10):
+        super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance, t_smp_per_decade)
+        self.t2t = wv_to_t(self.times, self.t_eval, waveform=self.waveform)#.to_sparse()
+
+    def forward(self):
+        def wvlngth_integrand(wave_length):
+            self.lmb = wave_length[None, ::2, None]
+            self.lmbInt = intMat(wave_length[::2], wave_length)
+
+            def s_integrand(s):
+                """ Hz from horizontal electric dipole. """
+                self.omega = -1j*s[None, None, :]
+
+                
+                if self.tmp_u0 is None: self.tmp_u0 = u0(self.omega, self.lmb)
+                if self.sfield_rte is None: self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)*self.lmb**2 / self.tmp_u0 / c.fourpi
+                if self.pfield is None: self.pfield = (torch.exp(-self.tmp_u0*self.pfield_dz)*self.lmb**2 / self.tmp_u0 / c.fourpi)
+                self.rte = rte(self.sigma, self.thick, self.omega, self.lmb)
+                intg = self.pfield +  self.rte*self.sfield_rte
+
+                if self.filterfunc is not None:
+                    intg *= self.filterfunc.omega_filter(self.omega)
+                if self.waveform is not None:
+                    intg /= -1j*self.omega
+                return torch.squeeze(intg).real
+
+            res = invLaplace(s_integrand, device=self.device, n_coefficients=8)(self.t_eval).swapaxes(-2,-1)
+
+            return torch.einsum('ij,...kj->...ki', self.lmbInt, res)
+
+        hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=self.tolerance, smp_per_decade=10)
+        r,HR = hkl1.range(self.rmin, self.rmax)
+        if self.geomz is None:
+            self.geomz = self.source.geomz(self.receiver, r).to(torch.double)
+            self.r=r
+        else:
+            assert torch.all(self.r==r)
+        Ht = torch.einsum('...ik,...jk',  self.geomz, HR)
+
+        if len(Ht.shape)==1:
+            return torch.einsum('...i,...i', Ht, self.t2t).mT.squeeze()
+        else:
+            return torch.einsum('...ik,...jk->...ij', Ht, self.t2t).squeeze()   

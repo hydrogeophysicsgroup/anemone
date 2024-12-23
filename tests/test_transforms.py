@@ -201,8 +201,7 @@ def test_invlaplace():
     y1 = invLaplace(LF, n_coefficients=16)(t)
     y2 = f(t)
 
-    assert torch.allclose(y1.real, y2.real), "inverse Laplace transform is performing poorly on 1/sqrt(s)<->1./sqrt(t*pi) analytical example"
-
+    
     if running_as_main:
         
         import matplotlib.pyplot as plt
@@ -213,7 +212,8 @@ def test_invlaplace():
 
         plt.legend()
         plt.show()        
-        return t.numpy(), y1.numpy(), y2.numpy()
+        # return t.numpy(), y1.numpy(), y2.numpy()
+    assert torch.allclose(y1.real, y2.real), "inverse Laplace transform is performing poorly on 1/sqrt(s)<->1./sqrt(t*pi) analytical example"
     
 def test_invlaplace_Hz_center_of_circular_loop_halfspace():
     import torch
@@ -298,5 +298,5 @@ if __name__ == '__main__':
     # test_fourier()
     # test_spline_integration()
     test_invlaplace()
-    test_invlaplace_Hz_center_of_circular_loop_halfspace()
-    test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
+    # test_invlaplace_Hz_center_of_circular_loop_halfspace()
+    # test_invlaplace_dHzdt_center_of_circular_loop_halfspace()

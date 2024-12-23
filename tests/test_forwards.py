@@ -653,9 +653,10 @@ if __name__ == '__main__':
     # test_40x40_aarhusInv_stepoff_laplace()
     # test_40x40_aarhusInv_stepoff()
     # test_multirx_Laplace3()
-    test_colecole_forwardTD()
+    # test_colecole_forwardTD()
 #    test_mpaforwardTD()
-    # test_forwardlaplace3_parallel_models()
+    test_forwardlaplace3_parallel_models()
     # test_Laplace2_40x40_aarhusInv_piecewise_waveform()
+    
     # test_colecole_parallel_models()
     exit()
