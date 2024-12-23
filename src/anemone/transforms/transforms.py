@@ -368,6 +368,7 @@ def factorial(s):
         x -= 1
     return y
 
+@lru_cache
 def gaver_stehfest_coefficients(N):
     """ Inverse laplace transform using Gaver-Stehfest method.
         see https://dl.acm.org/doi/10.1145/361953.361969
@@ -391,7 +392,6 @@ def gaver_stehfest_coefficients(N):
             denominator *= factorial(2*k-i)
             tmpv += numerator/denominator
         v[i-1] = (-1)**(i + N/2)*tmpv
-
     return torch.from_numpy(v)
 
 class invLaplace:
@@ -414,20 +414,36 @@ class invLaplace:
         self.n_coefficients = n_coefficients
         
 
-    def __call__(self, t):
-        # ntimes = t.shape[-1]
+    # def __call__(self, t):
+    #     # ntimes = t.shape[-1]
 
+    #     q = (c.log2 / t)[:, None]
+    #     respt1 = self.func(q[0,:]*self.i)
+    #     if respt1.dtype != self.v.dtype:
+    #         self.v = self.v.to(respt1.dtype)
+            
+    #     res1 = q[0,:]*respt1@self.v
+    #     res = torch.zeros(t.shape+res1.shape, dtype=respt1.dtype, device=self.device)
+    #     res[0] = res1
+    #     for i_t in range(1, t.shape[-1]):
+    #         res[i_t] = q[i_t,:]*self.func(q[i_t,:]*self.i)@self.v
+    #     # print('the shape of res is ', res.shape)
+    #     return res.T
+
+    def __call__(self, t):
         q = (c.log2 / t)[:, None]
-        respt1 = self.func(q[0,:]*self.i)
+        qi = (q*self.i).flatten()
+        # print('the shape of qi is ', qi.shape)
+        respt1 = self.func(qi)
+        # print('the shape of respt1 is ', respt1.shape)
+        respt1 = respt1.reshape(respt1.shape[:-1]+t.shape+self.i.shape)
+        respt1[..., :,:] *= q
+        # print('the shape of respt1 is ', respt1.shape)
         if respt1.dtype != self.v.dtype:
             self.v = self.v.to(respt1.dtype)
-            
-        res1 = q[0,:]*respt1@self.v
-        res = torch.zeros(t.shape+res1.shape, dtype=respt1.dtype, device=self.device)
-        res[0] = res1
-        for i_t in range(1, t.shape[-1]):
-            res[i_t] = q[i_t,:]*self.func(q[i_t,:]*self.i)@self.v
+        res = respt1@self.v            
         return res
+        
 
 import matplotlib.pyplot as plt
 import numpy as np
