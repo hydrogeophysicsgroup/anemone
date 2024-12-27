@@ -267,10 +267,10 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=c.mu0, eps
     rtm = (imp_freespace - imp_boundary[0]) / (imp_freespace + imp_boundary[0])
     return rtm
 
-def colecole(rho_o, m, tau, c, omega):
+def colecole(rho_o, m, tau, C, omega):
     """equation 1 from Pelton et al. 1978
     """
-    tmp = 1.+(1j*omega*tau)**c
+    tmp = 1.+(1j*omega*tau)**C
     tmp = 1. - 1./tmp
     tmp = 1. - m*tmp
     rho = rho_o*tmp
@@ -280,14 +280,17 @@ def mpa2colecole(rho, phi_max, tau_phi, C):
     n = 0
     m0 = torch.zeros_like(phi_max)
     m_new = torch.ones_like(phi_max)
+    max_m0 = 0.99
     
-    tan_phi = torch.tan(-phi_max)
+    tan_phi = torch.tan(-phi_max).real
 
-    while torch.all(torch.abs(m_new-m0)/m_new > 1e-3) and n < 10:
+    while torch.all(torch.abs(m_new - m0)/m_new > 1e-3) and n<100:
         if n>0: m0 = m_new*1.
-        tau_cc = tau_phi*(1.-m0)**(-0.5/C)
+        tau_cc = tau_phi*((1.-m0)**(-0.5/C))
         ab = 1./(1.+(1j*tau_cc/tau_phi)**C)
         m_new = tan_phi / ((1.-ab.real)*tan_phi + ab.imag)
+        m_new[m_new>max_m0] = max_m0
+        m_new[m_new<0] = 0.
         n += 1
     return rho, m_new, tau_cc,  C
 

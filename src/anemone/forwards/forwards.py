@@ -159,13 +159,13 @@ class Forward:
         class MPA(cls):
             @property
             def sigma(self):
-                rho, tau_cc, m_new, C = mpa2colecole(self.rho, self.phi_max, self.tau_phi, self.c)
+                rho, m_new, tau_cc, C = mpa2colecole(self.rho, self.phi_max, self.tau_phi, self.c)
                 return 1./colecole(rho, m_new, tau_cc, C, self.omega)
             
             @staticmethod
-            def colecole2mpa(rho, tau_cc, m, C):
+            def colecole2mpa(rho, m, tau, C):
                 from anemone.physics import colecole2mpa # not used much, so imported here to keep things clean.
-                rho, phi_max, tau_phi, C = colecole2mpa(rho, tau_cc, m, C)
+                rho, phi_max, tau_phi, C = colecole2mpa(rho, m, tau, C)
                 return rho, phi_max, tau_phi, C
 
             def __call__(self, rho, phi_max, tau_phi, C, thickness):
@@ -476,21 +476,23 @@ def wv_to_t(t_eval, t_sampled, waveform=None):
 class Forward3(Forward):
     geomz=None
     t2t =None
+    omega = None
+
     
     def forward(self):
         def frq_integrand(f):
-            omega = c.twopi*f[None,:,None]
+            self.omega = c.twopi*f[None,:,None]
 
             def wvlngth_integrand(wave_length):
                 """ Hz from horizontal electric dipole. """
                 lmb = wave_length[None, None, :]
                 
-                tmp_u0 = u0(omega, lmb)
-                intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
+                tmp_u0 = u0(self.omega, lmb)
+                intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, self.omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
                 intg *= lmb**2 / tmp_u0
             
                 if self.filterfunc is not None:
-                    intg *= self.filterfunc.omega_filter(omega)
+                    intg *= self.filterfunc.omega_filter(self.omega)
                 return torch.squeeze(intg/c.fourpi)
             
             hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=self.tolerance, smp_per_decade=10)
@@ -503,7 +505,7 @@ class Forward3(Forward):
             
             res = torch.einsum('...ij,...j->...i', HR, self.geomz)
             if self.waveform is not None:
-                res /= -1j*omega.squeeze()
+                res /= -1j*self.omega.squeeze()
             return res
         
         cbft=invFourier(frq_integrand, smp_per_decade=10, device=self.device)

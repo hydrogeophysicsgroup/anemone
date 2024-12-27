@@ -232,7 +232,7 @@ def check_colecoleforwardTD(ForwardMaker):
     tau  = torch.tensor([1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 2.000e-04, 2.000e-04, 
                         2.000e-04, 3.000e-04, 3.000e-04, 3.000e-04, 3.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 
                         1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04], dtype=torch.double)
-    chg  = torch.tensor([6.000e-01, 6.000e-01, 5.000e-01, 5.000e-01, 5.000e-01, 5.000e-01, 6.000e-01, 6.000e-01,
+    C  = torch.tensor([6.000e-01, 6.000e-01, 5.000e-01, 5.000e-01, 5.000e-01, 5.000e-01, 6.000e-01, 6.000e-01,
                          6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 9.000e-01, 
                          9.000e-01, 9.000e-01, 9.000e-01, 9.000e-01], dtype=torch.double)
     thick=torch.tensor([1.000e+00, 1.177e+00, 1.386e+00, 1.632e+00, 1.922e+00, 2.263e+00, 2.665e+00, 3.138e+00, 
@@ -248,7 +248,7 @@ def check_colecoleforwardTD(ForwardMaker):
        -4.377552e-09, -2.834261e-09, -1.834226e-09, -1.188674e-09,
        -7.686370e-10, -4.945201e-10, -3.173105e-10], dtype=torch.double)
     
-    dbdt = pyfwr(res,  m0, tau, chg, thick)
+    dbdt = pyfwr(res,  m0, tau, C, thick)
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
@@ -272,47 +272,35 @@ def check_colecoleforwardTD(ForwardMaker):
 
 def check_MPAforwardTD(ForwardMaker):
     from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
-    sq = Loop.square(40)
-    rx = Receiver()
+    from anemone.physics import mpa2colecole
+
+    sq = Loop.square(2.9, z=0.93)
+    rx = Receiver(x=-9., z=0.43)
     waveform = Waveform.example()
     recfilter = FilterChain([
         ButterworthFilter(2.4e5, 1),
         ButterworthFilter(6.2e5, 1),
         ButterworthFilter(4.5e5, 2)
     ])
-    t0 = torch.logspace(-5, -3, 31, dtype=torch.double)
-    pyfwr = ForwardMaker.mpa(sq, rx, t0, waveform=waveform, filterfunc=recfilter)
 
-    res  = torch.tensor([4.000e+02, 4.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 
-                        8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 
-                        5.000e+02, 3.000e+02, 3.000e+02, 3.000e+02], dtype=torch.double)
-    m0   = torch.tensor([2.000e+02, 2.000e+02, 2.000e+02, 2.000e+02, 4.000e+02, 4.000e+02, 4.000e+02, 5.000e+02, 
-                        5.000e+02, 5.000e+02, 5.000e+02, 9.000e+02, 9.000e+02, 9.000e+02, 9.000e+02, 9.000e+02, 
-                        9.000e+02, 9.000e+02, 9.000e+02, 9.000e+02], dtype=torch.double)*1e-3
-    tau  = torch.tensor([1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 2.000e-04, 2.000e-04, 
-                        2.000e-04, 3.000e-04, 3.000e-04, 3.000e-04, 3.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 
-                        1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04], dtype=torch.double)
-    chg  = torch.tensor([6.000e-01, 6.000e-01, 5.000e-01, 5.000e-01, 5.000e-01, 5.000e-01, 6.000e-01, 6.000e-01,
-                         6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 9.000e-01, 
-                         9.000e-01, 9.000e-01, 9.000e-01, 9.000e-01], dtype=torch.double)
-    thick=torch.tensor([1.000e+00, 1.177e+00, 1.386e+00, 1.632e+00, 1.922e+00, 2.263e+00, 2.665e+00, 3.138e+00, 
-                        3.695e+00, 4.351e+00, 5.124e+00, 6.034e+00, 7.105e+00, 8.366e+00, 9.851e+00, 1.160e+01, 
-                        1.365e+01, 1.608e+01, 1.893e+01], dtype=torch.double)
-    from anemone.physics import colecole2mpa
-    rho,phi_max,tau_phi,C = colecole2mpa(res, tau, m0, chg)
-    dbdt = pyfwr(rho, phi_max, tau_phi, C, thick)
-    print(dbdt)
+    t0 = torch.tensor([1.249e-05, 1.449e-05, 1.649e-05, 1.849e-05, 2.049e-05, 2.299e-05, 2.599e-05, 2.949e-05, 3.399e-05, 3.999e-05, 4.749e-05, 5.649e-05, 6.799e-05, 8.249e-05, 1.010e-04, 1.245e-04, 1.535e-04, 1.905e-04, 2.370e-04, 2.950e-04, 3.685e-04, 4.610e-04, 5.775e-04, 7.240e-04, 9.085e-04], dtype=torch.double)
+    pyfwr = ForwardMaker.colecole(sq, rx, t0, waveform=waveform)
+
+    rho   = torch.tensor([5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 2.000e+02, 2.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 5.000e+02], dtype=torch.double)
+    phi   = torch.tensor([2.000e+02, 2.000e+02, 2.000e+02, 2.000e+02, 2.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02], dtype=torch.double)/1e3
+    tau   = torch.tensor([1.000e-04, 1.000e-04, 1.000e-04, 2.000e-04, 2.000e-04, 1.000e-04, 1.000e-04, 9.000e-04, 9.000e-04, 9.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04], dtype=torch.double)
+    C     = torch.tensor([6.000e-01, 6.000e-01, 4.000e-01, 4.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 3.000e-01, 3.000e-01, 3.000e-01, 3.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01], dtype=torch.double)
+    thick = torch.tensor([1.000e+00, 1.177e+00, 1.386e+00, 1.632e+00, 1.922e+00, 2.263e+00, 2.665e+00, 3.138e+00, 3.695e+00, 4.351e+00, 5.124e+00, 6.034e+00, 7.105e+00, 8.366e+00, 9.851e+00, 1.160e+01, 1.365e+01, 1.608e+01, 1.893e+01], dtype=torch.double)
+
+    rho,m_cc,tau_cc,C = mpa2colecole(rho, phi, tau, C)
+    print(m_cc)
 
 
-    ainv_dbdt = torch.tensor([ 4.163592e-05,  2.674770e-05,  1.696241e-05,  1.037700e-05,
-        6.115854e-06,  3.470203e-06,  1.870507e-06,  9.252422e-07,
-        3.775450e-07,  7.785586e-08, -7.586203e-08, -1.447992e-07,
-       -1.685453e-07, -1.687759e-07, -1.544787e-07, -1.313316e-07,
-       -1.046215e-07, -7.896327e-08, -5.621327e-08, -3.828716e-08,
-       -2.530188e-08, -1.641016e-08, -1.056120e-08, -6.790221e-09,
-       -4.377552e-09, -2.834261e-09, -1.834226e-09, -1.188674e-09,
-       -7.686370e-10, -4.945201e-10, -3.173105e-10], dtype=torch.double)
-    
+    dbdt = pyfwr(rho, m_cc,tau_cc,C, thick)
+
+
+    ainv_dbdt = torch.tensor([6.392999e-07, 5.325324e-07, 4.454187e-07, 3.731716e-07, 3.106149e-07, 2.473792e-07, 1.891682e-07, 1.386614e-07, 9.434471e-08, 5.805804e-08, 3.278332e-08, 1.711480e-08, 7.333075e-09, 2.030195e-09, -5.600833e-10, -1.660811e-09, -1.887716e-09, -1.641425e-09, -1.203858e-09, -7.603117e-10, -4.405845e-10, -2.413948e-10, -1.292233e-10, -6.704714e-11, -3.356873e-11])
+
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
@@ -654,8 +642,8 @@ if __name__ == '__main__':
     # test_40x40_aarhusInv_stepoff()
     # test_multirx_Laplace3()
     # test_colecole_forwardTD()
-#    test_mpaforwardTD()
-    test_forwardlaplace3_parallel_models()
+    test_mpaforwardTD()
+    # test_forwardlaplace3_parallel_models()
     # test_Laplace2_40x40_aarhusInv_piecewise_waveform()
     
     # test_colecole_parallel_models()
