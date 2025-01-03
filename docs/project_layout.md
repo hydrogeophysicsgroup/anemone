@@ -14,6 +14,8 @@ We will describe each of these modules here.
 
 ## Forwards
 
+The forward module contains all the forward operators.
+
 
 ## Experiment
 
@@ -32,7 +34,7 @@ The Hankel transform.
 
 ## Physics
 
-This is pretty deep in the weeds, for your information.
+This is pretty deep in the weeds.
 The physics itself make reference to Ward & Hohmann 1988 including the equation and page numbers.
 
 An important part of the physic module design is that functions are agnostic to the input array dimensionality. In this manner, functions closely resemble their mathematical formation. However, this means the dimensionality of all the input arrays must be compatible to begin with.

@@ -15,11 +15,12 @@ We recommend installing pytorch from their page:
 
 ### Installation
 
-navigate to the *anemone* folder from the console and enter the following command:
+navigate into the *anemone* folder from the console and enter the following command:
 
 ```console
-pip install -e ./anemone
+pip install -e .
 ```
+
 
 ## Usage
 
