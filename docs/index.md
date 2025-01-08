@@ -28,3 +28,5 @@ Johansen, H.K. and Sørensen, K. (1979), Fast Hankel Transforms. Geophysical Pro
 
 D. E. Boerner and G. F. West, (1984), Efficient calculation of the electromagnetic fields of an extended source. GEOPHYSICS 49: 2057-2060.
 [https://doi.org/10.1190/1.1441618](https://doi.org/10.1190/1.1441618)
+
+Stehfest, H. (1970), Algorithm 368 Numerical inversion of Laplace transforms. Association for Computing Machinery (ACM), [https://doi.org/10.1145/361953.361969](https://dl.acm.org/doi/10.1145/361953.361969)

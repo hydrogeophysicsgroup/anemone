@@ -7,7 +7,7 @@ from test_inversion import test_inversion_ForwardLaplace3
 
 
 rho = torch.ones(3)*40.
-rho_change = torch.linspace(-30, 260, 3)
+rho_change = torch.linspace(-30, 260, 10)
 rho = rho[:, None] + rho_change[None, :]
 rho[0, :] = 40.
 rho[2, :] = 40.
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     with open("C:/Users/au646858/notes/profiling_results.md", 'w') as f:
         f.write("# Profiling results\n")
 
-        for fwrmaker in [ForwardLaplace3]:
+        for fwrmaker in [ForwardLaplace4, ForwardLaplace5]:
             f.write('## ' + fwrmaker.__name__ + '\n')
             f.write('### initial_run \n')
             fwr = fwrmaker.example()

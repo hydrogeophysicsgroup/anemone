@@ -196,7 +196,7 @@ def test_invlaplace():
     def LF(s):
         return 1./torch.sqrt(s)
 
-    t = torch.logspace(-7, 2, 31, dtype=torch.complex128)
+    t = torch.logspace(-7, 2, 101, dtype=torch.float64)
 
     y1 = invLaplace(LF, n_coefficients=16)(t)
     y2 = f(t)
@@ -205,13 +205,19 @@ def test_invlaplace():
     if running_as_main:
         
         import matplotlib.pyplot as plt
-        fig,axs = plt.subplots(1,2)
+        fig,axs = plt.subplots(1,2, figsize=(6,4))
         axs[0].loglog(t.numpy(), y2.numpy(), 'k-', label='analytical')
-        axs[0].loglog(t.numpy(), y1.numpy(), 'r--', label='laplace numeric')
-        axs[1].semilogx(t.numpy(), (y1.numpy()-y2.numpy())/y2.numpy(), 'k-', label='analytical')
+        axs[0].loglog(t.numpy(), y1.numpy(), 'r--', label='inv.laplace numeric')
+        axs[1].semilogx(t.numpy(), 100*(y1.numpy()-y2.numpy())/y2.numpy(), 'k-', label='analytical')
 
-        plt.legend()
-        plt.show()        
+        axs[0].legend()
+        axs[0].set_xlabel('time [s]')
+        axs[0].set_ylabel('f(t)')
+        axs[1].set_xlabel('time [s]')
+        axs[1].set_ylabel('relative error [%]')
+        plt.tight_layout()
+        plt.savefig('../docs/images/invlaplace_example.png', dpi=300)
+        plt.show()
         # return t.numpy(), y1.numpy(), y2.numpy()
     assert torch.allclose(y1.real, y2.real), "inverse Laplace transform is performing poorly on 1/sqrt(s)<->1./sqrt(t*pi) analytical example"
     
