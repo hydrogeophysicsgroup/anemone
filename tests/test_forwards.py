@@ -124,13 +124,8 @@ def check_parallel_models(ForwardMaker):
 
 
 
-def check_forward_speeds(ForwardMaker):
+def check_forward_speeds(ForwardMaker, **kwargs):
     name = ForwardMaker.__name__
-    from anemone.experiment import Loop, Receiver, Waveform
-    lp = Loop.square(40)
-    rx = Receiver()
-    waveform = Waveform.example()
-    times = torch.logspace(-5, -3, 31, dtype=torch.double)
 
     rho = torch.ones(3)*40.
     rho_change = torch.linspace(-30, 260, 100)
@@ -140,13 +135,13 @@ def check_forward_speeds(ForwardMaker):
 
     thick = np.ones_like(rho)[:-1, :]*20
 
-    fwr = ForwardMaker(lp, rx, times, waveform=waveform)
+    fwr = ForwardMaker.example(**kwargs)
     dbdt = fwr(torch.ones(3)*40, torch.ones(2)*20)
 
 
     from time import perf_counter
     t0 = perf_counter()
-    dbdt = fwr(rho, thick)
+    _ = fwr(rho, thick)
     t1 = perf_counter()
     dt = t1-t0
     print(f'{name} {len(rho_change)} forward calculation took {dt:0.3f} s')
@@ -178,8 +173,8 @@ def test_40x40_aarhusInv_stepoff_geomop():
     aarhusInv_stepoff_comparison(ForwardGeomOp, rtol=2e-2)
 
 def test_40x40_aarhusInv_stepoff_geomOpLaplace():
-    from anemone.forwards import ForwardLaplace3
-    aarhusInv_stepoff_comparison(ForwardLaplace3, rtol=2e-2)
+    from anemone.forwards import ForwardLaplace
+    aarhusInv_stepoff_comparison(ForwardLaplace, rtol=2e-2)
 
 def test_40x40_aarhusInv_stepoff_laplace():
     from anemone.forwards import ForwardLaplace
@@ -215,12 +210,8 @@ def test_Laplace3_40x40_aarhusInv_piecewise_waveform():
     from anemone.forwards import ForwardLaplace3
     aarhusInv_piecewise_comparison(ForwardLaplace3, rtol=2e-2)
 
-
-
-
-def test_IPforward():
+def check_colecoleforwardTD(ForwardMaker):
     from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
-    from anemone.forwards import IPForward
     sq = Loop.square(40)
     rx = Receiver()
     waveform = Waveform.example()
@@ -230,7 +221,7 @@ def test_IPforward():
         ButterworthFilter(4.5e5, 2)
     ])
     t0 = torch.logspace(-5, -3, 31, dtype=torch.double)
-    pyfwr = IPForward(sq, rx, t0, waveform=waveform, filterfunc=recfilter)    
+    pyfwr = ForwardMaker.colecole(sq, rx, t0, waveform=waveform, filterfunc=recfilter)
 
     res  = torch.tensor([4.000e+02, 4.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 
                         8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 
@@ -241,7 +232,7 @@ def test_IPforward():
     tau  = torch.tensor([1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 2.000e-04, 2.000e-04, 
                         2.000e-04, 3.000e-04, 3.000e-04, 3.000e-04, 3.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 
                         1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04], dtype=torch.double)
-    chg  = torch.tensor([6.000e-01, 6.000e-01, 5.000e-01, 5.000e-01, 5.000e-01, 5.000e-01, 6.000e-01, 6.000e-01,
+    C  = torch.tensor([6.000e-01, 6.000e-01, 5.000e-01, 5.000e-01, 5.000e-01, 5.000e-01, 6.000e-01, 6.000e-01,
                          6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 9.000e-01, 
                          9.000e-01, 9.000e-01, 9.000e-01, 9.000e-01], dtype=torch.double)
     thick=torch.tensor([1.000e+00, 1.177e+00, 1.386e+00, 1.632e+00, 1.922e+00, 2.263e+00, 2.665e+00, 3.138e+00, 
@@ -257,7 +248,59 @@ def test_IPforward():
        -4.377552e-09, -2.834261e-09, -1.834226e-09, -1.188674e-09,
        -7.686370e-10, -4.945201e-10, -3.173105e-10], dtype=torch.double)
     
-    dbdt = pyfwr(res, tau, m0, chg, thick)
+    dbdt = pyfwr(res,  m0, tau, C, thick)
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots(1,2, sharex=True)
+        ax[0].loglog(t0, ainv_dbdt, 'k-', label='AarhusInv')
+        ax[0].loglog(t0, -ainv_dbdt, 'k--')
+        ax[0].loglog(pyfwr.times.numpy(), dbdt.real, 'C0.', label='Cole Cole Forward')
+        ax[0].loglog(pyfwr.times.numpy(), -dbdt.real, 'r.')
+
+        ax[0].set_ylabel('dB/dt')
+        ax[0].legend()
+        ax[0].set_aspect('equal')
+
+        ax[1].semilogx(t0, 100*torch.abs(dbdt.real-ainv_dbdt)/torch.abs(ainv_dbdt))
+        ax[1].set_ylabel('relative difference [%]')
+        for ax_ in ax:
+            ax_.set_xlabel('time [s]')
+
+        fig.suptitle('Test against AarhusInv with Piecewise Waveform')
+        plt.show()
+    assert torch.allclose(ainv_dbdt, dbdt, rtol=1e-2), "aarhus inv and pytorch forward do not match within 1 percent"
+
+def check_MPAforwardTD(ForwardMaker):
+    from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
+    from anemone.physics import mpa2colecole
+
+    sq = Loop.square(2.9, z=0.93)
+    rx = Receiver(x=-9., z=0.43)
+    waveform = Waveform.example()
+    recfilter = FilterChain([
+        ButterworthFilter(2.4e5, 1),
+        ButterworthFilter(6.2e5, 1),
+        ButterworthFilter(4.5e5, 2)
+    ])
+
+    t0 = torch.tensor([1.249e-05, 1.449e-05, 1.649e-05, 1.849e-05, 2.049e-05, 2.299e-05, 2.599e-05, 2.949e-05, 3.399e-05, 3.999e-05, 4.749e-05, 5.649e-05, 6.799e-05, 8.249e-05, 1.010e-04, 1.245e-04, 1.535e-04, 1.905e-04, 2.370e-04, 2.950e-04, 3.685e-04, 4.610e-04, 5.775e-04, 7.240e-04, 9.085e-04], dtype=torch.double)
+    pyfwr = ForwardMaker.colecole(sq, rx, t0, waveform=waveform)
+
+    rho   = torch.tensor([5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 2.000e+02, 2.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 5.000e+02], dtype=torch.double)
+    phi   = torch.tensor([2.000e+02, 2.000e+02, 2.000e+02, 2.000e+02, 2.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02], dtype=torch.double)/1e3
+    tau   = torch.tensor([1.000e-04, 1.000e-04, 1.000e-04, 2.000e-04, 2.000e-04, 1.000e-04, 1.000e-04, 9.000e-04, 9.000e-04, 9.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04], dtype=torch.double)
+    C     = torch.tensor([6.000e-01, 6.000e-01, 4.000e-01, 4.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 3.000e-01, 3.000e-01, 3.000e-01, 3.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01], dtype=torch.double)
+    thick = torch.tensor([1.000e+00, 1.177e+00, 1.386e+00, 1.632e+00, 1.922e+00, 2.263e+00, 2.665e+00, 3.138e+00, 3.695e+00, 4.351e+00, 5.124e+00, 6.034e+00, 7.105e+00, 8.366e+00, 9.851e+00, 1.160e+01, 1.365e+01, 1.608e+01, 1.893e+01], dtype=torch.double)
+
+    rho,m_cc,tau_cc,C = mpa2colecole(rho, phi, tau, C)
+    print(m_cc)
+
+
+    dbdt = pyfwr(rho, m_cc,tau_cc,C, thick)
+
+
+    ainv_dbdt = torch.tensor([6.392999e-07, 5.325324e-07, 4.454187e-07, 3.731716e-07, 3.106149e-07, 2.473792e-07, 1.891682e-07, 1.386614e-07, 9.434471e-08, 5.805804e-08, 3.278332e-08, 1.711480e-08, 7.333075e-09, 2.030195e-09, -5.600833e-10, -1.660811e-09, -1.887716e-09, -1.641425e-09, -1.203858e-09, -7.603117e-10, -4.405845e-10, -2.413948e-10, -1.292233e-10, -6.704714e-11, -3.356873e-11])
+
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
@@ -279,10 +322,17 @@ def test_IPforward():
         plt.show()
     assert torch.allclose(ainv_dbdt, dbdt, rtol=1e-2), "aarhus inv and pytorch forward do not match within 1 percent"
 
-def test_colecole_parallel_models():
+def test_colecole_forwardTD():
+    from anemone.forwards import Forward
+    check_colecoleforwardTD(Forward)
+
+def test_mpaforwardTD():
+    from anemone.forwards import Forward
+    check_MPAforwardTD(Forward)
+
+def check_colecole_parallel_models(ForwardMaker):
     from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
-    from anemone.forwards import IPForward
-    name = IPForward.__name__
+    name = ForwardMaker.__name__
 
     sq = Loop.square(40)
     rx = Receiver()
@@ -293,7 +343,7 @@ def test_colecole_parallel_models():
         ButterworthFilter(4.5e5, 2)
     ])
     t0 = torch.logspace(-5, -3, 31, dtype=torch.double)
-    pyfwr = IPForward(sq, rx, t0, waveform=waveform, filterfunc=recfilter)    
+    pyfwr = ForwardMaker.colecole(sq, rx, t0, waveform=waveform, filterfunc=recfilter)
 
     rho  = torch.tensor([4.0e+02, 4.0e+02, 5.0e+02], dtype=torch.double)
     m0   = torch.tensor([2.0e+02, 9.0e+02, 5.0e+02], dtype=torch.double)*1e-3
@@ -313,7 +363,7 @@ def test_colecole_parallel_models():
     chg = chg[:, None] * fixed
     thick = thick[:, None] * fixed
     
-    dbdt = pyfwr(rho, tau, m0, chg, thick)
+    dbdt = pyfwr(rho, m0, tau, chg, thick)
 
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
@@ -328,6 +378,11 @@ def test_colecole_parallel_models():
 
         plt.show()
     assert dbdt.shape == (94, 31), f"{name} running parallel models does not return correct shape"
+
+
+def test_colecole_parallel_models():
+    from anemone.forwards import Forward
+    check_colecole_parallel_models(Forward)
 
 def test_forward_timing():
     from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
@@ -586,7 +641,14 @@ if __name__ == '__main__':
     # test_40x40_aarhusInv_stepoff_laplace()
     # test_40x40_aarhusInv_stepoff()
     # test_multirx_Laplace3()
+    # test_colecole_forwardTD()
+    #test_mpaforwardTD()
+    # test_Laplace_40x40_aarhusInv_piecewise_waveform()
+    # test_40x40_aarhusInv_stepoff_laplace()
+    test_Laplace3_40x40_aarhusInv_piecewise_waveform()
+    # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
     # test_forwardlaplace3_parallel_models()
-    test_Laplace2_40x40_aarhusInv_piecewise_waveform()
-    test_colecole_parallel_models()
+    # test_Laplace2_40x40_aarhusInv_piecewise_waveform()
+    
+    # test_colecole_parallel_models()
     exit()

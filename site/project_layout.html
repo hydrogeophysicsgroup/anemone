@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="img/favicon.ico" />
+    <title>Project Layout - anEMone</title>
+    <link rel="stylesheet" href="css/theme.css" />
+    <link rel="stylesheet" href="css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Project Layout";
+        var mkdocs_page_input_path = "project_layout.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="index.html">
+          <img src="images/logo.png" class="logo" alt="Logo"/>
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="./search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="index.html">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="quick_start.html">Quick Start</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="usage.html">Usage</a>
+                </li>
+              </ul>
+              <ul class="current">
+                <li class="toctree-l1 current"><a class="reference internal current" href="#">Project Layout</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#experiment">Experiment</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#forwards">Forwards</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#transforms">Transforms</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#physics">Physics</a>
+    </li>
+    </ul>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">anEMone</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="index.html" class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Project Layout</li>
+    <li class="wy-breadcrumbs-aside">
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="the-structure-of-anemone">The structure of anemone</h1>
+<p>Anemone consists of four modules.</p>
+<ol>
+<li><strong>experiment</strong> - objects representing experiment configuration parameters like transmit loop geometry, transmitter waveform, receiver filters, etc.</li>
+<li><strong>forwards</strong> - where everything comes together.</li>
+<li><strong>transforms</strong> - operators for the numerical computation of Hankel transforms, Fourier transforms and Inverse Laplace transforms.</li>
+<li><strong>physics</strong> - base routines like reflection coefficients, wave numbers, etc.</li>
+</ol>
+<p>We will describe each of these modules here.</p>
+<h2 id="experiment">Experiment</h2>
+<p>A module containing various python objects representing experimental setup parameters.</p>
+<p>The <code>Loop</code> object contains the setup of the transmitter loop.
+For example, a 3m x 3m transmit loop can be instantiated with the call:</p>
+<pre><code class="language-python">tx = Loop.square(3)
+</code></pre>
+<p>Similarly, the <code>Receiver</code> object sits in this module.</p>
+<h2 id="forwards">Forwards</h2>
+<p>The forward module contains all the forward operators.</p>
+<pre><code class="language-python">
+</code></pre>
+<h2 id="transforms">Transforms</h2>
+<p>This module contains objects that will perform transforms on functions. </p>
+<ol>
+<li>Hankel  transform</li>
+<li>Fourier transform</li>
+<li>inverse Fourier transform</li>
+<li>inverse Laplace transform</li>
+<li>Cubic spline</li>
+</ol>
+<p>If a tensor of more than one dimension results from the function to be transformed, the transform is performed along the last axis in the tensor.</p>
+<p>A test of the inverse Laplace transform gives a barebones example:</p>
+<pre><code class="language-python">    from anemone.transforms import invLaplace
+
+    def f(t):
+        return 1./torch.sqrt(torch.pi*t)
+
+    def laplace_of_f(s):
+        return 1./torch.sqrt(s)
+</code></pre>
+<p>Here is a function with its associated Laplace transform.
+We can obtain a numerically evaluated <span class="arithmatex">\(f(t)\)</span> based on its Laplace transform alone using the Gaver-Stehfest method:</p>
+<pre><code>    t = torch.logspace(-7, 2, 101, dtype=torch.float64)
+    numerical_f = invLaplace(laplace_of_f, n_coefficients=16)
+    y1 = numerical_f(t)
+    y2 = f(t)
+</code></pre>
+<p>The building of the invLaplace returns a numerical version of the function that computes time-domain values based on evaluations of the Laplace function provided.</p>
+<p>Just for fun, here is the comparison of the analytic and numerically derived results from the example:
+<img alt="" src="images/invlaplace_example.png" /></p>
+<p>Cubic spline is included in the module as in can provide a robust numerical integration routine.</p>
+<h2 id="physics">Physics</h2>
+<p>This is pretty deep in the weeds.
+The physics itself make reference to Ward &amp; Hohmann 1988 including the equation and page numbers.</p>
+<p>An important part of the physic module design is that functions are agnostic to the input array dimensionality. In this manner, functions closely resemble their mathematical formation. However, this means the dimensionality of all the input arrays must be compatible to begin with.
+Throughout the package, we use pytorch's (orignally numpy's ?) array broadcasting to accomplish this.</p>
+<p>The peak of the physics module is a the functions the compute the reflection coefficients for transverse electric and transverse magnetic waves. These have the function signature</p>
+<pre><code class="language-python">rte = refl_transverse_electric(sigma, thickness, omega, wave_length)
+</code></pre>
+<p>The order of the arguments, matches the necessary order of the dimensions. so for a 10 layer sigma, 9 thicknesses, 101 frequencies, and 301 wave lengths, the dimensions will need to be</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: center;">tensor</th>
+<th style="text-align: center;">dimensions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;"><code>sigma</code></td>
+<td style="text-align: center;">(10, 1, 1)</td>
+</tr>
+<tr>
+<td style="text-align: center;"><code>thick</code></td>
+<td style="text-align: center;">(9, 1, 1)</td>
+</tr>
+<tr>
+<td style="text-align: center;"><code>omega</code></td>
+<td style="text-align: center;">(1, 101, 1)</td>
+</tr>
+<tr>
+<td style="text-align: center;"><code>wave_length</code></td>
+<td style="text-align: center;">(1, 1, 301)</td>
+</tr>
+<tr>
+<td style="text-align: center;">return value: <code>rte</code></td>
+<td style="text-align: center;">(1, 101, 301)</td>
+</tr>
+</tbody>
+</table>
+<p>This is necessary in order for the tensor to multiply and add with one another.
+Pytorch has a very nice notation to accomplish this. If all the tensors are 1 dimensional a function call can look like this:</p>
+<pre><code class="language-python">rte = refl_transverse_electric(sigma[:,None,None], 
+                               thick[:,None,None], 
+                               omega[None, :,None], 
+                               wave_length[None, None, :])
+</code></pre>
+<p>This will return the reflection coefficients at the surface with a dimensionality of (1, 101, 301).
+In this manner, all the arrays are broadcast to the necessary dimensions. If any of the arrays are floats, no broadcasting is needed.</p>
+<h1 id="references">References</h1>
+<p>Stanley H. Ward and Gerald W. Hohmann, (1988), "4. Electromagnetic Theory for Geophysical Applications," Investigations in Geophysics : 130-311. <a href="https://doi.org/10.1190/1.9781560802631.ch4">https://doi.org/10.1190/1.9781560802631.ch4</a></p>
+<p>Christensen, N.B. (1990), Optimized fast hankel transform filters. Geophysical Prospecting, 38: 545-568. <a href="https://doi.org/10.1111/j.1365-2478.1990.tb01861.x">https://doi.org/10.1111/j.1365-2478.1990.tb01861.x</a></p>
+<p>Johansen, H.K. and Sørensen, K. (1979), Fast Hankel Transforms. Geophysical Prospecting, 27: 876-901. <a href="https://doi.org/10.1111/j.1365-2478.1979.tb01005.x">https://doi.org/10.1111/j.1365-2478.1979.tb01005.x</a></p>
+<p>Stehfest, H. (1970), Algorithm 368 Numerical inversion of Laplace transforms. Association for Computing Machinery (ACM), <a href="https://dl.acm.org/doi/10.1145/361953.361969">https://doi.org/10.1145/361953.361969</a></p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="usage.html" class="btn btn-neutral float-left" title="Usage"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+    
+      <span><a href="usage.html" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+  </span>
+</div>
+    <script src="js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = ".";</script>
+    <script src="js/theme_extra.js"></script>
+    <script src="js/theme.js"></script>
+      <script src="javascripts/mathjax.js"></script>
+      <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      <script src="search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>
