@@ -35,16 +35,16 @@ bibliography: paper.bib
 # Summary
 
 Anemone is a simulation software for geophysical electromagnetic (EM) measurements. 
-Simulations are restricted to horizontally layered earth scenarios; however complex conductivity effects can be accommodated.
-This python package is built with Pytorch to leverage GPUs for highly parallel simulations.
+Simulations are restricted to horizontally layered earth scenarios; however complex conductivity can be accommodated.
+This python package is built with Pytorch to leverage GPUs for parallel simulations.
 Furthermore the code itself is designed to closely mathematical formulations of the physical theory. 
 References to equations in foundational literature have been included in the documentation of the functions.
 
 
 # Statement of need
 
-Electromagnetic methods are crucial tools for imaging near-surface geological structures. 
-Simulating these measurements are key to interpretting the underlying earth structure. 
+Electromagnetic methods are key tools for imaging near-surface geological structures. 
+Simulating these measurements are crucial to interpretting the underlying earth structure. 
 While there are several software solutions available for modelling electromagnetics [@auken2015], including open source Python based packages [@crockett2017], these codes tend to be buried in massive projects, bundled with simulations codes of other geophysical methods.
 This can make learning curve relatively steep. 
 Anemone is built with a focus on surface-based EM for 1-dimensional earth models. The objects in the code are designed specifically for EM to be intuitive for practicing EM geophysicists.
