@@ -64,6 +64,8 @@ def christensen1990_eq16(v, sc, nu=0, a=0.1, term_max=50, convergence_threshold=
 
         if np.all(dHnu < convergence_threshold*H_nu_sum1):
             break
+    if n==term_max-1:
+        print('hankel coefficients didnt converge')
 
     H_nu_sum1 *= np.exp(v*(nu+1))*2**(-nu)
 
@@ -79,6 +81,8 @@ def christensen1990_eq16(v, sc, nu=0, a=0.1, term_max=50, convergence_threshold=
         if np.all(np.abs(dHnu) < convergence_threshold*np.abs(H_nu_partial_sum2)):
             break
     H_nu_sum2 = 2*a*np.exp(2*pi*a*sc*v)*H_nu_partial_sum2
+    if n==term_max-1:
+        print('hankel coefficients didnt converge')
 
     return H_nu_sum1 - H_nu_sum2.astype(complex)
 
@@ -166,7 +170,7 @@ def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=1
 
     a = christensen1990_calculate_smoothing(omega_0, sc)
 
-    Hnustar = np.zeros_like(v, dtype=complex)
+    Hnustar = np.zeros_like(v, dtype=np.complex128)
     Hnustar[:] = np.nan
 
     Hnustar[v < v_minus] = christensen1990_eq16(v[v < v_minus], sc, nu=nu, a=a, term_max=term_max, 
@@ -195,7 +199,7 @@ from functools import lru_cache
 @lru_cache
 def hankel_coefficients(order, log10min, log10max, smp_per_decade):
     """the reason from wrapping this is to make the inputs hashable and therefore cachable"""
-    lamda = 10**(np.arange(log10min*smp_per_decade, log10max*smp_per_decade+1)/smp_per_decade)
+    lamda = 10**(np.arange(log10min*smp_per_decade, log10max*smp_per_decade+1).astype(np.float64)/smp_per_decade)
     v = np.log(lamda)
     fc = optimized_coefficients_christensen1990(v, omega_0=np.pi/4, nu=order, smp_per_decade=smp_per_decade)
     return torch.from_numpy(lamda), torch.from_numpy(fc)
@@ -377,7 +381,8 @@ def gaver_stehfest_coefficients(N):
     idx = np.arange(N)+1
     k_lower = (idx+1)//2
     k_upper = np.clip(idx, 0, N/2)+1
-    v = np.zeros(N)
+    #v = np.zeros(N, dtype=float)
+    v = []
 
     for i in idx:
         tmpv = 0
@@ -391,8 +396,8 @@ def gaver_stehfest_coefficients(N):
             denominator *= factorial(i-k)
             denominator *= factorial(2*k-i)
             tmpv += numerator/denominator
-        v[i-1] = (-1)**(i + N/2)*tmpv
-    return torch.from_numpy(v)
+        v.append((-1)**(i + N/2.)*tmpv)
+    return torch.tensor(v, dtype=torch.float64)
 
 class invLaplace:
     """ Inverse laplace transform using Gaver-Stehfest method.
@@ -410,7 +415,7 @@ class invLaplace:
             self.v = self.v.to(device)
         else:
             self.device = self.v.device
-        self.i = torch.arange(n_coefficients, device=self.device)+1
+        self.i = (torch.arange(n_coefficients, device=self.device)+1).to(torch.float64)
         self.n_coefficients = n_coefficients
         
 
