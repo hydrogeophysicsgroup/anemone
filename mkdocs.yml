@@ -1,0 +1,19 @@
+site_name: anEMone
+theme:
+  name: readthedocs
+  logo: 'images/logo.png'
+nav:
+  - Home: index.md
+  - Quick Start: quick_start.md
+  - Usage: usage.md
+  - Project Layout: project_layout.md
+
+markdown_extensions:
+  - pymdownx.arithmatex:
+      generic: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+  
+use_directory_urls: false

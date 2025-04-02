@@ -186,7 +186,7 @@ class SmoothModel(EarthModel):
     @classmethod
     def starting_model(cls, n_layers, depth_bottom=150, rho=40, **kwargs):
         res = rho*torch.ones(n_layers)
-        thick = torch.logspace(-1, 1, n_layers-1)*2
+        thick = torch.logspace(0, 1, n_layers-1)
         thick *= depth_bottom/thick.sum()
         return cls(res, thick, **kwargs)
     
@@ -550,7 +550,7 @@ class Inversion:
                 # self.log('decreased max step')
                 self.max_step -= 0.1
         
-            mvec                += dM
+            mvec                += torch.nan_to_num(dM)
             self.iteration      += 1
             data_predicted     = self.mforward(mvec)
             self.misfits.append(self.misfit(data_predicted))
@@ -580,8 +580,7 @@ class LCI(Inversion):
             dm_mat[i*n_layers:(i+1)*n_layers] = torch.diag(dm[i*n_layers:(i+1)*n_layers])
         
         m_pert    = (dm_mat + mvec[:, None]).T
-        # n_Mjac = m_pert.shape[1]
-        # if n_Mjac < self.max_parallel_models:
+
         d_data    = self.mforward(m_pert)
         # else:
         #     d_data  = torch.hstack([self.mforward(m_pert[:, i*n_layers:(i+1)*n_layers]) for i in range(n_mods)])

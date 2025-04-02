@@ -67,6 +67,8 @@ def test_rte_convergence():
 def test_rte_memop_convergence():
     check_rte_convergence(physics.refl_transverse_electric_memopt)
 
+def test_rte_convergence_nbc():
+    check_rte_convergence(physics.rte_nbc)
 
 def test_rtm_convergence():
     from anemone import constants as c

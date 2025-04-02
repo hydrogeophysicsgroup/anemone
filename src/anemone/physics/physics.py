@@ -130,6 +130,9 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=c.mu0, eps
     """
     if isinstance(mu, float):
         mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
+        zn = 1.
+    else:
+        zn = None
     if isinstance(epsilon, float):
         epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
 
@@ -140,7 +143,10 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=c.mu0, eps
     adm_freespace = torch.sqrt(lambda2 - omega**2 * c.mu0*c.epsilon0 + 0j)/(1j*omega*c.mu0)
     
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
-    zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
+    if zn is None:
+        zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
+    else:
+        adm_freespace *= (1j*omega*c.mu0)
 
     # this is u_n (misnamed temporarily, will divide by zn soon.)
     adm_intrinsic = torch.sqrt(lambda2 - k2)
@@ -178,6 +184,7 @@ def refl_transverse_electric_memopt(sigma, thickness, omega, wave_length, mu=c.m
     """
     if isinstance(mu, float):
         mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
+
     if isinstance(epsilon, float):
         epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
 
@@ -267,15 +274,38 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=c.mu0, eps
     rtm = (imp_freespace - imp_boundary[0]) / (imp_freespace + imp_boundary[0])
     return rtm
 
-def colecole(rho_o, m, tau, c, omega):
+def colecole(rho_o, m, tau, C, omega):
     """equation 1 from Pelton et al. 1978
     """
-    tmp = 1.+(1j*omega*tau)**c
+    tmp = 1.+(1j*omega*tau)**C
     tmp = 1. - 1./tmp
     tmp = 1. - m*tmp
     rho = rho_o*tmp
     return rho
 
+def mpa2colecole(rho, phi_max, tau_phi, C):
+    n = 0
+    m0 = torch.zeros_like(phi_max)
+    m_new = torch.ones_like(phi_max)
+    max_m0 = 0.99
+    
+    tan_phi = torch.tan(-phi_max).real
+
+    while torch.all(torch.abs(m_new - m0)/m_new > 1e-3) and n<100:
+        if n>0: m0 = m_new*1.
+        tau_cc = tau_phi*((1.-m0)**(-0.5/C))
+        ab = 1./(1.+(1j*tau_cc/tau_phi)**C)
+        m_new = tan_phi / ((1.-ab.real)*tan_phi + ab.imag)
+        m_new[m_new>max_m0] = max_m0
+        m_new[m_new<0] = 0.
+        n += 1
+    return rho, m_new, tau_cc,  C
+
+def colecole2mpa(rho, m, tau_cc, C):
+    tau_phi = tau_cc * (1-m)**(0.5/C)
+    rho_cmplx = colecole(rho, m, tau_cc, C, 1./tau_phi)
+    phi_max =  -torch.arctan(rho_cmplx.imag/rho_cmplx.real)
+    return rho, phi_max, tau_phi, C          
 
 def transverse_electric_field_coefficients(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, return_un=False):
     import numpy as np
@@ -390,4 +420,52 @@ def transverse_magnetic_field_coefficients(sigma, thickness, omega, wave_length,
         res = res + (torch.from_numpy(np.vstack((u0[None, ...], u_n))),)
     return res
 
- 
+def rte_nbc(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    """ rte = (Y_0 - hat Y_1)/(Y_0 + hat Y_1) - W&H eq 4.19 (pg 205)
+        where Y_0 is the intrinsic admittance
+        and hat Y_1 is the surface or boundary admittance
+        
+        assumes nd-arrays have been appropriately broadcasted with axis ordered as:
+        sigma, omega, wave_length
+
+    Args:
+        sigma         (nd-array): conductivity of each layer
+        thickness     (nd-array): thickness of each layer
+        omega         (nd-array): angular frequency
+        wave_length   (nd-array): wave_length (lambda)
+        mu      (float/nd-array): Defaults to mu0.
+        epsilon (float/nd-array): Defaults to epsilon0.
+
+    Returns:
+        reflection coefficients for transverse electric mode
+    """
+    if isinstance(mu, float):
+        mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
+        zn = 1.
+    else:
+        zn = None
+    if isinstance(epsilon, float):
+        epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
+
+    n_layers=len(sigma)
+
+    lambda2 = wave_length**2
+    
+    adm_freespace = torch.sqrt(lambda2 - omega**2 * c.mu0*c.epsilon0 + 0j)/(1j*omega*c.mu0)
+    
+    k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
+    if zn is None:
+        zn = calc_zy(sigma, omega, mu=mu, epsilon=epsilon)[0]
+    else:
+        adm_freespace *= (1j*omega*c.mu0)
+
+    adm_intrinsic = torch.sqrt(lambda2 - k2)
+    exp2uh = torch.exp(-2*adm_intrinsic[:-1]*thickness)
+    adm_intrinsic/= zn
+    
+    gamma_n = 0.
+    for i in range(n_layers-2, -1, -1):
+        phi_n = (adm_intrinsic[i] - adm_intrinsic[i+1])/ (adm_intrinsic[i] + adm_intrinsic[i+1])
+        gamma_n = exp2uh[i]*(gamma_n + phi_n)/(1. + gamma_n*phi_n)
+    phi_n = (adm_freespace - adm_intrinsic[0])/(adm_freespace + adm_intrinsic[0])
+    return phi_n
