@@ -93,6 +93,93 @@ def aarhusInv_piecewise_comparison(ForwardMaker, **kwargs):
     assert torch.allclose(ainv_dbdt.real, dbdt.real, rtol=rtol), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
 
 
+
+def check_halfspace_circle_center(ForwardMaker, rtol=1e-2):
+    from anemone.experiment import Loop, Receiver
+    from anemone.physics import hzdt_halfspace_center_circle_loop
+    name = ForwardMaker.__name__
+    radius = 1.
+    lp = Loop.circle(radius, n=16)
+    rx = Receiver()
+    times = torch.logspace(-7, 0, 101, dtype=torch.double)
+
+    rho = torch.logspace(0, 3, 5, dtype=torch.double)[None, :]*torch.ones(3, dtype=torch.double)[:, None]
+    thick = torch.ones(2, dtype=torch.double)*20
+
+    fwr = ForwardMaker(lp, rx, times)
+    dbdt = fwr(rho, thick)
+
+    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius)*c.mu0
+    
+    if __name__ == '__main__':
+        
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots(1,2, sharex=True)
+        ax[0].loglog(fwr.times.numpy(), dbdt.real.T, '.')
+        ax[0].loglog(times,      dbdt_analytic.real, 'k--')
+        ax[0].set_ylabel('dB/dt')
+        ax[0].set_aspect('equal')
+
+        ax[1].loglog(times, 100*torch.abs(dbdt.real.T-dbdt_analytic.real)/torch.abs(dbdt_analytic.real))
+        ax[1].set_ylabel('relative difference [%]')
+        ax[1].set_ylim(None, 1e3)
+        for ax_ in ax:
+            ax_.set_xlabel('time [s]')
+
+        fig.suptitle('Test against AarhusInv with Piecewise Waveform')
+        plt.show()
+    assert torch.allclose(dbdt_analytic.real, dbdt.real, rtol=rtol), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
+
+def compare_two_Forwards(Forward1, Forward2, rtol=1e-2):
+    from anemone.experiment import Loop, Receiver
+    name1 = Forward1.__name__
+    name2 = Forward2.__name__
+
+    lp = Loop.square(40)
+    rx = Receiver()
+    times = torch.logspace(-7, 0, 101, dtype=torch.double)
+    fwr1 = Forward1(lp, rx, times)
+
+
+    rho = torch.logspace(0, 3, 5, dtype=torch.double)[None, :]*torch.ones(2, dtype=torch.double)[:, None]
+    thick = torch.ones(1, dtype=torch.double)*20
+
+    lp = Loop.square(40)
+    rx = Receiver()
+    times = torch.logspace(-7, 0, 101, dtype=torch.double)
+    fwr2 = Forward2(lp, rx, times)
+
+
+    dbdt1 = fwr1(rho*1., thick*1.)
+    dbdt2 = fwr2(rho*1., thick*1.)
+    
+    if __name__ == '__main__':
+        
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots(1,2, sharex=True)
+        ax[0].loglog(fwr1.times.numpy(), dbdt1.real.T, '.')
+        ax[0].loglog(fwr2.times.numpy(), dbdt2.real.T, 'k--')
+        ax[0].set_ylabel('dB/dt')
+        ax[0].set_aspect('equal')
+
+        ax[1].semilogx(times, torch.abs(dbdt1.real.T)/torch.abs(dbdt2.real.T))
+        ax[1].set_ylabel('relative difference [%]')
+        ax[1].set_ylim(0.1, 10)
+        for ax_ in ax:
+            ax_.set_xlabel('time [s]')
+
+        fig.suptitle(f'{name1} vs {name2}')
+        plt.show()
+
+
+def test_halfspace_circle_center_Forward():
+    from anemone.forwards import Forward3
+    check_halfspace_circle_center(Forward3)
+
+if __name__=='__main__':
+    test_halfspace_circle_center_Forward()
+
+
 def check_parallel_models(ForwardMaker):
     name = ForwardMaker.__name__
     from anemone.experiment import Loop, Receiver, Waveform
@@ -284,7 +371,7 @@ def check_MPAforwardTD(ForwardMaker):
     ])
 
     t0 = torch.tensor([1.249e-05, 1.449e-05, 1.649e-05, 1.849e-05, 2.049e-05, 2.299e-05, 2.599e-05, 2.949e-05, 3.399e-05, 3.999e-05, 4.749e-05, 5.649e-05, 6.799e-05, 8.249e-05, 1.010e-04, 1.245e-04, 1.535e-04, 1.905e-04, 2.370e-04, 2.950e-04, 3.685e-04, 4.610e-04, 5.775e-04, 7.240e-04, 9.085e-04], dtype=torch.double)
-    pyfwr = ForwardMaker.colecole(sq, rx, t0, waveform=waveform)
+    pyfwr = ForwardMaker.mpa(sq, rx, t0, waveform=waveform)
 
     rho   = torch.tensor([5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 2.000e+02, 2.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 5.000e+02], dtype=torch.double)
     phi   = torch.tensor([2.000e+02, 2.000e+02, 2.000e+02, 2.000e+02, 2.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02], dtype=torch.double)/1e3
@@ -293,7 +380,6 @@ def check_MPAforwardTD(ForwardMaker):
     thick = torch.tensor([1.000e+00, 1.177e+00, 1.386e+00, 1.632e+00, 1.922e+00, 2.263e+00, 2.665e+00, 3.138e+00, 3.695e+00, 4.351e+00, 5.124e+00, 6.034e+00, 7.105e+00, 8.366e+00, 9.851e+00, 1.160e+01, 1.365e+01, 1.608e+01, 1.893e+01], dtype=torch.double)
 
     rho,m_cc,tau_cc,C = mpa2colecole(rho, phi, tau, C)
-    print(m_cc)
 
 
     dbdt = pyfwr(rho, m_cc,tau_cc,C, thick)
@@ -306,7 +392,7 @@ def check_MPAforwardTD(ForwardMaker):
         fig,ax = plt.subplots(1,2, sharex=True)
         ax[0].loglog(t0, ainv_dbdt, 'k-', label='AarhusInv')
         ax[0].loglog(t0, -ainv_dbdt, 'k--')
-        ax[0].loglog(pyfwr.times.numpy(), dbdt.real, 'C0.', label='IPforward')
+        ax[0].loglog(pyfwr.times.numpy(),  dbdt.real, 'C0.', label='IPforward')
         ax[0].loglog(pyfwr.times.numpy(), -dbdt.real, 'r.')
 
         ax[0].set_ylabel('dB/dt')
@@ -327,8 +413,8 @@ def test_colecole_forwardTD():
     check_colecoleforwardTD(Forward)
 
 def test_mpaforwardTD():
-    from anemone.forwards import Forward
-    check_MPAforwardTD(Forward)
+    from anemone.forwards import ForwardLaplace3
+    check_MPAforwardTD(ForwardLaplace3)
 
 def check_colecole_parallel_models(ForwardMaker):
     from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
