@@ -176,8 +176,8 @@ def test_halfspace_circle_center_Forward():
     from anemone.forwards import Forward3
     check_halfspace_circle_center(Forward3)
 
-if __name__=='__main__':
-    test_halfspace_circle_center_Forward()
+# if __name__=='__main__':
+#     test_halfspace_circle_center_Forward()
 
 
 def check_parallel_models(ForwardMaker):
@@ -361,8 +361,11 @@ def check_MPAforwardTD(ForwardMaker):
     from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
     from anemone.physics import mpa2colecole
 
-    sq = Loop.square(2.9, z=0.93)
-    rx = Receiver(x=-9., z=0.43)
+    # sq = Loop.square(2.9, z=0.93)
+    # rx = Receiver(x=-9., z=0.43)
+    sq = Loop.square(40)
+    rx = Receiver()
+
     waveform = Waveform.example()
     recfilter = FilterChain([
         ButterworthFilter(2.4e5, 1),
@@ -370,22 +373,46 @@ def check_MPAforwardTD(ForwardMaker):
         ButterworthFilter(4.5e5, 2)
     ])
 
-    t0 = torch.tensor([1.249e-05, 1.449e-05, 1.649e-05, 1.849e-05, 2.049e-05, 2.299e-05, 2.599e-05, 2.949e-05, 3.399e-05, 3.999e-05, 4.749e-05, 5.649e-05, 6.799e-05, 8.249e-05, 1.010e-04, 1.245e-04, 1.535e-04, 1.905e-04, 2.370e-04, 2.950e-04, 3.685e-04, 4.610e-04, 5.775e-04, 7.240e-04, 9.085e-04], dtype=torch.double)
-    pyfwr = ForwardMaker.mpa(sq, rx, t0, waveform=waveform)
+    ainv_dat = torch.tensor([[9.350E-06,  1.745393E-04],
+    [1.145E-05,  1.303665E-04],
+    [1.458E-05,  9.897802E-05],
+    [1.822E-05,  7.424845E-05],
+    [2.255E-05,  5.230275E-05],
+    [2.867E-05,  3.168347E-05],
+    [3.595E-05,  1.788651E-05],
+    [4.460E-05,  9.527986E-06],
+    [5.660E-05,  4.206293E-06],
+    [7.070E-05,  1.706046E-06],
+    [8.630E-05,  5.354002E-07],
+    [1.071E-04, -5.975600E-08],
+    [1.381E-04, -2.894035E-07],
+    [1.748E-04, -3.310659E-07],
+    [2.174E-04, -2.693721E-07],
+    [2.775E-04, -1.754609E-07],
+    [3.515E-04, -1.040936E-07],
+    [4.385E-04, -6.107881E-08],
+    [5.575E-04, -3.306694E-08],
+    [7.035E-04, -1.822600E-08]], dtype=torch.float64)
 
-    rho   = torch.tensor([5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 2.000e+02, 2.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 5.000e+02], dtype=torch.double)
-    phi   = torch.tensor([2.000e+02, 2.000e+02, 2.000e+02, 2.000e+02, 2.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02], dtype=torch.double)/1e3
-    tau   = torch.tensor([1.000e-04, 1.000e-04, 1.000e-04, 2.000e-04, 2.000e-04, 1.000e-04, 1.000e-04, 9.000e-04, 9.000e-04, 9.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04], dtype=torch.double)
-    C     = torch.tensor([6.000e-01, 6.000e-01, 4.000e-01, 4.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 3.000e-01, 3.000e-01, 3.000e-01, 3.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01], dtype=torch.double)
-    thick = torch.tensor([1.000e+00, 1.177e+00, 1.386e+00, 1.632e+00, 1.922e+00, 2.263e+00, 2.665e+00, 3.138e+00, 3.695e+00, 4.351e+00, 5.124e+00, 6.034e+00, 7.105e+00, 8.366e+00, 9.851e+00, 1.160e+01, 1.365e+01, 1.608e+01, 1.893e+01], dtype=torch.double)
 
-    rho,m_cc,tau_cc,C = mpa2colecole(rho, phi, tau, C)
+    ainv_dbdt = ainv_dat[:, 1].clone()
+    t0 = ainv_dat[:, 0].clone()
+    
+
+    pyfwr = ForwardMaker.mpa(sq, rx, t0, waveform=waveform, filterfunc=recfilter)
+
+    rho=  torch.tensor([5.000e+02,5.000e+02,5.000e+02,8.000e+02,8.000e+02,5.000e+02,5.000e+02,5.000e+02,5.000e+02,2.000e+02,2.000e+02,5.000e+02,5.000e+02,5.000e+02,5.000e+02,5.000e+02,5.000e+02,8.000e+02,8.000e+02,5.000e+02])
+    phi = torch.tensor([2.000e+02,2.000e+02,2.000e+02,2.000e+02,2.000e+02,5.000e+02,5.000e+02,5.000e+02,5.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02])/1e3
+    tau = torch.tensor([1.000e-04,1.000e-04,1.000e-04,2.000e-04,2.000e-04,1.000e-04,1.000e-04,9.000e-04,9.000e-04,9.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04])
+    C =   torch.tensor([6.000e-01,6.000e-01,4.000e-01,4.000e-01,6.000e-01,6.000e-01,6.000e-01,6.000e-01,6.000e-01,3.000e-01,3.000e-01,3.000e-01,3.000e-01,6.000e-01,6.000e-01,6.000e-01,6.000e-01,6.000e-01,6.000e-01,6.000e-01])
+    thick=torch.tensor([1.000e+00, 1.177e+00, 1.386e+00, 1.632e+00, 1.922e+00, 2.263e+00, 2.665e+00, 3.138e+00, 3.695e+00, 4.351e+00, 5.124e+00, 6.034e+00, 7.105e+00, 8.366e+00, 9.851e+00, 1.160e+01, 1.365e+01, 1.608e+01, 1.893e+01])
+
+    # rho,m_cc,tau_cc,C = mpa2colecole(rho, phi, tau, C)
 
 
-    dbdt = pyfwr(rho, m_cc,tau_cc,C, thick)
+    dbdt = pyfwr(rho, phi,tau, C, thick)
 
 
-    ainv_dbdt = torch.tensor([6.392999e-07, 5.325324e-07, 4.454187e-07, 3.731716e-07, 3.106149e-07, 2.473792e-07, 1.891682e-07, 1.386614e-07, 9.434471e-08, 5.805804e-08, 3.278332e-08, 1.711480e-08, 7.333075e-09, 2.030195e-09, -5.600833e-10, -1.660811e-09, -1.887716e-09, -1.641425e-09, -1.203858e-09, -7.603117e-10, -4.405845e-10, -2.413948e-10, -1.292233e-10, -6.704714e-11, -3.356873e-11])
 
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
@@ -413,8 +440,8 @@ def test_colecole_forwardTD():
     check_colecoleforwardTD(Forward)
 
 def test_mpaforwardTD():
-    from anemone.forwards import ForwardLaplace3
-    check_MPAforwardTD(ForwardLaplace3)
+    from anemone.forwards import Forward
+    check_MPAforwardTD(Forward)
 
 def check_colecole_parallel_models(ForwardMaker):
     from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
@@ -728,7 +755,7 @@ if __name__ == '__main__':
     # test_40x40_aarhusInv_stepoff()
     # test_multirx_Laplace3()
     # test_colecole_forwardTD()
-    #test_mpaforwardTD()
+    test_mpaforwardTD()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_stepoff_laplace()
     test_Laplace3_40x40_aarhusInv_piecewise_waveform()

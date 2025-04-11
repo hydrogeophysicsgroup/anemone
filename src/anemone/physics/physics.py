@@ -296,7 +296,7 @@ def mpa2colecole(rho, phi_max, tau_phi, C):
     
     tan_phi = torch.tan(-phi_max).real
 
-    while torch.all(torch.abs(m_new - m0)/m_new > 1e-3) and n<100:
+    while torch.any(torch.abs(m_new - m0)/m_new > 1e-3) and n<100:
         if n>0: m0 = m_new*1.
         tau_cc = tau_phi*((1.-m0)**(-0.5/C))
         ab = 1./(1.+(1j*tau_cc/tau_phi)**C)
