@@ -197,20 +197,20 @@ def coefficient_bounds(coefficients, tolerance=1e-6):
 
 from functools import lru_cache
 @lru_cache
-def hankel_coefficients(order, log10min, log10max, smp_per_decade):
+def hankel_coefficients(order, log10min, log10max, smp_per_decade, omega_0):
     """the reason from wrapping this is to make the inputs hashable and therefore cachable"""
     lamda = 10**(np.arange(log10min*smp_per_decade, log10max*smp_per_decade+1).astype(np.float64)/smp_per_decade)
     v = np.log(lamda)
-    fc = optimized_coefficients_christensen1990(v, omega_0=np.pi/4, nu=order, smp_per_decade=smp_per_decade)
+    fc = optimized_coefficients_christensen1990(v, omega_0=omega_0, nu=order, smp_per_decade=smp_per_decade)
     return torch.from_numpy(lamda), torch.from_numpy(fc)
 
 class Hankel:
-    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10, device=None, range=None, tolerance=None):
+    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10, device=None, range=None, tolerance=None, omega_0=np.pi/4.):
         self.func    = func
         self.nu    = order
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
-        hkl = hankel_coefficients(order, log10min, log10max, smp_per_decade)
+        hkl = hankel_coefficients(order, log10min, log10max, smp_per_decade, omega_0)
         if tolerance is not None:
             idxmin, idxmax = coefficient_bounds(hkl[1].cpu().numpy(), tolerance=tolerance)
             hkl = hkl[0][idxmin:idxmax], hkl[1][idxmin:idxmax]
@@ -331,11 +331,11 @@ class Fourier(Hankel):
         See Johansen and Sorensen 1979 - Fast Hankel Transforms eq.  87 + 88
     """
         
-    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None, range=None, tolerance=None):
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None, range=None, tolerance=None, omega_0=0.622225):
         def f1(lamda):
             return func(lamda/twopi_sqrt)*torch.sqrt(lamda)
-        super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device)
-        _, imagfc = hankel_coefficients(0.5, log10min, log10max, smp_per_decade)
+        super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device, omega_0=omega_0)
+        _, imagfc = hankel_coefficients(0.5, log10min, log10max, smp_per_decade, omega_0)
         imagfc = imagfc.to(self.fc.device)
         self.fc = torch.complex(self.fc, -1*imagfc)
         if tolerance is not None:

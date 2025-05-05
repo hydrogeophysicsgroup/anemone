@@ -26,35 +26,37 @@ def calc_wavenumber(sigma, omega, mu=c.mu0, epsilon=c.epsilon0, sqrt=True):
     if sqrt: k = torch.sqrt(k)
     return k
 
-def halfspace_vmd(sigma, omega, r):
+def halfspace_vmd(rho, omega, r):
     """get the analytic response for a vertical magnetic dipole at the surface of the earth
        see equation 4.56 of ward and hohmann (pg.211)
 
         Args:
+            rho    (float): halfspace resistivity
             omega (1d-array): the angular frequency
-            sigma    (float): halfspace conductivity
             r        (float): horizontal distance from the dipole
 
         Returns:
             z-component of the magnetic field
     """
+    sigma = 1./rho
     k = calc_wavenumber(sigma, omega)
     Hz = 9 - (9 + 9j*k*r - 4*k**2 * r**2 -1j*k**3*r**3)*torch.exp(-1j*k*r)
     Hz /= (2*torch.pi*k**2 * r**5)
     return Hz
 
-def halfspace_horizontal_electric_dipole(sigma, omega, r):
+def halfspace_horizontal_electric_dipole(rho, omega, r):
     """this needs to be confirmed.
 
         Args:
+            rho    (float): halfspace resistivity
             omega (1d-array): the angular frequency
-            sigma    (float): halfspace conductivity
             r        (float): horizontal distance from the dipole
 
         Returns:
             z-component of the magnetic field
     """
     UserWarning("Hz from a horizontal electric dipole over a halfspace should be confirmed.\nUse at your own risk.")
+    sigma = 1./rho
     k = calc_wavenumber(sigma, omega)
 
     Hz = 3 - (3 + 3j*k*r - (r*k)**2)*torch.exp(-1j*k*r)
@@ -62,23 +64,25 @@ def halfspace_horizontal_electric_dipole(sigma, omega, r):
     Hz /= -(2*torch.pi*k**2 * r**5)
     return Hz
 
-def hz_halfspace_center_circle_loop(sigma, omega, r, I=1.):
+def hz_halfspace_center_circle_loop(rho, omega, r, I=1.):
     """ get the vertical component of the response at the center of a circular loop on the earth's surface.
         see equation 4.94 of ward and hohmann (pg. 220)
         Args:
+            rho    (float): halfspace resistivity
             omega (1d-array): set of angular frequencies
-            sigma    (float): halfspace conductivity
             r        (float): radius of the loop
         Returns:
             Hz    (1d-array): magnetic field strength
     """
+    sigma = 1./rho
     k = calc_wavenumber(sigma, omega)
 
     Hz = 3-(3+3j*k*r - (r*k)**2)*torch.exp(-1j*k*r)
     Hz *= -I / (k**2 * r**3)
     return Hz
 
-def hz_halfspace_center_circle_loop_time(times, sigma, r, I=1.):
+def hz_halfspace_center_circle_loop_time(times, rho, r, I=1.):
+    sigma = 1./rho
     theta = torch.sqrt(0.25*c.mu0*sigma / times)
     theta_r = theta*r
 
@@ -87,7 +91,8 @@ def hz_halfspace_center_circle_loop_time(times, sigma, r, I=1.):
     return hz
 
 
-def hzdt_halfspace_center_circle_loop(times, sigma, r, I=1.):
+def hzdt_halfspace_center_circle_loop(times, rho, r, I=1.):
+    sigma = 1./rho
     theta = torch.sqrt(0.25*c.mu0*sigma / times)
     dhdt = 1./(c.mu0*sigma*r**3)*(3*torch.erf(theta*r)-2*theta*r*(3+2*theta**2*r**2)*torch.exp(-theta**2*r**2)/c.sqrt_pi)
     return dhdt
@@ -291,7 +296,7 @@ def mpa2colecole(rho, phi_max, tau_phi, C):
     
     tan_phi = torch.tan(-phi_max).real
 
-    while torch.all(torch.abs(m_new - m0)/m_new > 1e-3) and n<100:
+    while torch.any(torch.abs(m_new - m0)/m_new > 1e-3) and n<100:
         if n>0: m0 = m_new*1.
         tau_cc = tau_phi*((1.-m0)**(-0.5/C))
         ab = 1./(1.+(1j*tau_cc/tau_phi)**C)

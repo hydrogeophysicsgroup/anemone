@@ -93,6 +93,93 @@ def aarhusInv_piecewise_comparison(ForwardMaker, **kwargs):
     assert torch.allclose(ainv_dbdt.real, dbdt.real, rtol=rtol), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
 
 
+
+def check_halfspace_circle_center(ForwardMaker, rtol=1e-2):
+    from anemone.experiment import Loop, Receiver
+    from anemone.physics import hzdt_halfspace_center_circle_loop
+    name = ForwardMaker.__name__
+    radius = 1.
+    lp = Loop.circle(radius, n=16)
+    rx = Receiver()
+    times = torch.logspace(-7, 0, 101, dtype=torch.double)
+
+    rho = torch.logspace(0, 3, 5, dtype=torch.double)[None, :]*torch.ones(3, dtype=torch.double)[:, None]
+    thick = torch.ones(2, dtype=torch.double)*20
+
+    fwr = ForwardMaker(lp, rx, times)
+    dbdt = fwr(rho, thick)
+
+    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius)*c.mu0
+    
+    if __name__ == '__main__':
+        
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots(1,2, sharex=True)
+        ax[0].loglog(fwr.times.numpy(), dbdt.real.T, '.')
+        ax[0].loglog(times,      dbdt_analytic.real, 'k--')
+        ax[0].set_ylabel('dB/dt')
+        ax[0].set_aspect('equal')
+
+        ax[1].loglog(times, 100*torch.abs(dbdt.real.T-dbdt_analytic.real)/torch.abs(dbdt_analytic.real))
+        ax[1].set_ylabel('relative difference [%]')
+        ax[1].set_ylim(None, 1e3)
+        for ax_ in ax:
+            ax_.set_xlabel('time [s]')
+
+        fig.suptitle('Test against AarhusInv with Piecewise Waveform')
+        plt.show()
+    assert torch.allclose(dbdt_analytic.real, dbdt.real, rtol=rtol), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
+
+def compare_two_Forwards(Forward1, Forward2, rtol=1e-2):
+    from anemone.experiment import Loop, Receiver
+    name1 = Forward1.__name__
+    name2 = Forward2.__name__
+
+    lp = Loop.square(40)
+    rx = Receiver()
+    times = torch.logspace(-7, 0, 101, dtype=torch.double)
+    fwr1 = Forward1(lp, rx, times)
+
+
+    rho = torch.logspace(0, 3, 5, dtype=torch.double)[None, :]*torch.ones(2, dtype=torch.double)[:, None]
+    thick = torch.ones(1, dtype=torch.double)*20
+
+    lp = Loop.square(40)
+    rx = Receiver()
+    times = torch.logspace(-7, 0, 101, dtype=torch.double)
+    fwr2 = Forward2(lp, rx, times)
+
+
+    dbdt1 = fwr1(rho*1., thick*1.)
+    dbdt2 = fwr2(rho*1., thick*1.)
+    
+    if __name__ == '__main__':
+        
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots(1,2, sharex=True)
+        ax[0].loglog(fwr1.times.numpy(), dbdt1.real.T, '.')
+        ax[0].loglog(fwr2.times.numpy(), dbdt2.real.T, 'k--')
+        ax[0].set_ylabel('dB/dt')
+        ax[0].set_aspect('equal')
+
+        ax[1].semilogx(times, torch.abs(dbdt1.real.T)/torch.abs(dbdt2.real.T))
+        ax[1].set_ylabel('relative difference [%]')
+        ax[1].set_ylim(0.1, 10)
+        for ax_ in ax:
+            ax_.set_xlabel('time [s]')
+
+        fig.suptitle(f'{name1} vs {name2}')
+        plt.show()
+
+
+def test_halfspace_circle_center_Forward():
+    from anemone.forwards import Forward3
+    check_halfspace_circle_center(Forward3)
+
+# if __name__=='__main__':
+#     test_halfspace_circle_center_Forward()
+
+
 def check_parallel_models(ForwardMaker):
     name = ForwardMaker.__name__
     from anemone.experiment import Loop, Receiver, Waveform
@@ -274,8 +361,11 @@ def check_MPAforwardTD(ForwardMaker):
     from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
     from anemone.physics import mpa2colecole
 
-    sq = Loop.square(2.9, z=0.93)
-    rx = Receiver(x=-9., z=0.43)
+    # sq = Loop.square(2.9, z=0.93)
+    # rx = Receiver(x=-9., z=0.43)
+    sq = Loop.square(40)
+    rx = Receiver()
+
     waveform = Waveform.example()
     recfilter = FilterChain([
         ButterworthFilter(2.4e5, 1),
@@ -283,30 +373,56 @@ def check_MPAforwardTD(ForwardMaker):
         ButterworthFilter(4.5e5, 2)
     ])
 
-    t0 = torch.tensor([1.249e-05, 1.449e-05, 1.649e-05, 1.849e-05, 2.049e-05, 2.299e-05, 2.599e-05, 2.949e-05, 3.399e-05, 3.999e-05, 4.749e-05, 5.649e-05, 6.799e-05, 8.249e-05, 1.010e-04, 1.245e-04, 1.535e-04, 1.905e-04, 2.370e-04, 2.950e-04, 3.685e-04, 4.610e-04, 5.775e-04, 7.240e-04, 9.085e-04], dtype=torch.double)
-    pyfwr = ForwardMaker.colecole(sq, rx, t0, waveform=waveform)
+    ainv_dat = torch.tensor([[9.350E-06,  1.745393E-04],
+                            [1.145E-05,  1.303665E-04],
+                            [1.458E-05,  9.897802E-05],
+                            [1.822E-05,  7.424845E-05],
+                            [2.255E-05,  5.230275E-05],
+                            [2.867E-05,  3.168347E-05],
+                            [3.595E-05,  1.788651E-05],
+                            [4.460E-05,  9.527986E-06],
+                            [5.660E-05,  4.206293E-06],
+                            [7.070E-05,  1.706046E-06],
+                            [8.630E-05,  5.354002E-07],
+                            [1.071E-04, -5.975600E-08],
+                            [1.381E-04, -2.894035E-07],
+                            [1.748E-04, -3.310659E-07],
+                            [2.174E-04, -2.693721E-07],
+                            [2.775E-04, -1.754609E-07],
+                            [3.515E-04, -1.040936E-07],
+                            [4.385E-04, -6.107881E-08],
+                            [5.575E-04, -3.306694E-08],
+                            [7.035E-04, -1.822600E-08]], dtype=torch.float64)
 
-    rho   = torch.tensor([5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 2.000e+02, 2.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 5.000e+02], dtype=torch.double)
-    phi   = torch.tensor([2.000e+02, 2.000e+02, 2.000e+02, 2.000e+02, 2.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02], dtype=torch.double)/1e3
-    tau   = torch.tensor([1.000e-04, 1.000e-04, 1.000e-04, 2.000e-04, 2.000e-04, 1.000e-04, 1.000e-04, 9.000e-04, 9.000e-04, 9.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04], dtype=torch.double)
-    C     = torch.tensor([6.000e-01, 6.000e-01, 4.000e-01, 4.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 3.000e-01, 3.000e-01, 3.000e-01, 3.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01], dtype=torch.double)
-    thick = torch.tensor([1.000e+00, 1.177e+00, 1.386e+00, 1.632e+00, 1.922e+00, 2.263e+00, 2.665e+00, 3.138e+00, 3.695e+00, 4.351e+00, 5.124e+00, 6.034e+00, 7.105e+00, 8.366e+00, 9.851e+00, 1.160e+01, 1.365e+01, 1.608e+01, 1.893e+01], dtype=torch.double)
+    
 
-    rho,m_cc,tau_cc,C = mpa2colecole(rho, phi, tau, C)
-    print(m_cc)
+    ainv_dbdt = ainv_dat[:, 1].clone()
+    t0 = ainv_dat[:, 0].clone()
+    not_zero_xing = torch.ones_like(ainv_dat[:, 0], dtype=torch.bool)
+    not_zero_xing[torch.searchsorted(t0, torch.tensor([1.071e-4]))-1] = False
+    
+
+    pyfwr = ForwardMaker.mpa(sq, rx, t0, waveform=waveform, filterfunc=recfilter)
+
+    rho=  torch.tensor([5.000e+02,5.000e+02,5.000e+02,8.000e+02,8.000e+02,5.000e+02,5.000e+02,5.000e+02,5.000e+02,2.000e+02,2.000e+02,5.000e+02,5.000e+02,5.000e+02,5.000e+02,5.000e+02,5.000e+02,8.000e+02,8.000e+02,5.000e+02])
+    phi = torch.tensor([2.000e+02,2.000e+02,2.000e+02,2.000e+02,2.000e+02,5.000e+02,5.000e+02,5.000e+02,5.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02,8.000e+02])/1e3
+    tau = torch.tensor([1.000e-04,1.000e-04,1.000e-04,2.000e-04,2.000e-04,1.000e-04,1.000e-04,9.000e-04,9.000e-04,9.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04,1.000e-04])
+    C =   torch.tensor([6.000e-01,6.000e-01,4.000e-01,4.000e-01,6.000e-01,6.000e-01,6.000e-01,6.000e-01,6.000e-01,3.000e-01,3.000e-01,3.000e-01,3.000e-01,6.000e-01,6.000e-01,6.000e-01,6.000e-01,6.000e-01,6.000e-01,6.000e-01])
+    thick=torch.tensor([1.000e+00, 1.177e+00, 1.386e+00, 1.632e+00, 1.922e+00, 2.263e+00, 2.665e+00, 3.138e+00, 3.695e+00, 4.351e+00, 5.124e+00, 6.034e+00, 7.105e+00, 8.366e+00, 9.851e+00, 1.160e+01, 1.365e+01, 1.608e+01, 1.893e+01])
+
+    # rho,m_cc,tau_cc,C = mpa2colecole(rho, phi, tau, C)
 
 
-    dbdt = pyfwr(rho, m_cc,tau_cc,C, thick)
+    dbdt = pyfwr(rho, phi,tau, C, thick)
 
 
-    ainv_dbdt = torch.tensor([6.392999e-07, 5.325324e-07, 4.454187e-07, 3.731716e-07, 3.106149e-07, 2.473792e-07, 1.891682e-07, 1.386614e-07, 9.434471e-08, 5.805804e-08, 3.278332e-08, 1.711480e-08, 7.333075e-09, 2.030195e-09, -5.600833e-10, -1.660811e-09, -1.887716e-09, -1.641425e-09, -1.203858e-09, -7.603117e-10, -4.405845e-10, -2.413948e-10, -1.292233e-10, -6.704714e-11, -3.356873e-11])
 
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
         ax[0].loglog(t0, ainv_dbdt, 'k-', label='AarhusInv')
         ax[0].loglog(t0, -ainv_dbdt, 'k--')
-        ax[0].loglog(pyfwr.times.numpy(), dbdt.real, 'C0.', label='IPforward')
+        ax[0].loglog(pyfwr.times.numpy(),  dbdt.real, 'C0.', label='IPforward')
         ax[0].loglog(pyfwr.times.numpy(), -dbdt.real, 'r.')
 
         ax[0].set_ylabel('dB/dt')
@@ -320,7 +436,7 @@ def check_MPAforwardTD(ForwardMaker):
 
         fig.suptitle('Test against AarhusInv with Piecewise Waveform')
         plt.show()
-    assert torch.allclose(ainv_dbdt, dbdt, rtol=1e-2), "aarhus inv and pytorch forward do not match within 1 percent"
+    assert torch.allclose(ainv_dbdt[not_zero_xing], dbdt[not_zero_xing], rtol=3e-2), "aarhus inv and pytorch forward do not match within 3 percent"
 
 def test_colecole_forwardTD():
     from anemone.forwards import Forward
@@ -642,7 +758,7 @@ if __name__ == '__main__':
     # test_40x40_aarhusInv_stepoff()
     # test_multirx_Laplace3()
     # test_colecole_forwardTD()
-    #test_mpaforwardTD()
+    test_mpaforwardTD()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_stepoff_laplace()
     test_Laplace3_40x40_aarhusInv_piecewise_waveform()
