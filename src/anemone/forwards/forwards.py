@@ -69,20 +69,18 @@ class Forward:
                 self.lamda = wave_length[None, None, :]
                 
                 tmp_u0 = u0(self.omega, self.lamda)
-                intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, self.omega, self.lamda)*torch.exp(-tmp_u0*self.sfield_dz)
-                intg *= self.lamda**2 / tmp_u0
-                
-                if self.waveform is not None:
-                    intg /= -1j*self.omega
-                if self.filterfunc is not None:
-                    intg *= self.filterfunc.omega_filter(self.omega)
+                intg = rte(self.sigma, self.thick, self.omega, self.lamda)*torch.exp(-tmp_u0*self.sfield_dz)
+                intg *= self.lamda#**2 / tmp_u0                
                 return intg/c.fourpi
             
-            hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
+            hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device)
             res = integrate_around_loop(self.source, self.receiver, hkl1)
-            return res.T
-        
-        return invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device, tolerance=self.tolerance)
+            if self.waveform is not None:
+                res[None, ...] /= -1j*self.omega#.squeeze()
+            if self.filterfunc is not None:
+                res[None, ...] *= self.filterfunc.omega_filter(self.omega)
+            return res.squeeze().T
+        return invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device)
 
     def forward(self):
         self._ft = self.calc_ft()
@@ -199,8 +197,51 @@ class Forward:
 
         return CPA(source, receiver, times, **kwargs)
 
+from anemone.experiment import Loop, Receiver
+
+class ForwardCentralCircle(Forward):
+    def __init__(self, radius, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None):
+        tx,rx = Loop.circle(radius), Receiver()
+        super().__init__(tx, rx, times, waveform, filterfunc, t_gatewidth, tolerance)
+        self.tx_radius = torch.tensor(radius, dtype=torch.double)
+        self.device = times.device
+        self.rte = []
+        self.primary = torch.nan_to_num(self.calc_primary())
+
+    def calc_primary(self):
+        def f_integrand(f):
+            self.omega = 2.*torch.pi*f[None, :, None]
+            def wvlngth_integrand(wave_length):
+                self.lmb = wave_length[None, None, :]
+                intg = (1.+0j)*self.lmb
+                return intg
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, device=self.device)
+            hkl1._recenter_function(self.tx_radius)
+            return ((hkl1.func(hkl1.lamda))@(hkl1.fc+0j))/2.
+        ift = invFourier(f_integrand, smp_per_decade = 16, range=(self.tmin, self.tmax), device=self.device)
+        self.tc = ift.rc        
+        primary = ift(self.times)
+        return primary
+
+    def forward(self):
+        def f_integrand(f):
+            self.omega = 2.*torch.pi*f[None, :, None]
+            def wvlngth_integrand(wave_length):
+                self.lmb = wave_length[None, None, :]
+                self.rte=rte(self.sigma, self.thick, self.omega, self.lmb)
+                intg = self.rte*self.lmb
+                return intg
+            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, device=self.device)
+            hkl1._recenter_function(self.tx_radius)
+            return ((hkl1.func(hkl1.lamda))@(hkl1.fc+0j))/2.
+
+        ift = invFourier(f_integrand, smp_per_decade = 16, device=self.device)
+        self.tc = ift.rc        
+        dbdts = ift(self.times)
+        return dbdts
+                
 class DualMoment(Forward):
-    def __init__(self, source, receiver, times, waveforms, filterfunc=None, tolerance=None):
+    def __init__(self, source, receiver, times, waveforms, filterfunc=None):
         self.source = source
         self.receiver = receiver
         self.times = times
@@ -229,7 +270,6 @@ class DualMoment(Forward):
                 waveform.amplitude = waveform.amplitude.to(self.device)
                 waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
             self.waveform.append(waveform)
-        self.tolerance=tolerance
 
     @classmethod
     def example(cls, tx=None, rx=None, times=None, waveforms=None):
@@ -301,7 +341,8 @@ class ForwardLaplace(Forward):
                 if self.sfield_rte is None: self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz) / self.tmp_u0
                 if self.pfield     is None: self.pfield     = torch.exp(-self.tmp_u0*self.pfield_dz) / self.tmp_u0
 
-                intg = self.pfield +  rte(self.sigma, self.thick, omega, lmb)*self.sfield_rte
+                #intg = self.pfield +  
+                intg = rte(self.sigma, self.thick, omega, lmb)*self.sfield_rte
 
                 if self.filterfunc is not None:
                     intg *= self.filterfunc.omega_filter(omega)
@@ -666,7 +707,9 @@ class ForwardLaplace4(ForwardLaplace):
             return torch.einsum('...i,...i', Ht, self.t2t).mT.squeeze()
         else:
             return torch.einsum('...ik,...jk->...ij', Ht, self.t2t).squeeze()   
-        
+
+
+
 class ForwardLaplace5(ForwardLaplace):
     geomz = None
     t2t   = None
