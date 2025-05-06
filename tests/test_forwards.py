@@ -23,8 +23,8 @@ def aarhusInv_stepoff_comparison(ForwardMaker, **kwargs):
     lp = Loop.square(40)
     rx = Receiver()
 
-    rho = 40*torch.ones(2)
-    thick = torch.tensor([10])
+    rho = 40*torch.ones(3)
+    thick = torch.tensor([10, 10])
 
     fwr = ForwardMaker(lp, rx, times, **kwargs)
     dbdt = fwr(rho, thick);
@@ -184,8 +184,8 @@ def test_halfspace_circle_center():
         plt.show()
     assert torch.allclose(dbdt_analytic.real, dbdt.real), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
 
-if __name__ == '__main__':
-    test_halfspace_circle_center()
+# if __name__ == '__main__':
+#     test_halfspace_circle_center()
 
 def compare_two_Forwards(Forward1, Forward2, rtol=1e-2):
     from anemone.experiment import Loop, Receiver
@@ -812,7 +812,7 @@ if __name__ == '__main__':
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_stepoff_laplace()
-    # test_40x40_aarhusInv_stepoff()
+    test_40x40_aarhusInv_stepoff()
     # test_multirx_Laplace3()
     # test_colecole_forwardTD()
     # test_mpaforwardTD()
@@ -824,5 +824,5 @@ if __name__ == '__main__':
     # test_Laplace2_40x40_aarhusInv_piecewise_waveform()
     
     # test_colecole_parallel_models()
-    test_halfspace_circle_center_Forward()
+    # test_halfspace_circle_center_Forward()
     exit()

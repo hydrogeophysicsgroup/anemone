@@ -474,3 +474,78 @@ def rte_nbc(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
         gamma_n = exp2uh[i]*(gamma_n + phi_n)/(1. + gamma_n*phi_n)
     phi_n = (adm_freespace - adm_intrinsic[0])/(adm_freespace + adm_intrinsic[0])
     return phi_n
+
+def calc_rte_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, collapse_matrices=True):
+    thick = torch.vstack([torch.zeros_like(thickness[:1]), thickness])
+
+    lambda2 = wave_length**2
+    k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
+    un = torch.sqrt(lambda2 - k2)
+    u0 = freespace_u0(omega, wave_length)
+    un1 = torch.roll(un, 1, dims=0)
+    un1[0] = u0
+    un2 = un*1.
+
+    euh_p = torch.exp(un1*thick)
+
+    euh_m = 1./euh_p
+    unratio = un2/un1
+    d_un  = 1.-unratio
+    m_un  = 1.+unratio
+
+    propmat = torch.empty((2,2)+m_un.shape, dtype=torch.complex128)
+    propmat[0, 0] = m_un*euh_p
+    propmat[0, 1] = d_un*euh_p
+    propmat[1, 0] = d_un*euh_m
+    propmat[1, 1] = m_un*euh_m
+    if collapse_matrices:
+        calcmat = torch.einsum('ij...,jk...->ik...', propmat[:,:,0], propmat[:,:,1])
+        for i in range(2, propmat.shape[2]):
+            calcmat = torch.einsum('ij...,jk...->ik...', calcmat, propmat[:,:,i])
+        propmat = calcmat
+        rte = propmat[1,0]/propmat[0,0]
+    else:
+        propmat_dsigma1 = torch.empty((2,2)+m_un.shape, dtype=torch.complex128)
+        propmat_dsigma1[0, 0] = euh_p*(thick + thick*unratio - unratio/un1)
+        propmat_dsigma1[0, 1] = euh_p*(thick - thick*unratio + unratio/un1)
+        propmat_dsigma1[1, 0] = euh_m*(-thick + thick*unratio + unratio/un1)
+        propmat_dsigma1[1, 1] = euh_m*(-thick - thick*unratio - unratio/un1)
+
+        propmat_dsigma2 = torch.empty((2,2)+m_un.shape, dtype=torch.complex128)
+        propmat_dsigma2[0, 0] = ( unratio/un2)*euh_p
+        propmat_dsigma2[0, 1] = (-unratio/un2)*euh_p
+        propmat_dsigma2[1, 0] = (-unratio/un2)*euh_m
+        propmat_dsigma2[1, 1] = ( unratio/un2)*euh_m    
+        backpropmat = propmat.clone()
+
+        propmat_dsigma = torch.einsum('ij...,jk...->ik...', propmat[:,:,1:], propmat_dsigma1[:,:,:-1])\
+                        +torch.einsum('ij...,jk...->ik...', propmat_dsigma2[:,:,1:], propmat[:, :, :-1])
+
+
+        for i in range(1,propmat.shape[2]):
+            propmat[:,:,i] = torch.einsum('ij...,jk...->ik...', propmat[:,:, i-1], propmat[:,:, i])
+
+        for i in range(propmat.shape[2]-2, -1, -1):
+            backpropmat[:,:,i] = torch.einsum('ij...,jk...->ik...', backpropmat[:,:, i], backpropmat[:,:, i+1])
+
+        d_rte = torch.einsum('ij...,jk...->ik...', propmat[:,:,:-2], propmat_dsigma[:, :, 1:])
+        d_rte = torch.einsum('ij...,jk...->ik...', d_rte, backpropmat[:,:, 2:])
+        rte = d_rte[1,0] / d_rte[0,0]
+        rte = 1j*mu*omega*rte / (2.*un1[1:-1])
+    return rte
+
+def rte_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    if isinstance(mu, float):
+        mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
+    if isinstance(epsilon, float):
+        epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
+    rte = calc_rte_matrix(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
+    return torch.nan_to_num(rte)
+
+def drte_dsigma(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    if isinstance(mu, float):
+        mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
+    if isinstance(epsilon, float):
+        epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
+    dsigma = calc_rte_matrix(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, collapse_matrices=False)
+    return torch.nan_to_num(dsigma)

@@ -1,5 +1,5 @@
 from anemone.transforms import Hankel, invFourier, CubicSpline, invLaplace
-from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0, colecole, mpa2colecole, colecole2mpa
+from anemone.physics import refl_transverse_electric_memopt as rte, freespace_u0 as u0, colecole, mpa2colecole, colecole2mpa
 from anemone import constants as c
 from anemone.experiment import integrate_around_loop
 import torch
@@ -127,7 +127,7 @@ class Forward:
         if isinstance(thickness, ndarray): thickness = torch.from_numpy(thickness)
         self.rho = ((rho+0j)[..., None, None])#.to(self.device)
         if rho.ndim > thickness.ndim:
-            thickness = thickness[:, None]
+            thickness = thickness[:, None, ...]
         self.thick = ((thickness+0j)[..., None, None])#.to(self.device)
         return self.forward()*c.mu0
 
@@ -651,7 +651,7 @@ class ForwardLaplace3(ForwardLaplace):
             return torch.einsum('...i,...i', Ht, self.t2t).mT.squeeze()
         else:
             return torch.einsum('...ik,...jk->...ij', Ht, self.t2t).squeeze()        
-        
+
 def intMat(t_in, t_out):
     t_out = t_out.to(t_in.dtype)
     logT = torch.log(t_in)#.cpu()
