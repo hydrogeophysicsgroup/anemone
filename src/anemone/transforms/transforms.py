@@ -669,7 +669,42 @@ class Hankel:
             self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log10)
         r = r if isinstance(r, torch.Tensor) else torch.tensor(r, device=self.device)
         return self.interpfunc(r)#.to(self.device)
-            
+    
+    def preintegrate(self, GeomOperator, rmin, rmax, tolerance=None):
+        if self.func_results is None:
+            self.func_results = self.func(self.lamda)
+            if not self.lambda_included: 
+                self.func_results *= self.lamda
+        if not isinstance(rmin, torch.Tensor): rmin = torch.tensor(rmin, device=self.device)
+        if not isinstance(rmax, torch.Tensor): rmax = torch.tensor(rmax, device=self.device)
+        imin = int(torch.floor(self.r_to_idx(rmin)))-2
+        imax = int(torch.ceil(self.r_to_idx(rmax)))+2
+        i_offsets = torch.arange(imin, imax, device=self.device)
+        rout = self.idx_to_r(i_offsets).to(self.lamda.dtype)
+        geomz = GeomOperator(rout).squeeze()
+
+        if self.device is not None:
+            rout = rout.to(self.device)
+            geomz = geomz.to(self.device)
+            i_offsets = i_offsets.to(self.device)
+        if self.fc.dtype != self.func_results.dtype:
+            self.fc = self.fc.to(self.func_results.dtype)   
+
+        FC = torch.zeros_like(self.fc, device=self.device)
+        
+        for i, i_offset in enumerate(i_offsets):
+            if i_offset == 0:
+                FC += geomz[i]*self.fc / rout[i]
+            elif i_offset > 0:
+                FC[:-i_offset] += geomz[i]*self.fc[..., i_offset:] / rout[i]
+            else:
+                i_offset *= -1
+                FC[i_offset:] += geomz[i]*self.fc[..., :-i_offset] / rout[i]
+        
+        if tolerance is not None:
+            idxmin, idxmax = coefficient_bounds(FC.cpu().numpy(), tolerance=tolerance)
+
+        return torch.einsum('...i,i->...', self.func_results, FC), FC[idxmin:idxmax], self.lamda[idxmin:idxmax]
 
 class Fourier(Hankel):
     """ A fourier transform for logarithmically sampled data. The implementation uses hankel transforms at the base.

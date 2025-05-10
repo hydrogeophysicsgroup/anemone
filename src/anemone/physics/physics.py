@@ -571,7 +571,13 @@ def rte_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon
         mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
     if isinstance(epsilon, float):
         epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
-    _,rte = calc_dpropmat(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
+    propmat = calc_prop_matrix(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
+    answer = torch.zeros((2,)+propmat.shape[2:], dtype=torch.complex128, device=thickness.device)
+    
+    answer[0, :] = 1.
+    for i in range(answer.shape[1]-2, -1, -1):
+        answer[:, i] = torch.einsum('ij...,j...->i...', propmat[:,:,i], answer[:, i+1])
+    rte = answer[1, 0] / answer[0, 0]    
     return torch.nan_to_num(rte)
 
 def drte_dsigma(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):

@@ -17,18 +17,26 @@ def test_frequency_response():
     frqs = torch.logspace(-6, 5, 501, dtype=torch.complex128)  # Hz
     omega = 2*torch.pi*frqs
     
-    hz_analytical = physics.halfspace_vmd(sigma, omega, rho).numpy()
+    hz_analytical = physics.halfspace_vmd(1/sigma, omega, rho)
     omega = omega[:, None]
 
     def rte1(wave_length):
         wave_length = wave_length[None, :]
         return calc_rte_halfspace(sigma, omega, wave_length)*wave_length**3
+    
     Hkl_rte1 = transforms.Hankel(rte1, 0)
     r,resp = Hkl_rte1.range(90, 110)
     cbResp = transforms.CubicSpline(r, resp)
-    hz = (cbResp(rho)/(2*torch.pi)).numpy()
+    hz = (cbResp(rho)/(2*torch.pi))
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        plt.plot(frqs, hz_analytical, 'k-')
+        plt.plot(frqs, hz, 'r--')
+        plt.xlabel('r (m)')
+        plt.ylabel('H(r)')
+        plt.show()
 
-    assert np.allclose(hz, hz_analytical), "hankel transform results do not match analytical solution"
+    assert torch.allclose(hz, hz_analytical), "hankel transform results do not match analytical solution"
 
 def check_rte_convergence(rte_func):
     from anemone import constants as c
@@ -100,4 +108,4 @@ def test_rtm_convergence():
     assert np.allclose(rtm_halfspace.numpy(), c_rte.numpy()), 'rtm did not converge as expected'
 
 if __name__ == '__main__':
-    test_rte_memop_convergence()
+    test_frequency_response()

@@ -74,6 +74,7 @@ def aarhusInv_piecewise_comparison(ForwardMaker, **kwargs):
     kwargs['waveform'] = waveform
     fwr = ForwardMaker(lp, rx, times, **kwargs)
     dbdt = fwr(rho, thick)
+    dbdt = fwr(rho, thick)
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
@@ -324,6 +325,11 @@ def test_40x40_aarhusInv_stepoff_laplace():
     from anemone.forwards import ForwardLaplace
     aarhusInv_stepoff_comparison(ForwardLaplace)
 
+def test_40x40_aarhusInv_stepoff_preint():
+    from anemone.forwards import ForwardLaplace6
+    aarhusInv_stepoff_comparison(ForwardLaplace6)
+
+
 def test_40x40_aarhusInv_stepoff_hankel_tolerance():
     from anemone.forwards import Forward
     aarhusInv_stepoff_comparison(Forward, tolerance=1e-5)
@@ -331,6 +337,10 @@ def test_40x40_aarhusInv_stepoff_hankel_tolerance():
 def test_40x40_aarhusInv_piecewise_waveform():
     from anemone.forwards import Forward
     aarhusInv_piecewise_comparison(Forward)
+
+def test_40x40_aarhusInv_piecewise_waveform_preint():
+    from anemone.forwards import ForwardLaplace6
+    aarhusInv_piecewise_comparison(ForwardLaplace6)
 
 def test_40x40_aarhusInv_piecewise_waveform_geomop():
     from anemone.forwards import ForwardGeomOp
@@ -812,7 +822,9 @@ if __name__ == '__main__':
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_stepoff_laplace()
-    test_40x40_aarhusInv_stepoff()
+    # test_40x40_aarhusInv_stepoff()
+    # test_40x40_aarhusInv_stepoff_preint()
+    test_40x40_aarhusInv_piecewise_waveform_preint()
     # test_multirx_Laplace3()
     # test_colecole_forwardTD()
     # test_mpaforwardTD()
