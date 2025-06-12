@@ -761,7 +761,7 @@ if __name__ == '__main__':
     test_mpaforwardTD()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_stepoff_laplace()
-    test_Laplace3_40x40_aarhusInv_piecewise_waveform()
+    # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
     # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
     # test_forwardlaplace3_parallel_models()
     # test_Laplace2_40x40_aarhusInv_piecewise_waveform()
