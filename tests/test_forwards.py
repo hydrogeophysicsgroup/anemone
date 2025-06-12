@@ -23,8 +23,8 @@ def aarhusInv_stepoff_comparison(ForwardMaker, **kwargs):
     lp = Loop.square(40)
     rx = Receiver()
 
-    rho = 40*torch.ones(2)
-    thick = torch.tensor([10])
+    rho = 40*torch.ones(3)
+    thick = torch.tensor([10, 10])
 
     fwr = ForwardMaker(lp, rx, times, **kwargs)
     dbdt = fwr(rho, thick);
@@ -74,6 +74,7 @@ def aarhusInv_piecewise_comparison(ForwardMaker, **kwargs):
     kwargs['waveform'] = waveform
     fwr = ForwardMaker(lp, rx, times, **kwargs)
     dbdt = fwr(rho, thick)
+    dbdt = fwr(rho, thick)
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
@@ -97,13 +98,15 @@ def aarhusInv_piecewise_comparison(ForwardMaker, **kwargs):
 def check_halfspace_circle_center(ForwardMaker, rtol=1e-2):
     from anemone.experiment import Loop, Receiver
     from anemone.physics import hzdt_halfspace_center_circle_loop
+    from anemone import constants as c
     name = ForwardMaker.__name__
-    radius = 1.
-    lp = Loop.circle(radius, n=16)
+    radius = 10.
+    #lp = Loop.circle(radius, n=8)
+    lp = Loop.square((c.pi*100)**(1/2))
     rx = Receiver()
-    times = torch.logspace(-7, 0, 101, dtype=torch.double)
+    times = torch.logspace(-6, 0, 101, dtype=torch.double)
 
-    rho = torch.logspace(0, 3, 5, dtype=torch.double)[None, :]*torch.ones(3, dtype=torch.double)[:, None]
+    rho = torch.logspace(3, 0, 5, dtype=torch.double)[None, :]*torch.ones(3, dtype=torch.double)[:, None]
     thick = torch.ones(2, dtype=torch.double)*20
 
     fwr = ForwardMaker(lp, rx, times)
@@ -115,20 +118,75 @@ def check_halfspace_circle_center(ForwardMaker, rtol=1e-2):
         
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
-        ax[0].loglog(fwr.times.numpy(), dbdt.real.T, '.')
-        ax[0].loglog(times,      dbdt_analytic.real, 'k--')
+        ax[0].loglog(fwr.times.numpy(), dbdt.real.numpy().T, '.')
+        ax[0].loglog(times,      dbdt_analytic.real.numpy(), 'k--')
         ax[0].set_ylabel('dB/dt')
         ax[0].set_aspect('equal')
 
         ax[1].loglog(times, 100*torch.abs(dbdt.real.T-dbdt_analytic.real)/torch.abs(dbdt_analytic.real))
         ax[1].set_ylabel('relative difference [%]')
-        ax[1].set_ylim(None, 1e3)
+        # ax[1].set_ylim(None, 1e3)
         for ax_ in ax:
             ax_.set_xlabel('time [s]')
 
         fig.suptitle('Test against AarhusInv with Piecewise Waveform')
         plt.show()
-    assert torch.allclose(dbdt_analytic.real, dbdt.real, rtol=rtol), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
+    assert torch.allclose(dbdt_analytic.real, dbdt.real), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
+
+def test_halfspace_circle_center():
+    from anemone.experiment import Loop, Receiver
+    from anemone.physics import hzdt_halfspace_center_circle_loop
+    from anemone.forwards import ForwardCentralCircle
+    from anemone import constants as c
+    name = 'Central Circular Loop'
+
+    radius = 10.
+    
+    
+    times = torch.logspace(-6, 0, 51, dtype=torch.double)
+
+    rho = torch.tensor([[1, 10, 100, 1000], [1, 10, 100, 1000]])
+    thick = torch.ones(4, dtype=torch.double)*20
+
+    fwr = ForwardCentralCircle(radius, times)
+    dbdt = fwr(rho, thick)
+
+    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius)*c.mu0
+    
+    if __name__ == '__main__':
+        
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots(1,2, sharex=True)
+        ax[0].loglog(fwr.times.numpy(), dbdt.real.numpy().T, '.')
+        
+        ax[0].set_ylabel('dB/dt [V / m$^2$]')
+        ax[0].set_aspect('equal')
+        ax[0].legend([1, 10, 100, 1000], title='$\\rho$ [$\\Omega$m]', fontsize='small')
+        ax[0].loglog(times,      dbdt_analytic.real.numpy(), 'k--')
+
+        ax[1].semilogx(times, 100*torch.abs(dbdt.real.T-dbdt_analytic.real)/torch.abs(dbdt_analytic.real))
+        ax[1].legend([1, 10, 100, 1000], title='$\\rho$ [$\\Omega$m]', fontsize='small')
+        ax[1].set_ylabel('relative error [%]')
+        ax[1].set_ylim(0, 10)
+        ax[1].text(0.8e-6, 8, '$\\uparrow$ 48.5%\nfirst gate', fontsize='small',  bbox=dict(facecolor='white', edgecolor='black'))
+        ax[0].set_xticks([1e-6, 1e-4, 1e-2, 1e0])
+        for ax_ in ax:
+            ax_.set_xlabel('time [s]')
+
+        fig.suptitle('anEMone center of circular loop vs analytic response')
+        plt.subplots_adjust(
+            top=0.88,
+            bottom=0.11,
+            left=0.03,
+            right=0.97,
+            hspace=0.2,
+            wspace=0.0
+        )
+        plt.show()
+    assert torch.allclose(dbdt_analytic.real, dbdt.real), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
+
+# if __name__ == '__main__':
+#     test_halfspace_circle_center()
 
 def compare_two_Forwards(Forward1, Forward2, rtol=1e-2):
     from anemone.experiment import Loop, Receiver
@@ -173,8 +231,8 @@ def compare_two_Forwards(Forward1, Forward2, rtol=1e-2):
 
 
 def test_halfspace_circle_center_Forward():
-    from anemone.forwards import Forward3
-    check_halfspace_circle_center(Forward3)
+    from anemone.forwards import Forward
+    check_halfspace_circle_center(Forward)
 
 # if __name__=='__main__':
 #     test_halfspace_circle_center_Forward()
@@ -267,6 +325,11 @@ def test_40x40_aarhusInv_stepoff_laplace():
     from anemone.forwards import ForwardLaplace
     aarhusInv_stepoff_comparison(ForwardLaplace)
 
+def test_40x40_aarhusInv_stepoff_preint():
+    from anemone.forwards import ForwardLaplace6
+    aarhusInv_stepoff_comparison(ForwardLaplace6)
+
+
 def test_40x40_aarhusInv_stepoff_hankel_tolerance():
     from anemone.forwards import Forward
     aarhusInv_stepoff_comparison(Forward, tolerance=1e-5)
@@ -274,6 +337,10 @@ def test_40x40_aarhusInv_stepoff_hankel_tolerance():
 def test_40x40_aarhusInv_piecewise_waveform():
     from anemone.forwards import Forward
     aarhusInv_piecewise_comparison(Forward)
+
+def test_40x40_aarhusInv_piecewise_waveform_preint():
+    from anemone.forwards import ForwardLaplace6
+    aarhusInv_piecewise_comparison(ForwardLaplace6)
 
 def test_40x40_aarhusInv_piecewise_waveform_geomop():
     from anemone.forwards import ForwardGeomOp
@@ -756,9 +823,11 @@ if __name__ == '__main__':
     # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_stepoff_laplace()
     # test_40x40_aarhusInv_stepoff()
+    # test_40x40_aarhusInv_stepoff_preint()
+    test_40x40_aarhusInv_piecewise_waveform_preint()
     # test_multirx_Laplace3()
     # test_colecole_forwardTD()
-    test_mpaforwardTD()
+    # test_mpaforwardTD()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_stepoff_laplace()
     # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
@@ -767,4 +836,5 @@ if __name__ == '__main__':
     # test_Laplace2_40x40_aarhusInv_piecewise_waveform()
     
     # test_colecole_parallel_models()
+    # test_halfspace_circle_center_Forward()
     exit()

@@ -474,3 +474,116 @@ def rte_nbc(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
         gamma_n = exp2uh[i]*(gamma_n + phi_n)/(1. + gamma_n*phi_n)
     phi_n = (adm_freespace - adm_intrinsic[0])/(adm_freespace + adm_intrinsic[0])
     return phi_n
+
+def calc_prop_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, pad=0):
+    thick = torch.vstack([torch.zeros_like(thickness[:1]), thickness])
+
+    lambda2 = wave_length**2
+    k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
+    un = torch.sqrt(lambda2 - k2)
+    u0 = freespace_u0(omega, wave_length)
+    un1 = torch.roll(un, 1, dims=0)
+    un1[0] = u0
+    un2 = un*1.
+
+    euh_p = torch.exp(un1*thick)
+
+    euh_m   = 1./euh_p
+    unratio = un2/un1
+    d_un    = 1.-unratio
+    m_un    = 1.+unratio
+
+    propmat = torch.zeros((2,2, m_un.shape[0]+pad)+m_un.shape[1:], dtype=torch.complex128)
+    if pad>0:
+        propmat[0,0,:pad] = 1.
+        propmat[1,1,:pad] = 1.
+
+        propmat[0, 0, pad:] = m_un*euh_p
+        propmat[0, 1, pad:] = d_un*euh_p
+        propmat[1, 0, pad:] = d_un*euh_m
+        propmat[1, 1, pad:] = m_un*euh_m
+    else:
+        propmat[0, 0] = m_un*euh_p
+        propmat[0, 1] = d_un*euh_p
+        propmat[1, 0] = d_un*euh_m
+        propmat[1, 1] = m_un*euh_m
+    return propmat
+
+def calc_dpropmat(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+
+    pad = 2
+
+    propmat = calc_prop_matrix(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)
+    propmat = torch.roll(propmat, -pad//2, dims=2)
+
+    answer = torch.zeros((2,)+propmat.shape[2:], dtype=torch.complex128, device=thickness.device)
+    
+    answer[0, :] = 1.
+    for i in range(answer.shape[1]-2, -1, -1):
+        answer[:, i] = torch.einsum('ij...,j...->i...', propmat[:,:,i], answer[:, i+1])
+
+    for i in range(1, propmat.shape[2]):
+        propmat[:,:,i] = torch.einsum('ij...,jk...->ik...', propmat[:,:, i-1], propmat[:,:, i])
+
+    rte = answer[1, 0] / answer[0, 0]
+
+    answer = torch.roll(answer, -1, dims=1)
+    answer[0,-1:] = 1.
+    answer[1,-1:] = 0.
+        
+    dsigma = sigma.clone()
+    dsigma[::2] *= 1.01
+    dpropmat = calc_prop_matrix(dsigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)
+    dpropmat = torch.roll(dpropmat, -pad//2, dims=2)
+
+    drte = torch.einsum('ij...,j...->i...', dpropmat, answer)
+    drte = torch.roll(drte, -1, dims=1)
+    drte[0,-1] = 1.
+    drte[1,-1] = 0.
+    drte = torch.einsum('ij...,j...->i...', dpropmat, drte)
+    drte = torch.roll(drte, -1, dims=1)
+    drte[0,-1] = 1.
+    drte[1,-1] = 0.
+    drte = torch.einsum('ij...,j...->i...', propmat, drte)
+
+    dsigma = sigma.clone()
+    dsigma[1::2] *= 1.01
+    dpropmat = calc_prop_matrix(dsigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)
+    dpropmat = torch.roll(dpropmat, -pad//2, dims=2)
+    
+    drte2 = torch.einsum('ij...,j...->i...', dpropmat, answer)
+    drte2 = torch.roll(drte2, -1, dims=1)
+    drte2[0,-1] = 1.
+    drte2[1,-1] = 0.
+    drte2 = torch.einsum('ij...,j...->i...', dpropmat, drte2)
+    drte2 = torch.roll(drte2, -1, dims=1)
+    drte2[0,-1] = 1.
+    drte2[1,-1] = 0.
+    drte2 = torch.einsum('ij...,j...->i...', propmat,  drte2)
+    drte[:, 1::2] = drte2[:, 1::2]
+
+    
+    mid = slice(None, len(sigma))
+    return (drte[1, mid]/drte[0, mid] - rte)/(sigma*0.01), rte
+
+def rte_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    if isinstance(mu, float):
+        mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
+    if isinstance(epsilon, float):
+        epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
+    propmat = calc_prop_matrix(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
+    answer = torch.zeros((2,)+propmat.shape[2:], dtype=torch.complex128, device=thickness.device)
+    
+    answer[0, :] = 1.
+    for i in range(answer.shape[1]-2, -1, -1):
+        answer[:, i] = torch.einsum('ij...,j...->i...', propmat[:,:,i], answer[:, i+1])
+    rte = answer[1, 0] / answer[0, 0]    
+    return torch.nan_to_num(rte)
+
+def drte_dsigma(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    if isinstance(mu, float):
+        mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
+    if isinstance(epsilon, float):
+        epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
+    dsigma,_ = calc_dpropmat(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
+    return torch.nan_to_num(dsigma)

@@ -544,3 +544,217 @@ class CubicSpline:
         dx = (xt-self.x[ix])#[:, None]
         return self.a[..., ix] + self.b[..., ix]*dx + self.c[..., ix]*dx**2 + self.d[..., ix]*dx**3
     
+
+class Hankel:
+    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10, device=None, range=None, tolerance=None, lambda_included=True, omega_0=np.pi/4.):
+        self.func    = func
+        self.nu    = order
+        self.smp_per_decade = smp_per_decade
+        self.n_decades = log10max-log10min
+        hkl = hankel_coefficients(order, log10min, log10max, smp_per_decade, omega_0)
+        if tolerance is not None:
+            idxmin, idxmax = coefficient_bounds(hkl[1].cpu().numpy(), tolerance=tolerance)
+            hkl = hkl[0][idxmin:idxmax], hkl[1][idxmin:idxmax]
+        self.tolerance = tolerance
+
+        self.func_results = None       
+
+        self.lamda = torch.clone(hkl[0]).to(torch.double)
+        self.fc = torch.clone(hkl[1]).to(torch.double)
+
+        if device is not None:
+            self.fc=self.fc.to(device)
+            self.lamda=self.lamda.to(device)
+        
+        self.lambda_included = lambda_included
+        self.device=device
+
+        self.rc = 1.
+        self.rcidx = 0
+        if range is not None:
+            self._recenter_function(range)
+            self.create_interpolator(range[0], range[1])
+    
+    def _recenter_function(self, r_center):
+        assert self.rcidx == 0, "recentering is only allowed once"
+        if isinstance(r_center, tuple): r_center = torch.sqrt(r_center[0]*r_center[1]).to(self.device)
+        self.rc = r_center#.to(torch.double)
+        self.lamda = self.lamda/self.rc
+        self.rcidx = self.smp_per_decade*torch.log10(self.rc)
+        self.func_results = None
+
+    def create_interpolator(self, rmin, rmax):
+        if self.func_results is None:
+            self.func_results = self.func(self.lamda)
+            if not self.lambda_included:
+                self.func_results *= self.lamda
+        self.r, self.resp = self.range(rmin, rmax)
+        self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log10, integrate=False)
+    
+    
+    def r_to_idx(self, r):
+        return self.smp_per_decade*torch.log10(r)-self.rcidx
+    
+    def idx_to_r(self, idx):
+        return 10**((idx + self.rcidx)*self.delta)
+    
+
+    @property
+    def delta(self):
+        """
+        Calculate the delta value.
+
+        Returns:
+        - delta (float): The delta value.
+
+        """
+        return 1. / self.smp_per_decade
+
+    
+    def range(self, rmin, rmax):
+        """ the reason for this is to make it reusable for the fourier transform"""
+        return self._range(rmin, rmax)
+
+    def _range(self, rmin, rmax):
+        """
+        Compute the range of values between `rmin` and `rmax`.
+
+        Parameters:
+        - rmin (float): The minimum value of the range.
+        - rmax (float): The maximum value of the range.
+
+        Returns:
+        - rout (torch.Tensor): The range of values between `rmin` and `rmax`.
+        - HR (torch.Tensor): The computed values based on the range.
+
+        """
+        if self.func_results is None:
+            self.func_results = self.func(self.lamda)
+            if not self.lambda_included: 
+                self.func_results *= self.lamda
+        if not isinstance(rmin, torch.Tensor): rmin = torch.tensor(rmin, device=self.device)
+        if not isinstance(rmax, torch.Tensor): rmax = torch.tensor(rmax, device=self.device)
+        imin = int(torch.floor(self.r_to_idx(rmin)))-2
+        imax = int(torch.ceil(self.r_to_idx(rmax)))+2
+        i_offsets = torch.arange(imin, imax, device=self.device)
+        rout = self.idx_to_r(i_offsets).to(self.lamda.dtype)
+        HR = torch.zeros(self.func_results.shape[:-1] + rout.shape, dtype=self.func_results.dtype, device=self.device)
+        if self.device is not None:
+            rout = rout.to(self.device)
+            HR = HR.to(self.device)
+            i_offsets = i_offsets.to(self.device)
+        if self.fc.dtype != self.func_results.dtype:
+            self.fc = self.fc.to(self.func_results.dtype)   
+
+         
+
+
+        for i, i_offset in enumerate(i_offsets):
+            if i_offset == 0:
+                HR[..., i] = torch.einsum('...i,...i->...', self.func_results, self.fc)
+            elif i_offset > 0:
+                HR[..., i] = torch.einsum('...i,...i->...', self.func_results[..., :-i_offset], self.fc[..., i_offset:])
+            else:
+                i_offset *= -1
+                HR[..., i] = torch.einsum('...i,...i->...', self.fc[..., :-i_offset], self.func_results[..., i_offset:])
+        
+        return rout, HR/rout
+        
+    def __call__(self, r):
+        if isinstance(r, float): r = torch.tensor(r, device=self.device)
+        rmax = r.max()
+        rmin = r.min()
+        if not 'interpfunc' in dir(self):
+            self.r, self.resp = self.range(rmin, rmax)
+            self.interpfunc = CubicSpline(self.r, self.resp, transform=torch.log10)
+        r = r if isinstance(r, torch.Tensor) else torch.tensor(r, device=self.device)
+        return self.interpfunc(r)#.to(self.device)
+    
+    def preintegrate(self, GeomOperator, rmin, rmax, tolerance=None):
+        if self.func_results is None:
+            self.func_results = self.func(self.lamda)
+            if not self.lambda_included: 
+                self.func_results *= self.lamda
+        if not isinstance(rmin, torch.Tensor): rmin = torch.tensor(rmin, device=self.device)
+        if not isinstance(rmax, torch.Tensor): rmax = torch.tensor(rmax, device=self.device)
+        imin = int(torch.floor(self.r_to_idx(rmin)))-2
+        imax = int(torch.ceil(self.r_to_idx(rmax)))+2
+        i_offsets = torch.arange(imin, imax, device=self.device)
+        rout = self.idx_to_r(i_offsets).to(self.lamda.dtype)
+        geomz = GeomOperator(rout).squeeze()
+
+        if self.device is not None:
+            rout = rout.to(self.device)
+            geomz = geomz.to(self.device)
+            i_offsets = i_offsets.to(self.device)
+        if self.fc.dtype != self.func_results.dtype:
+            self.fc = self.fc.to(self.func_results.dtype)   
+
+        FC = torch.zeros_like(self.fc, device=self.device)
+        
+        for i, i_offset in enumerate(i_offsets):
+            if i_offset == 0:
+                FC += geomz[i]*self.fc / rout[i]
+            elif i_offset > 0:
+                FC[:-i_offset] += geomz[i]*self.fc[..., i_offset:] / rout[i]
+            else:
+                i_offset *= -1
+                FC[i_offset:] += geomz[i]*self.fc[..., :-i_offset] / rout[i]
+        
+        if tolerance is not None:
+            idxmin, idxmax = coefficient_bounds(FC.cpu().numpy(), tolerance=tolerance)
+
+        return torch.einsum('...i,i->...', self.func_results, FC), FC[idxmin:idxmax], self.lamda[idxmin:idxmax]
+
+class Fourier(Hankel):
+    """ A fourier transform for logarithmically sampled data. The implementation uses hankel transforms at the base.
+        See Johansen and Sorensen 1979 - Fast Hankel Transforms eq.  87 + 88
+    """
+        
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None, range=None):
+        def f1(lamda):
+            return func(lamda/c.sqrt_twopi)/torch.sqrt(lamda)
+        super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device, None, )
+        self.lambda_included = False
+        _, realfc = hankel_coefficients(-0.5, log10min, log10max, smp_per_decade, omega_0=0.6221)
+        _, imagfc = hankel_coefficients( 0.5, log10min, log10max, smp_per_decade, omega_0=0.6221)
+        imagfc = imagfc.to(self.fc.device)
+        self.fc = torch.complex(realfc, -1*imagfc)
+       
+
+        if range is not None:
+            self._recenter_function(range)
+            self.create_interpolator(range[0], range[1])
+    
+    def f2r(self, f):
+        """frequency to r"""
+        return f*c.sqrt_twopi
+    def r2f(self, r):
+        """r to frequency"""
+        return r/c.sqrt_twopi
+
+    def range(self, fmin, fmax):
+        rout, Resp = self._range(self.f2r(fmin), self.f2r(fmax))
+        return self.r2f(rout), Resp*torch.sqrt(rout)
+    
+    def __call__(self, r):
+        if isinstance(r, float): r = torch.tensor(r, device=self.device)
+        rmax = r.max()
+        rmin = r.min()
+        if not 'interpfunc' in dir(self):
+            self.r, self.resp = self.range(rmin, rmax)
+            self.interpfunc = CubicSpline(self.r, self.resp, integrate=False, transform=torch.log10)
+        r = r if isinstance(r, torch.Tensor) else torch.tensor(r, device=self.device)
+        return self.interpfunc(r)
+
+
+class invFourier(Fourier):
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=20, device=None, range=None):
+        super().__init__(func, log10min, log10max, smp_per_decade, device, None)
+        self.lambda_included = False        
+        self.fc = self.fc.real - 1j*self.fc.imag
+        if range is not None:
+            self._recenter_function(range)
+            self.create_interpolator(range[0], range[1])
+    def __repr__(self) -> str:
+        return 'X(f)->x(t)'
