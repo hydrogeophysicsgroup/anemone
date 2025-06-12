@@ -160,3 +160,4 @@ cython_debug/
 examples/endelave/*
 scripts/plog_opener.cmd
 .vscode/settings.json
+*.png
