@@ -158,7 +158,7 @@ class Loop:
             p2 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i+1])
             x1,y1 = p1[..., 0], p1[..., 1]
             x2,y2 = p2[..., 0], p2[..., 1]
-            ix = int(3*torch.abs(x2-x1).max())
+            ix = int(25*torch.abs(x2-x1).max())
             tmpx = torch.linspace(-1, 1, ix)
             x_samp = tmpx
             x_samp += 1.

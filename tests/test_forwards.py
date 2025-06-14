@@ -329,6 +329,13 @@ def test_40x40_aarhusInv_stepoff_preint():
     from anemone.forwards import ForwardLaplace6
     aarhusInv_stepoff_comparison(ForwardLaplace6)
 
+def test_40x40_aarhusInv_stepoff_laplace7():
+    from anemone.forwards import ForwardLaplace7
+    aarhusInv_stepoff_comparison(ForwardLaplace7)
+
+def test_40x40_aarhusInv_piecewise_laplace7():
+    from anemone.forwards import ForwardLaplace7
+    aarhusInv_piecewise_comparison(ForwardLaplace7)
 
 def test_40x40_aarhusInv_stepoff_hankel_tolerance():
     from anemone.forwards import Forward
@@ -824,7 +831,9 @@ if __name__ == '__main__':
     # test_40x40_aarhusInv_stepoff_laplace()
     # test_40x40_aarhusInv_stepoff()
     # test_40x40_aarhusInv_stepoff_preint()
-    test_40x40_aarhusInv_piecewise_waveform_preint()
+    # test_40x40_aarhusInv_stepoff_laplace7()
+    test_40x40_aarhusInv_piecewise_laplace7()
+#    test_40x40_aarhusInv_piecewise_waveform_preint()
     # test_multirx_Laplace3()
     # test_colecole_forwardTD()
     # test_mpaforwardTD()

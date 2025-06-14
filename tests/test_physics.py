@@ -78,6 +78,9 @@ def test_rte_memop_convergence():
 def test_rte_convergence_nbc():
     check_rte_convergence(physics.rte_nbc)
 
+def test_rte_convergence_nbc_laplace():
+    check_rte_convergence(physics.rte_nbc_laplace)
+
 def test_rtm_convergence():
     from anemone import constants as c
     sigma = torch.tensor([100, 0.5, 0.1], dtype=torch.complex128)

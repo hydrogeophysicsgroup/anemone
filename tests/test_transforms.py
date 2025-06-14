@@ -169,23 +169,36 @@ def test_fourier_lowerfrequencies():
 def test_invfourier_earlytimes():
     from anemone.transforms import invFourier
 
-    a = torch.tensor([1e-1], dtype=torch.complex128)
+    a = torch.tensor([2e-1], dtype=torch.complex128)
     def f1(x):
         return 1e6*torch.exp(-a*x**2)
 
     def F1(k):
         return 1e6*torch.sqrt(c.pi/a)*torch.exp(-c.pi**2*k*k/a)
 
-    ift = invFourier(F1)
-    t,y2 = ift.range(1e-6,1e-1)
+    ift = invFourier(F1, smp_per_decade=21)
+    ift._recenter_function((torch.ones(1)*1e12, torch.ones(1)*1e13))
+    t,y2 = ift.range(1e-6,1e3)
 
     y1 = f1(t)
 
 
-    assert torch.allclose(y1.real, y2.real), "inverse Fourier transform is performing poorly on gaussian analytical example"
 
     if running_as_main:
-        return t.numpy(), y1.numpy(), y2.numpy()
+
+        
+        analytic = y1.numpy()
+        numeric = y2.numpy()
+        import matplotlib.pyplot as plt
+        fig,axs = plt.subplots(1,3)
+        axs[0].loglog(t, analytic)
+        axs[0].loglog(t, numeric, 'r--')
+        axs[1].semilogx(t, analytic)
+        axs[1].semilogx(t, numeric, 'r--')
+        axs[2].semilogx(t, analytic.real/numeric.real)
+        axs[0].set_ylim(1e-16, None)
+        plt.show()
+    assert torch.allclose(y1.real, y2.real), "inverse Fourier transform is performing poorly on gaussian analytical example"
 
 def test_invlaplace():
     from anemone.transforms import invLaplace
@@ -304,5 +317,7 @@ if __name__ == '__main__':
     # test_fourier()
     # test_spline_integration()
     # test_invlaplace()
-    test_invlaplace_Hz_center_of_circular_loop_halfspace()
-    test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
+    # test_fourier_lowerfrequencies()
+    test_invfourier_earlytimes()
+    # test_invlaplace_Hz_center_of_circular_loop_halfspace()
+    # test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
