@@ -749,3 +749,41 @@ class ForwardLaplace6(ForwardLaplace):
             return torch.einsum('...i,...i', Ht, self.t2t)
         else:
             return torch.einsum('...ik,...jk->...ij', Ht, self.t2t).squeeze()      
+
+class ForwardMatrix(ForwardLaplace6):
+    def jacobian(self):
+        def wvlngth_integrand(wave_length):
+            lmb = wave_length[None, :, None]
+            def s_integrand(s):
+                """ Hz from horizontal electric dipole. """
+                omega = -1j*s[None, None, :]
+                
+                tmp_u0 = u0(omega, lmb)
+                intg = drte_dsigma(self.sigma, self.thick, omega, lmb)*torch.exp(-tmp_u0*self.sfield_dz)
+
+                if self.filterfunc is not None:
+                    intg *= self.filterfunc.omega_filter(omega)
+                if self.waveform is not None:
+                    intg /= -1j*omega
+                return torch.squeeze(intg).real
+
+            res = invLaplace(s_integrand, device=self.device, n_coefficients=8)(self.t_eval)
+            res[None, ...] *= lmb / c.fourpi
+            return res.swapaxes(-2,-1)
+
+        Ht = torch.einsum('...i,i->...', wvlngth_integrand(self.lmb.squeeze()), self.geomz).real
+        if len(Ht.shape)==1:
+            return torch.einsum('...i,...i', Ht, self.t2t).mT.squeeze()
+        else:
+            return torch.einsum('...ik,...jk->...ij', Ht, self.t2t).squeeze()  
+
+    def __call__(self, rho, thickness, jac=False):
+        self.rho = ((rho+0j)[..., None, None])#.to(self.device)
+        if rho.ndim > thickness.ndim:
+            thickness = thickness[:, None, ...]
+        self.thick = ((thickness+0j)[..., None, None])#.to(self.device)
+        if jac:
+            G = self.jacobian()
+            return -G*c.mu0 / rho[:, None]**2
+        else:            
+            return self.forward()*c.mu0
