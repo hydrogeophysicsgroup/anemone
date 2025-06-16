@@ -653,7 +653,6 @@ class Hankel:
     
     def preintegrate(self, GeomOperator, rmin, rmax, tolerance=None):
         if self.func_results is None:
-            print('shape of lambda: ', self.lamda.shape)
             self.func_results = self.func(self.lamda)
             if not self.lambda_included: 
                 self.func_results *= self.lamda
@@ -735,6 +734,58 @@ class Fourier(Hankel):
         return self.interpfunc(r)
 
 
+    def calc_tvals(self, tmin, tmax):
+        rmin,rmax = self.f2r(tmin), self.f2r(tmax)
+        if not isinstance(rmin, torch.Tensor): rmin = torch.tensor(rmin, device=self.device)
+        if not isinstance(rmax, torch.Tensor): rmax = torch.tensor(rmax, device=self.device)
+        imin = int(torch.floor(self.r_to_idx(rmin)))-2
+        imax = int(torch.ceil( self.r_to_idx(rmax)))+2
+        i_offsets = torch.arange(imin, imax, device=self.device)
+        rout = self.idx_to_r(i_offsets).to(self.lamda.dtype)
+        return i_offsets, rout, self.r2f(rout)
+
+    def preintegrate(self, timeOperator, tmin, tmax, tolerance=None):
+        i_offsets, rout, tout = self.calc_tvals(tmin, tmax)
+        Wmat = timeOperator(tout).to(torch.complex128)
+
+        if self.func_results is None:
+            self.func_results = self.func(self.lamda)
+            if not self.lambda_included: 
+                self.func_results *= self.lamda
+
+
+        if self.device is not None:
+            rout = rout.to(self.device)
+            Wmat = Wmat.to(self.device)
+            i_offsets = i_offsets.to(self.device)
+        if self.fc.dtype != self.func_results.dtype:
+            self.fc = self.fc.to(self.func_results.dtype)   
+
+        FC = torch.zeros(Wmat.shape[:-1]+self.fc.shape, dtype=torch.complex128, device=self.device)
+        sqRout = torch.sqrt(rout)
+        
+        for i, i_offset in enumerate(i_offsets):
+            if i_offset == 0:
+                FC += Wmat[..., i, None]*self.fc*sqRout[i]/rout[i]
+            elif i_offset > 0:
+                FC[..., :-i_offset] += Wmat[..., i, None]*self.fc[i_offset:]*sqRout[i]/rout[i]
+            else:
+                i_offset *= -1
+                FC[..., i_offset:] += Wmat[..., i, None]*self.fc[:-i_offset]*sqRout[i]/rout[i]
+        
+        
+        if tolerance is not None:
+            idxmin, idxmax = FC.shape[-1]-1, 0
+            for i in range(len(FC)):
+                cimin,cimax = coefficient_bounds(FC[i].cpu().numpy(), tolerance=tolerance)
+                idxmin = min(idxmin, cimin)
+                idxmax = max(idxmax, cimax)
+
+            return torch.einsum('ij,...j->...i', FC, self.func_results), FC[..., idxmin:idxmax], self.lamda.squeeze()[idxmin:idxmax]
+        else:
+            return torch.einsum('ij,...j->...i', FC, self.func_results), FC, self.lamda.squeeze()
+
+
 
 class invFourier(Fourier):
     def __init__(self, func, log10min=-30, log10max=20, smp_per_decade=10, device=None, range=None):
@@ -747,41 +798,3 @@ class invFourier(Fourier):
     def __repr__(self) -> str:
         return 'X(f)->x(t)'
     
-    def preintegrate(self, weightFunc, tmin, tmax, tolerance=None):
-        rmin,rmax = self.f2r(tmin), self.f2r(tmax)
-
-        if self.func_results is None:
-            self.func_results = self.func(self.lamda)
-            if not self.lambda_included: 
-                self.func_results *= self.lamda
-        if not isinstance(rmin, torch.Tensor): rmin = torch.tensor(rmin, device=self.device)
-        if not isinstance(rmax, torch.Tensor): rmax = torch.tensor(rmax, device=self.device)
-        imin = int(torch.floor(self.r_to_idx(rmin)))-2
-        imax = int(torch.ceil(self.r_to_idx(rmax)))+2
-        i_offsets = torch.arange(imin, imax, device=self.device)
-        rout = self.idx_to_r(i_offsets).to(self.lamda.dtype)
-        weightMat = weightFunc(self.r2f(rout)).squeeze()
-        print('the shape of weightMat is ', weightMat.shape)
-
-        if self.device is not None:
-            rout = rout.to(self.device)
-            geomz = geomz.to(self.device)
-            i_offsets = i_offsets.to(self.device)
-        if self.fc.dtype != self.func_results.dtype:
-            self.fc = self.fc.to(self.func_results.dtype)   
-
-        FC = torch.zeros_like(self.fc, device=self.device)
-        
-        for i, i_offset in enumerate(i_offsets):
-            if i_offset == 0:
-                FC += geomz[i]*self.fc / rout[i]
-            elif i_offset > 0:
-                FC[:-i_offset] += geomz[i]*self.fc[..., i_offset:] / rout[i]
-            else:
-                i_offset *= -1
-                FC[i_offset:] += geomz[i]*self.fc[..., :-i_offset] / rout[i]
-        
-        if tolerance is not None:
-            idxmin, idxmax = coefficient_bounds(FC.cpu().numpy(), tolerance=tolerance)
-
-        return torch.einsum('...i,i->...', self.func_results, FC), FC[idxmin:idxmax], self.lamda[idxmin:idxmax]

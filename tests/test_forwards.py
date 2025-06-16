@@ -100,9 +100,9 @@ def check_halfspace_circle_center(ForwardMaker, rtol=1e-2):
     from anemone.physics import hzdt_halfspace_center_circle_loop
     from anemone import constants as c
     name = ForwardMaker.__name__
-    radius = 10.
+    radius = 1.
     #lp = Loop.circle(radius, n=8)
-    lp = Loop.square((c.pi*100)**(1/2))
+    lp = Loop.square((c.pi*radius*radius)**(1/2))
     rx = Receiver()
     times = torch.logspace(-6, 0, 101, dtype=torch.double)
 
@@ -133,6 +133,10 @@ def check_halfspace_circle_center(ForwardMaker, rtol=1e-2):
         plt.show()
     assert torch.allclose(dbdt_analytic.real, dbdt.real), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
 
+def test_halfspac_circle_center_ForwardHankel():
+    from anemone.forwards import ForwardHankel7
+    check_halfspace_circle_center(ForwardHankel7)
+
 def test_halfspace_circle_center():
     from anemone.experiment import Loop, Receiver
     from anemone.physics import hzdt_halfspace_center_circle_loop
@@ -140,7 +144,7 @@ def test_halfspace_circle_center():
     from anemone import constants as c
     name = 'Central Circular Loop'
 
-    radius = 10.
+    radius = 1.
     
     
     times = torch.logspace(-6, 0, 51, dtype=torch.double)
@@ -185,8 +189,6 @@ def test_halfspace_circle_center():
         plt.show()
     assert torch.allclose(dbdt_analytic.real, dbdt.real), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
 
-# if __name__ == '__main__':
-#     test_halfspace_circle_center()
 
 def compare_two_Forwards(Forward1, Forward2, rtol=1e-2):
     from anemone.experiment import Loop, Receiver
@@ -328,6 +330,11 @@ def test_40x40_aarhusInv_stepoff_laplace():
 def test_40x40_aarhusInv_stepoff_preint():
     from anemone.forwards import ForwardLaplace6
     aarhusInv_stepoff_comparison(ForwardLaplace6)
+
+def test_40x40_aarhusInv_stepoff_preint2():
+    from anemone.forwards import ForwardHankel7
+    aarhusInv_stepoff_comparison(ForwardHankel7)
+
 
 def test_40x40_aarhusInv_stepoff_laplace7():
     from anemone.forwards import ForwardLaplace7
@@ -829,10 +836,13 @@ if __name__ == '__main__':
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_stepoff_laplace()
-    # test_40x40_aarhusInv_stepoff()
+    test_40x40_aarhusInv_stepoff()
     # test_40x40_aarhusInv_stepoff_preint()
     # test_40x40_aarhusInv_stepoff_laplace7()
-    test_40x40_aarhusInv_piecewise_laplace7()
+    # test_40x40_aarhusInv_piecewise_laplace7()
+#    test_40x40_aarhusInv_stepoff_preint2()
+    # test_halfspace_circle_center()
+    # test_halfspac_circle_center_ForwardHankel()
 #    test_40x40_aarhusInv_piecewise_waveform_preint()
     # test_multirx_Laplace3()
     # test_colecole_forwardTD()

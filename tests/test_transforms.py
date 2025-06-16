@@ -318,6 +318,7 @@ if __name__ == '__main__':
     # test_spline_integration()
     # test_invlaplace()
     # test_fourier_lowerfrequencies()
-    test_invfourier_earlytimes()
+    # test_invfourier_earlytimes()
     # test_invlaplace_Hz_center_of_circular_loop_halfspace()
     # test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
+    test_invlaplace_Hz_center_of_circular_loop_halfspace()
