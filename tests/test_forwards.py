@@ -157,7 +157,8 @@ def test_halfspace_circle_center():
 
     dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius)*c.mu0
     
-    if __name__ == '__main__':
+    # if __name__ == '__main__':
+    if True:
         
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
@@ -314,6 +315,7 @@ def test_forwardlaplace3_parallel_models():
 def test_40x40_aarhusInv_stepoff():
     from anemone.forwards import Forward
     aarhusInv_stepoff_comparison(Forward)
+# test_40x40_aarhusInv_stepoff()
 
 def test_40x40_aarhusInv_stepoff_geomop():
     from anemone.forwards import ForwardGeomOp
@@ -332,8 +334,8 @@ def test_40x40_aarhusInv_stepoff_preint():
     aarhusInv_stepoff_comparison(ForwardLaplace6)
 
 def test_40x40_aarhusInv_stepoff_preint2():
-    from anemone.forwards import ForwardHankel7
-    aarhusInv_stepoff_comparison(ForwardHankel7)
+    from anemone.forwards import ForwardLaplace7
+    aarhusInv_stepoff_comparison(ForwardLaplace7)
 
 
 def test_40x40_aarhusInv_stepoff_laplace7():
@@ -833,27 +835,6 @@ def test_multireceiver_frequency_domain():
 
 
 if __name__ == '__main__':
-    # test_Laplace_40x40_aarhusInv_piecewise_waveform()
-    # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
-    # test_40x40_aarhusInv_stepoff_laplace()
-    test_40x40_aarhusInv_stepoff()
     # test_40x40_aarhusInv_stepoff_preint()
-    # test_40x40_aarhusInv_stepoff_laplace7()
-    # test_40x40_aarhusInv_piecewise_laplace7()
-#    test_40x40_aarhusInv_stepoff_preint2()
-    # test_halfspace_circle_center()
-    # test_halfspac_circle_center_ForwardHankel()
-#    test_40x40_aarhusInv_piecewise_waveform_preint()
-    # test_multirx_Laplace3()
-    # test_colecole_forwardTD()
-    # test_mpaforwardTD()
-    # test_Laplace_40x40_aarhusInv_piecewise_waveform()
-    # test_40x40_aarhusInv_stepoff_laplace()
-    # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
-    # test_Laplace3_40x40_aarhusInv_piecewise_waveform()
-    # test_forwardlaplace3_parallel_models()
-    # test_Laplace2_40x40_aarhusInv_piecewise_waveform()
-    
-    # test_colecole_parallel_models()
-    # test_halfspace_circle_center_Forward()
-    exit()
+    test_40x40_aarhusInv_stepoff_preint2()
+    # exit()

@@ -533,9 +533,9 @@ class Hankel:
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
         hkl = hankel_coefficients(order, log10min, log10max, smp_per_decade, omega_0)
-        if tolerance is not None:
-            idxmin, idxmax = coefficient_bounds(hkl[1].cpu().numpy(), tolerance=tolerance)
-            hkl = hkl[0][idxmin:idxmax], hkl[1][idxmin:idxmax]
+        # if tolerance is not None:
+        #     idxmin, idxmax = coefficient_bounds(hkl[1].cpu().numpy(), tolerance=tolerance)
+        #     hkl = hkl[0][idxmin:idxmax], hkl[1][idxmin:idxmax]
         self.tolerance = tolerance
 
         self.func_results = None       
@@ -651,7 +651,7 @@ class Hankel:
         r = r if isinstance(r, torch.Tensor) else torch.tensor(r, device=self.device)
         return self.interpfunc(r)#.to(self.device)
     
-    def preintegrate(self, GeomOperator, rmin, rmax, tolerance=None):
+    def preintegrate(self, GeomOperator, rmin, rmax):
         if self.func_results is None:
             self.func_results = self.func(self.lamda)
             if not self.lambda_included: 
@@ -682,8 +682,8 @@ class Hankel:
                 i_offset *= -1
                 FC[i_offset:] += geomz[i]*self.fc[..., :-i_offset] / rout[i]
         
-        if tolerance is not None:
-            idxmin, idxmax = coefficient_bounds(FC.cpu().numpy(), tolerance=tolerance)
+        if self.tolerance is not None:
+            idxmin, idxmax = coefficient_bounds(FC.cpu().numpy(), tolerance=self.tolerance)
             idx_slice = slice(idxmin, idxmax)
         else:
             idx_slice = slice(None, None)
@@ -695,10 +695,10 @@ class Fourier(Hankel):
         See Johansen and Sorensen 1979 - Fast Hankel Transforms eq.  87 + 88
     """
         
-    def __init__(self, func, log10min=-10, log10max=10, smp_per_decade=16, device=None, range=None):
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None, range=None, tolerance=None):
         def f1(lamda):
             return func(lamda/c.sqrt_twopi)/torch.sqrt(lamda)
-        super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device, None, )
+        super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device, None)
         self.lambda_included = False
         _, realfc = hankel_coefficients(-0.5, log10min, log10max, smp_per_decade, omega_0=0.6221)
         _, imagfc = hankel_coefficients( 0.5, log10min, log10max, smp_per_decade, omega_0=0.6221)
@@ -744,7 +744,7 @@ class Fourier(Hankel):
         rout = self.idx_to_r(i_offsets).to(self.lamda.dtype)
         return i_offsets, rout, self.r2f(rout)
 
-    def preintegrate(self, timeOperator, tmin, tmax, tolerance=None):
+    def preintegrate(self, timeOperator, tmin, tmax):
         i_offsets, rout, tout = self.calc_tvals(tmin, tmax)
         Wmat = timeOperator(tout).to(torch.complex128)
 
@@ -774,10 +774,10 @@ class Fourier(Hankel):
                 FC[..., i_offset:] += Wmat[..., i, None]*self.fc[:-i_offset]*sqRout[i]/rout[i]
         
         
-        if tolerance is not None:
+        if self.tolerance is not None:
             idxmin, idxmax = FC.shape[-1]-1, 0
             for i in range(len(FC)):
-                cimin,cimax = coefficient_bounds(FC[i].cpu().numpy(), tolerance=tolerance)
+                cimin,cimax = coefficient_bounds(FC[i].cpu().numpy(), tolerance=self.tolerance)
                 idxmin = min(idxmin, cimin)
                 idxmax = max(idxmax, cimax)
 
@@ -788,10 +788,11 @@ class Fourier(Hankel):
 
 
 class invFourier(Fourier):
-    def __init__(self, func, log10min=-30, log10max=20, smp_per_decade=10, device=None, range=None):
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None, range=None, tolerance=None):
         super().__init__(func, log10min, log10max, smp_per_decade, device, None)
         self.lambda_included = False        
         self.fc = self.fc.real - 1j*self.fc.imag
+        self.tolerance = tolerance
         if range is not None:
             self._recenter_function(range)
             self.create_interpolator(range[0], range[1])
