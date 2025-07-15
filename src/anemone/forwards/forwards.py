@@ -48,6 +48,16 @@ def gating_matrix(t_sampled, t_st, t_end, n_eval=1000):
         gate_matrix += lamontagne((t_eval[:, None]-logT[None, :])/dT)
     return gate_matrix/n_eval
 
+def logify_forward(cls):
+    class LogFwr(cls):
+        def __call__(self, *args, **kwargs):
+            if not kwargs.get('jac', False):
+                return super().__call__(*args, **kwargs).log10()
+            else:
+                return super().__call__(*args, **kwargs)
+    return LogFwr
+
+
 class BaseForward:
     """ Has everything that the Forward needs, but is very slow. 
         Good for understanding the physics, but not for production use.

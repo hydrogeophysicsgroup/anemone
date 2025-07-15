@@ -4,7 +4,7 @@ import torch
 class Resistivity(BaseModel):
     def __init__(self, values, **kwargs):
         res_bnds = kwargs.pop('res_bnds', (1e-1, 2e4))
-        thk_bnds = kwargs.pop('thk_bnds', (1, 60))        
+        thk_bnds = kwargs.pop('thk_bnds', (1, 100))
         
         if not isinstance(values, list):
             values = [values]
@@ -45,3 +45,13 @@ class MPA(BaseModel):
 
 LogResistivity = logify(Resistivity)
 LogMPA = logify(MPA)
+
+def fastjacobian(cls):
+    class FastJacobian(cls):
+        def jacobian(self, mvec):
+            rho, thick = self.model.modelize(mvec)
+            G = self.forward(rho, thick, jac=True)
+            G *= rho[:, None]
+            G /= 10**self.data_predicted
+            return G.T
+    return FastJacobian
