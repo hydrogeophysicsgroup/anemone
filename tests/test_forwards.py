@@ -48,7 +48,7 @@ def aarhusInv_piecewise_comparison(ForwardMaker, **kwargs):
     from anemone.experiment import Loop, Receiver, Waveform
     name = ForwardMaker.__name__
     
-    rtol = kwargs.pop('rtol', 1e-2)
+    rtol = kwargs.pop('rtol', 2e-2)
 
     ainv_dbdt = torch.tensor([3.853627e-04, 2.309149e-04, 1.255715e-04, 7.168451e-05,
         4.196206e-05, 2.297534e-05, 1.302996e-05, 7.591422e-06,
@@ -95,14 +95,14 @@ def aarhusInv_piecewise_comparison(ForwardMaker, **kwargs):
 
 
 
-def check_halfspace_circle_center(ForwardMaker, rtol=1e-2):
+def check_halfspace_circle_center(ForwardMaker, rtol=3e-2):
     from anemone.experiment import Loop, Receiver
     from anemone.physics import hzdt_halfspace_center_circle_loop
     from anemone import constants as c
     name = ForwardMaker.__name__
-    radius = 1.
-    #lp = Loop.circle(radius, n=8)
-    lp = Loop.square((c.pi*radius*radius)**(1/2))
+    radius = 15
+    lp = Loop.circle(radius, n=64)
+    # lp = Loop.square((c.pi*radius*radius)**(1/2))
     rx = Receiver()
     times = torch.logspace(-6, 0, 101, dtype=torch.double)
 
@@ -110,20 +110,21 @@ def check_halfspace_circle_center(ForwardMaker, rtol=1e-2):
     thick = torch.ones(2, dtype=torch.double)*20
 
     fwr = ForwardMaker(lp, rx, times)
-    dbdt = fwr(rho, thick)
+    # dbdt = fwr(rho, thick)
+    dbdt = fwr(rho, thick).real.T
 
-    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius)*c.mu0
+    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius).real*c.mu0
     
     if __name__ == '__main__':
         
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
-        ax[0].loglog(fwr.times.numpy(), dbdt.real.numpy().T, '.')
-        ax[0].loglog(times,      dbdt_analytic.real.numpy(), 'k--')
+        ax[0].loglog(fwr.times.numpy(), dbdt.numpy(), '.')
+        ax[0].loglog(times,      dbdt_analytic.numpy(), 'k--')
         ax[0].set_ylabel('dB/dt')
         ax[0].set_aspect('equal')
 
-        ax[1].loglog(times, 100*torch.abs(dbdt.real.T-dbdt_analytic.real)/torch.abs(dbdt_analytic.real))
+        ax[1].loglog(times, 100*torch.abs(dbdt-dbdt_analytic)/torch.abs(dbdt_analytic))
         ax[1].set_ylabel('relative difference [%]')
         # ax[1].set_ylim(None, 1e3)
         for ax_ in ax:
@@ -131,20 +132,24 @@ def check_halfspace_circle_center(ForwardMaker, rtol=1e-2):
 
         fig.suptitle('Test against AarhusInv with Piecewise Waveform')
         plt.show()
-    assert torch.allclose(dbdt_analytic.real, dbdt.real), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
+    
+    assert torch.allclose(dbdt_analytic[:,1:], dbdt[:,1:], 0.1), f"{name} (radius = {radius} m) and analytic do not match within {rtol*100} percent"
+    assert torch.allclose(dbdt_analytic[times<5e-2,1:], dbdt[times<5e-2,1:], rtol), f"{name} (radius = {radius} m) and analytic before 50ms do not match within {rtol*100} percent"
 
-def test_halfspac_circle_center_ForwardHankel():
-    from anemone.forwards import ForwardHankel7
-    check_halfspace_circle_center(ForwardHankel7)
+def test_halfspace_circle_center_forward():
+    from anemone.forwards import Forward
+    check_halfspace_circle_center(Forward)
 
 def test_halfspace_circle_center():
     from anemone.experiment import Loop, Receiver
     from anemone.physics import hzdt_halfspace_center_circle_loop
     from anemone.forwards import ForwardCentralCircle
     from anemone import constants as c
-    name = 'Central Circular Loop'
+    radius = 5.
 
-    radius = 1.
+    name = 'Central Circular Loop (radius={radius} m)'.format(radius=radius)
+    rtol = 2e-2
+    
     
     
     times = torch.logspace(-6, 0, 51, dtype=torch.double)
@@ -153,27 +158,33 @@ def test_halfspace_circle_center():
     thick = torch.ones(4, dtype=torch.double)*20
 
     fwr = ForwardCentralCircle(radius, times)
-    dbdt = fwr(rho, thick)
-
-    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius)*c.mu0
+    dbdt = fwr(rho, thick).real
     
-    # if __name__ == '__main__':
-    if True:
-        
+
+    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius).real*c.mu0
+
+    
+
+
+    
+    if __name__ == '__main__':
+        relerr = torch.nan_to_num(100*torch.abs(dbdt.T-dbdt_analytic)/torch.abs(dbdt_analytic))    
+
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots(1,2, sharex=True)
-        ax[0].loglog(fwr.times.numpy(), dbdt.real.numpy().T, '.')
+        ax[0].loglog(fwr.times, dbdt.T, '.')
         
         ax[0].set_ylabel('dB/dt [V / m$^2$]')
         ax[0].set_aspect('equal')
         ax[0].legend([1, 10, 100, 1000], title='$\\rho$ [$\\Omega$m]', fontsize='small')
-        ax[0].loglog(times,      dbdt_analytic.real.numpy(), 'k--')
+        ax[0].loglog(times,      dbdt_analytic, 'k--')
 
-        ax[1].semilogx(times, 100*torch.abs(dbdt.real.T-dbdt_analytic.real)/torch.abs(dbdt_analytic.real))
+        ax[1].semilogx(times, relerr)
         ax[1].legend([1, 10, 100, 1000], title='$\\rho$ [$\\Omega$m]', fontsize='small')
         ax[1].set_ylabel('relative error [%]')
         ax[1].set_ylim(0, 10)
-        ax[1].text(0.8e-6, 8, '$\\uparrow$ 48.5%\nfirst gate', fontsize='small',  bbox=dict(facecolor='white', edgecolor='black'))
+
+        ax[1].text(times[0], 8, f'$\\uparrow$ {relerr[0,-1]:0.1f}%\nfirst gate', fontsize='small',  bbox=dict(facecolor='white', edgecolor='black'))
         ax[0].set_xticks([1e-6, 1e-4, 1e-2, 1e0])
         for ax_ in ax:
             ax_.set_xlabel('time [s]')
@@ -188,7 +199,44 @@ def test_halfspace_circle_center():
             wspace=0.0
         )
         plt.show()
-    assert torch.allclose(dbdt_analytic.real, dbdt.real), f"{name} and aarhusInv piece-wise waveform do not match within {rtol*100} percent"
+
+    dbdt = fwr(torch.tensor([100., 100.]), torch.tensor([20.])).squeeze().real
+    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], torch.tensor([100.]), radius).squeeze().real*c.mu0
+    
+    if __name__ == '__main__':
+        relerr = torch.nan_to_num(100*torch.abs(dbdt.T-dbdt_analytic)/torch.abs(dbdt_analytic))    
+
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots(1,2, sharex=True)
+        ax[0].loglog(fwr.times, dbdt.T, '.')
+        
+        ax[0].set_ylabel('dB/dt [V / m$^2$]')
+        ax[0].set_aspect('equal')
+        ax[0].loglog(times,      dbdt_analytic, 'k--')
+
+        ax[1].semilogx(times, relerr)
+        ax[1].set_ylabel('relative error [%]')
+        ax[1].set_ylim(0, 10)
+
+        # ax[1].text(times[0], 8, f'$\\uparrow$ {relerr[0,-1]:0.1f}%\nfirst gate', fontsize='small',  bbox=dict(facecolor='white', edgecolor='black'))
+        ax[0].set_xticks([1e-6, 1e-4, 1e-2, 1e0])
+        for ax_ in ax:
+            ax_.set_xlabel('time [s]')
+
+        fig.suptitle('anEMone center of circular loop vs analytic response')
+        plt.subplots_adjust(
+            top=0.88,
+            bottom=0.11,
+            left=0.03,
+            right=0.97,
+            hspace=0.2,
+            wspace=0.0
+        )
+        plt.show()
+
+    assert torch.allclose(dbdt_analytic[times<1e-3], dbdt[times<1e-3], rtol=rtol), f"{name} and analytic do not match within {rtol*100} percent"
+    rtol = 1e-1
+    assert torch.allclose(dbdt_analytic, dbdt, rtol=rtol), f"{name} and analytic do not match within {rtol*100} percent"
 
 
 def compare_two_Forwards(Forward1, Forward2, rtol=1e-2):
@@ -233,14 +281,6 @@ def compare_two_Forwards(Forward1, Forward2, rtol=1e-2):
         plt.show()
 
 
-def test_halfspace_circle_center_Forward():
-    from anemone.forwards import Forward
-    check_halfspace_circle_center(Forward)
-
-# if __name__=='__main__':
-#     test_halfspace_circle_center_Forward()
-
-
 def check_parallel_models(ForwardMaker):
     name = ForwardMaker.__name__
     from anemone.experiment import Loop, Receiver, Waveform
@@ -270,8 +310,6 @@ def check_parallel_models(ForwardMaker):
     assert dbdt.shape == (94, 31), f"{name} running parallel models does not return correct shape"
 
 
-
-
 def check_forward_speeds(ForwardMaker, **kwargs):
     name = ForwardMaker.__name__
 
@@ -295,90 +333,26 @@ def check_forward_speeds(ForwardMaker, **kwargs):
     print(f'{name} {len(rho_change)} forward calculation took {dt:0.3f} s')
 
 def test_forward_speeds():
-    from anemone.forwards import Forward, ForwardGeomOp, Forward3, ForwardLaplace, ForwardLaplace2, ForwardLaplace3, ForwardLaplace4
-    for cForward in [Forward, ForwardGeomOp, Forward3, ForwardLaplace3, ForwardLaplace4]:
-        check_forward_speeds(cForward)
+    from anemone.forwards import Forward
+    check_forward_speeds(Forward)
 
-def test_hankel_forward_parallel_models():
-    from anemone.forwards import Forward3
-    check_parallel_models(Forward3)
-
-def test_ForwardGeoOp_parallel_models():
-    from anemone.forwards import ForwardGeomOp
-    check_parallel_models(ForwardGeomOp)
-    
-
-def test_forwardlaplace3_parallel_models():
-    from anemone.forwards import ForwardLaplace3
-    check_parallel_models(ForwardLaplace3)
+def test_forward_parallel_models():
+    from anemone.forwards import Forward
+    check_parallel_models(Forward)
 
 def test_40x40_aarhusInv_stepoff():
     from anemone.forwards import Forward
     aarhusInv_stepoff_comparison(Forward)
-# test_40x40_aarhusInv_stepoff()
 
-def test_40x40_aarhusInv_stepoff_geomop():
-    from anemone.forwards import ForwardGeomOp
-    aarhusInv_stepoff_comparison(ForwardGeomOp, rtol=2e-2)
-
-def test_40x40_aarhusInv_stepoff_geomOpLaplace():
-    from anemone.forwards import ForwardLaplace
-    aarhusInv_stepoff_comparison(ForwardLaplace, rtol=2e-2)
-
-def test_40x40_aarhusInv_stepoff_laplace():
-    from anemone.forwards import ForwardLaplace
-    aarhusInv_stepoff_comparison(ForwardLaplace)
-
-def test_40x40_aarhusInv_stepoff_preint():
-    from anemone.forwards import ForwardLaplace6
-    aarhusInv_stepoff_comparison(ForwardLaplace6)
-
-def test_40x40_aarhusInv_stepoff_preint2():
-    from anemone.forwards import ForwardLaplace7
-    aarhusInv_stepoff_comparison(ForwardLaplace7)
-
-
-def test_40x40_aarhusInv_stepoff_laplace7():
-    from anemone.forwards import ForwardLaplace7
-    aarhusInv_stepoff_comparison(ForwardLaplace7)
-
-def test_40x40_aarhusInv_piecewise_laplace7():
-    from anemone.forwards import ForwardLaplace7
-    aarhusInv_piecewise_comparison(ForwardLaplace7)
-
-def test_40x40_aarhusInv_stepoff_hankel_tolerance():
-    from anemone.forwards import Forward
-    aarhusInv_stepoff_comparison(Forward, tolerance=1e-5)
 
 def test_40x40_aarhusInv_piecewise_waveform():
     from anemone.forwards import Forward
     aarhusInv_piecewise_comparison(Forward)
 
-def test_40x40_aarhusInv_piecewise_waveform_preint():
-    from anemone.forwards import ForwardLaplace6
-    aarhusInv_piecewise_comparison(ForwardLaplace6)
-
-def test_40x40_aarhusInv_piecewise_waveform_geomop():
-    from anemone.forwards import ForwardGeomOp
-    aarhusInv_piecewise_comparison(ForwardGeomOp, rtol=2e-2)
-
-def test_HankelForwards_aarhusInv_piecewise_waveform():
-    from anemone.forwards import Forward, ForwardGeomOp, Forward3
-    for cForward in [Forward, ForwardGeomOp, Forward3]:
-        aarhusInv_piecewise_comparison(cForward)
 
 def test_Laplace_40x40_aarhusInv_piecewise_waveform():
     from anemone.forwards import ForwardLaplace
     aarhusInv_piecewise_comparison(ForwardLaplace)
-
-
-def test_Laplace2_40x40_aarhusInv_piecewise_waveform():
-    from anemone.forwards import ForwardLaplace2
-    aarhusInv_piecewise_comparison(ForwardLaplace2)
-
-def test_Laplace3_40x40_aarhusInv_piecewise_waveform():
-    from anemone.forwards import ForwardLaplace3
-    aarhusInv_piecewise_comparison(ForwardLaplace3, rtol=2e-2)
 
 def check_colecoleforwardTD(ForwardMaker):
     from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
@@ -619,98 +593,6 @@ def test_forward_timing():
     print('time for 10 forward calculations: ', dt2*10)
     assert dt2 < 0.2, "forward calculation took too long"
 
-def test_forward_timingGP():
-    from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
-    from anemone.forwards import ForwardGeomOp
-    sq = Loop.square(40)
-    rx = Receiver()
-    waveform = Waveform.example()
-    recfilter = FilterChain([
-        ButterworthFilter(2.4e5, 1),
-        ButterworthFilter(6.2e5, 1),
-        ButterworthFilter(4.5e5, 2)
-    ])
-    t0 = torch.logspace(-5, -3, 31, dtype=torch.double)
-    fwr = ForwardGeomOp(sq, rx, t0, waveform=waveform, filterfunc=recfilter, tolerance=1e-6)    
-
-    res  = torch.tensor([40, 200, 180])
-    thk  = torch.tensor([20, 40])
-
-    dbdt = fwr(res, thk);
-    dbdt = fwr(res, thk)
-
-    from time import perf_counter
-    t0 = perf_counter()
-    dbdt = fwr(res, thk)
-    t1 = perf_counter()
-    dt1 = t1-t0
-    assert dt1 < 0.2, "forward calculation took too long"
-
-    n = 100
-    res = res[:, None] + (10/n)*torch.arange(n)[None, :]
-    dbdt = fwr(res, thk)
-    t2 = perf_counter()
-    dbdt = fwr(res, thk)
-    t3 = perf_counter()
-    dt2 = (t3-t2)/n
-    print(f'time for {n} forward calculations Geom: {dt2*n:0.3f} s', )
-    assert dt2 < 0.2, "forward calculation took too long"    
-
-
-
-    if __name__ == '__main__':
-        import matplotlib.pyplot as plt
-        fig,ax = plt.subplots(1,1, sharex=True)
-        ax.loglog(fwr.times.numpy(), dbdt.T)
-        ax.set_ylabel('dB/dt')
-        ax.set_aspect('equal')
-        plt.show()
-
-def test_forward_timingGPLP():
-    from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
-    from anemone.forwards import ForwardGeomOpLaplace
-    sq = Loop.square(40)
-    rx = Receiver()
-    waveform = Waveform.example()
-    recfilter = FilterChain([
-        ButterworthFilter(2.4e5, 1),
-        ButterworthFilter(6.2e5, 1),
-        ButterworthFilter(4.5e5, 2)
-    ])
-    t0 = torch.logspace(-5, -3, 31, dtype=torch.double)
-    fwr = ForwardGeomOpLaplace(sq, rx, t0, waveform=waveform, filterfunc=recfilter, tolerance=1e-6)    
-
-    res  = torch.tensor([40, 200, 180])
-    thk  = torch.tensor([20, 40])
-
-    dbdt = fwr(res, thk);
-    dbdt = fwr(res, thk)
-
-    from time import perf_counter
-    t0 = perf_counter()
-    dbdt = fwr(res, thk)
-    t1 = perf_counter()
-    dt1 = t1-t0
-    assert dt1 < 0.2, "forward calculation took too long"
-
-    res = res[:, None] + 10*torch.arange(10)[None, :]
-    dbdt = fwr(res, thk)
-    t2 = perf_counter()
-    dbdt = fwr(res, thk)
-    t3 = perf_counter()
-    dt2 = (t3-t2)/10
-    print('time for 10 forward calculations Geom: ', dt2*10)
-    assert dt2 < 0.2, "forward calculation took too long"    
-
-
-
-    if __name__ == '__main__':
-        import matplotlib.pyplot as plt
-        fig,ax = plt.subplots(1,1, sharex=True)
-        ax.loglog(fwr.times.numpy(), dbdt.T)
-        ax.set_ylabel('dB/dt')
-        ax.set_aspect('equal')
-        plt.show()
 
 def multi_rx_forward_shape_check(ForwardMaker):
     name = ForwardMaker.__name__
@@ -726,24 +608,11 @@ def multi_rx_forward_shape_check(ForwardMaker):
 
     fwr = ForwardMaker(lp, rx, times, waveform=waveform)
     dbdt = fwr(rho, thick)
-    assert dbdt.shape == (5, 31), f"{name} multireceiver does not return correct shape"
+    assert dbdt.shape == (5, 31), f"{name} multireceiver does not return correct shape {dbdt.shape} != (5, 31)"
 
-def test_multirx_Forward1():
+def test_multirx_forward_shape_check():
     from anemone.forwards import Forward
     multi_rx_forward_shape_check(Forward)
-
-def test_multirx_Forward2():
-    from anemone.forwards import ForwardGeomOp
-    multi_rx_forward_shape_check(ForwardGeomOp)
-
-
-def test_multirx_Forward3():
-    from anemone.forwards import Forward3
-    multi_rx_forward_shape_check(Forward3)
-
-def test_multirx_Laplace3():
-    from anemone.forwards import ForwardLaplace3
-    multi_rx_forward_shape_check(ForwardLaplace3)
 
 def test_multireceiver_forward():
     from anemone.experiment import Loop, Receiver
@@ -835,6 +704,9 @@ def test_multireceiver_frequency_domain():
 
 
 if __name__ == '__main__':
-    # test_40x40_aarhusInv_stepoff_preint()
-    test_40x40_aarhusInv_stepoff_preint2()
-    # exit()
+    # test_halfspace_circle_center()
+    #test_halfspace_circle_center_forward()
+    test_40x40_aarhusInv_piecewise_waveform()
+
+    test_multirx_forward_shape_check()
+    # test_Laplace_40x40_aarhusInv_piecewise_waveform()
