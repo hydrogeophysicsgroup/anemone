@@ -179,7 +179,7 @@ def test_lci():
     for i, (mtrue, res_mod) in enumerate(zip(m_trues, res_mods)):
         result.append(Log.standard(res_mod.values[0].log10(), z, 'rho', xy=(i,0)))
         cres,thick = mtrue.mod
-        actual.append(Log.standard(cres.log10(), np.cumsum(thick), 'rho', bottom=160., xy=(i,0)))
+        actual.append(Log.standard(cres.log10(), np.cumsum(thick), 'rho', xy=(i,0)))
     result = Section(result)
     actual = Section(actual)
     result.plot(axs=ax[0], cmap='turbo', vmin=0, vmax=2)

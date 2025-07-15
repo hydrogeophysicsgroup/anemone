@@ -702,8 +702,8 @@ class Fourier(Hankel):
         self.lambda_included = False
         _, realfc = hankel_coefficients(-0.5, log10min, log10max, smp_per_decade, omega_0=0.6221)
         _, imagfc = hankel_coefficients( 0.5, log10min, log10max, smp_per_decade, omega_0=0.6221)
-        imagfc = imagfc.to(self.fc.device)
-        self.fc = torch.complex(realfc, -1*imagfc)
+        # imagfc = imagfc
+        self.fc = torch.complex(realfc, -1*imagfc).to(self.fc.device)
         self.f1 = f1
        
 
