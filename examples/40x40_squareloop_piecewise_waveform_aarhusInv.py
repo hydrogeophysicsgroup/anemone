@@ -1,4 +1,5 @@
-from anemone.experiment import Loop, Receiver, Forward, Waveform
+from anemone.experiment import Loop, Receiver, Waveform
+from anemone.forwards import Forward
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -24,12 +25,12 @@ waveform = Waveform(t, wv)
 lp = Loop.square(40)
 rx = Receiver()
 
-rho = 40
-sigma = 1/torch.tensor([rho,rho])
+
+rho = torch.ones(2)*40.
 thick = torch.tensor([10])
 
 fwr = Forward(lp, rx, times, waveform=waveform)
-dbdt = fwr(sigma, thick);
+dbdt = fwr(rho, thick);
 
 fig,ax = plt.subplots(1,2, sharex=True)
 ax[0].loglog(fwr.times.numpy(), dbdt.real, label='mforward')

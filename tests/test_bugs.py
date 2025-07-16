@@ -87,7 +87,7 @@ def test_multirx():
 
 def test_multirx_symmetry():
     tx = Loop.square(2)
-    from anemone.forwards import Forward3
+    from anemone.forwards import BaseForward
     import numpy as np
     
     X,Y = torch.linspace(-1, 1, 25)*0.9, np.linspace(-1, 1, 25)*0.9
@@ -100,7 +100,7 @@ def test_multirx_symmetry():
     lm_gates = torch.tensor([1e-5, 2e-5])
 
     rx1 = Receiver(x=X, y=Y)
-    fwr = Forward3(tx,rx1,lm_gates)
+    fwr = BaseForward(tx,rx1,lm_gates)
     dbdt = fwr(rho,thk)
     
 
