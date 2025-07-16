@@ -2,7 +2,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.special import erf
-from biotsavart import mu0
+mu0 = 4*np.pi*1e-7  # H/m
 
 one_tesla_in_amp_per_m = 795774.7
 
@@ -23,13 +23,11 @@ hz = (3.*np.exp(-theta**2 * a**2)/(rtpi*theta*a) + ( 1.-3/(2*theta**2*a**2))*erf
 
 plt.figure()
 plt.loglog(ts, hz.real / one_tesla_in_amp_per_m)
-plt.show()
 
+if __name__ == "__main__":
+    plt.show()
+    ts = 1e-5
+    theta = np.sqrt(0.25*mu0*sigma / ts)
+    hz = (3.*np.exp(-theta**2 * a**2)/(rtpi*theta*a) + ( 1.-3/(2*theta**2*a**2))*erf(theta*a))
 
-
-
-ts = 1e-5
-theta = np.sqrt(0.25*mu0*sigma / ts)
-
-hz = (3.*np.exp(-theta**2 * a**2)/(rtpi*theta*a) + ( 1.-3/(2*theta**2*a**2))*erf(theta*a))
-print(f'hz in A/m: {hz / one_tesla_in_amp_per_m}')
+    print(f'hz in A/m: {hz / one_tesla_in_amp_per_m}')

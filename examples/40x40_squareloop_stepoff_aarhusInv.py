@@ -1,4 +1,5 @@
-from anemone.experiment import Loop, Receiver, Forward
+from anemone.experiment import Loop, Receiver
+from anemone.forwards import Forward
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -34,4 +35,5 @@ ax[0].set_aspect('equal')
 ax[1].semilogx(times, 100*np.abs(dbdt.real-ainv_dbdt)/np.abs(ainv_dbdt))
 ax[1].set_ylabel('relative difference [%]')
 
-plt.show()
+if __name__ == "__main__":
+    plt.show()

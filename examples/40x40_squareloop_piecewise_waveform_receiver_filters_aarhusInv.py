@@ -1,4 +1,5 @@
-from anemone.experiment import Loop, Receiver, Forward, Waveform, ButterworthFilter, FilterChain
+from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
+from anemone.forwards import Forward
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -43,4 +44,5 @@ ax[1].set_ylabel('relative difference [%]')
 
 fig.suptitle('Comparison with AarhusInv with Piecewise Waveform')
 
-plt.show()
+if __name__ == "__main__":
+    plt.show()

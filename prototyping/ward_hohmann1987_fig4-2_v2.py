@@ -1,59 +1,65 @@
 from anemone import transforms
 from anemone import physics
-import numpy as np
+import torch
 import matplotlib.pyplot as plt
 
-mu0 = np.pi*4e-7
+mu0 = torch.pi*4e-7
 epsilon0 = 8.854187817e-12
 
 # using values from the example in Fig 4.2
 rho = 100.                   # meters
 sigma = 1./100.            # 1/ohm-m
-frqs = np.logspace(-6, 5, 501)  # Hz
-omega = 2*np.pi*frqs           # radians
+frqs = torch.logspace(-6, 5, 501)  # Hz
+omega = 2*torch.pi*frqs           # radians
 
 
 hz_analytical = physics.halfspace_vmd(omega, sigma, rho)
 
-wave_length = np.logspace(-5, 5, 501)
+wave_length = torch.logspace(-5, 5, 501)[None, :, None]
 
-rte = physics.refl_transverse_electric(np.ones(31)*sigma+np.random.randn(31), np.geomspace(0.5, 300., 30), wave_length, omega[250:251])[0]
+rho = torch.ones(31)*rho+torch.randn(31)
+thk = torch.logspace(0, 1, 30)
+
+
+
+rte = physics.refl_transverse_electric(rho[:, None, None], thk[:, None, None], wave_length, omega[250:251])[0]
 
 def calc_rte_halfspace(omega, sigma, wave_length, epsilon=None, mu=None):
     if epsilon is None:
-        epsilon = epsilon0*np.ones_like(sigma)
+        epsilon = epsilon0*torch.ones_like(sigma)
     if mu is None:
-        mu = mu0*np.ones_like(sigma)
+        mu = mu0*torch.ones_like(sigma)
 
     lambda_sqrd = wave_length*wave_length
     K1_sqrd     = mu*omega*(epsilon*omega-1j*sigma)
-    u1          = np.sqrt(lambda_sqrd-K1_sqrd)
+    u1          = torch.sqrt(lambda_sqrd-K1_sqrd)
     rte         = (wave_length-u1)/(wave_length+u1)
     return rte
 
-rte2 = calc_rte_halfspace(omega[250], sigma, wave_length)
+rte2 = calc_rte_halfspace(omega[250], 1./rho, wave_length)
 
 
-hz_analytical = physics.halfspace_vmd(omega, sigma, rho)
+hz_analytical = physics.halfspace_vmd(rho[:, None], omega, 100.)
 
-cond_z = np.abs(np.ones(31)*sigma+np.random.randn(31))
-z = np.geomspace(0.5, 300, 31)
-thick = np.diff(z)
+# cond_z = torch.abs(torch.ones(31)*sigma+torch.randn(31))
+# thick = thk
 
-plt.figure()
-plt.plot(cond_z, z)
-plt.show()
+# plt.figure()
+# plt.plot(cond_z, torch.cumsum(thick, dim=0))
+
+if __name__ == "__main__":
+    plt.show()
 
 def hank_integrand(wave_length):
     rte = physics.refl_transverse_electric(cond_z, thick, wave_length, omega)
     u0  = physics.freespace_u0(omega, wave_length)
-    return np.nan_to_num(((1+rte)*wave_length**3)/u0)
+    return torch.nan_to_num(((1+rte)*wave_length**3)/u0)
 
 from time import perf_counter_ns as timer
 
 bt = timer()
 Hkl_rte1 = transforms.Hankel(hank_integrand, 0)
-hz = Hkl_rte1(100)/(2*np.pi)
+hz = Hkl_rte1(torch.tensor100)/(2*torch.pi)
 print(f'forward time: {(timer()-bt)/1e6} ms')
 
 
@@ -74,7 +80,9 @@ ax.set_ylim(1e-12, 1e-6)
 # ax.set_xlim(1e-1, 1e5)
 ax.set_title('numerical')
 plt.tight_layout()
-plt.show()
+
+if __name__ == "__main__":
+    plt.show()
 
 # fig, axs = plt.subplots(1, 2, figsize=(8, 4))
 # ax = transforms.plot_loglog(wave_length, rte, ax=axs[0])

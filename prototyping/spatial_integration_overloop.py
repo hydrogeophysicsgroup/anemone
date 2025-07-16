@@ -1,4 +1,4 @@
-import numpy as np
+import torch
 import matplotlib.pyplot as plt
 from anemone.experiment import Loop, Receiver
 from anemone.transforms import Hankel
@@ -11,12 +11,11 @@ rmin = lp.min_horizontal_distance(rx)
 rmax = lp.max_horizontal_distance(rx)
 
 def integrand(wave_length):
-    sigma = np.array([10, 1., 10])[:,None,None]
-    thick = np.array([25, 50])[:,None,None]
-    omega = np.array([100.])[None,:,None]*2*np.pi
+    sigma = torch.tensor([10, 1., 10])[:,None,None]
+    thick =  torch.tensor([25, 50])[:,None,None]
+    omega = torch.tensor([100.])[None,:,None]*2*torch.pi
     lmb = wave_length[None, None, :]
     intg = (1.+rte(sigma, thick, omega, lmb))*lmb**2 / u0(omega, lmb)
-    print(intg.shape)
     return intg
 
 
@@ -24,15 +23,16 @@ hkl = Hankel(integrand, 1)
 r, hr = hkl.range(rmin, rmax)
 from scipy.interpolate import interp1d
 
-int_hr = interp1d(np.log10(r), hr)
+int_hr = interp1d(torch.log10(r), hr)
 
 def hr_interp(r):
-    return int_hr(np.log10(r))
-from anemone.transforms import plot_loglog
+    return int_hr(torch.log10(r))
+
+# from anemone.transforms import plot_loglog
 from anemone.experiment import getRz
-fig,axs = plt.subplots()
-axs = plot_loglog(r, hr, ax=axs)
-axs.set_xscale('linear')
+if __name__ == "__main__":
+    plt.figure()
+    plt.semilogx(r, s)
 from numpy.linalg import norm
 
 
@@ -66,16 +66,15 @@ def integrate_around_loop(lp, rx, hr):
     return HR
 
 hz_loop = integrate_around_loop(lp, Receiver(), hr_interp)
-print(r)
+
 lp = Loop.square(50)
-s = lp.s_of_r(Receiver(), r)
-print(s)
+s = lp.geomz(Receiver(), r)
+
 hz_sr = (hr/r).dot(s+0j)
-fig,axs=plt.subplots()
-# plot_loglog(r, hr*(s+0j) / r, ax=axs)
-plot_loglog(r, s, ax=axs)
-print(hz_loop)
-print(hz_sr)
+if __name__ == "__main__":
+    plt.figure()
+    plt.semilogx(r, s)
+
 lp = Loop.square(50)
 
 xy = np.linspace(-100, 100, 51)
@@ -140,5 +139,5 @@ axs[0].set_xscale('log')
 
 axs[1].hist(np.abs((HZ2-HZ)/HZ2).flatten(), bins=np.linspace(0, 0.5, 25))
 
-
-plt.show()
+if __name__ == "__main__":
+    plt.show()

@@ -43,4 +43,5 @@ ax[1].set_ylabel('relative difference [%]')
 
 fig.suptitle('Comparison with AarhusInv with Piecewise Waveform')
 
-plt.show()
+if __name__ == "__main__":
+    plt.show()
