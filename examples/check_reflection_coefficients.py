@@ -25,6 +25,7 @@ rte_halfspace = (u0-u1)/(u0+u1)
 # rtm_halfspace = (u1*K0_sqrd - u0*K1_sqrd)/(u1*K0_sqrd + u0*K1_sqrd)
 rtm_halfspace = ((u0 - y0*u1/y1) / (u0 + y0*u1/y1)).numpy()
 
+wave_length = wave_length.real
 
 fig,axs = plt.subplots(2,1, sharex=True)
 

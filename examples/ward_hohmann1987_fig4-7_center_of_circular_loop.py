@@ -37,7 +37,7 @@ def rte_halfspace(omega, sigma, wave_length, epsilon=None, mu=None):
 fig,axs = plt.subplots(1,3, sharex=True, sharey=True)
 
 hz_analytical = physics.hz_halfspace_center_circle_loop(rho, omega, 50)
-plot_loglog(frqs, hz_analytical, ax=axs[0])
+plot_loglog(frqs.real, hz_analytical, ax=axs[0])
 axs[0].set_title('analytic solution')
 
 omega = omega[:, None]
@@ -61,7 +61,7 @@ def hankel_integrand(wave_length):
 
 hkl_rte1 = transforms.Hankel(hankel_integrand, 1, smp_per_decade=20)
 hz_circle = rho*hkl_rte1(rho)
-plot_loglog(frqs, hz_circle, ax=axs[1])
+plot_loglog(frqs.real, hz_circle, ax=axs[1])
 axs[1].set_title('numerical integral - simplified integrand')
 
 def hankel_integrand(wave_length):
@@ -72,7 +72,7 @@ def hankel_integrand(wave_length):
 hkl_rte1 = transforms.Hankel(hankel_integrand, 1, smp_per_decade=20)
 hz_circle = 2*torch.pi*rho*hkl_rte1(rho)/(4*torch.pi)
 
-plot_loglog(frqs, hz_circle[-1], ax=axs[2])
+plot_loglog(frqs.real, hz_circle[-1], ax=axs[2])
 axs[2].set_title('numerical integral - full integrand')
 
 for ax in axs:

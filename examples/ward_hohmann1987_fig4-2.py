@@ -37,7 +37,7 @@ def rte1(wave_length):
 
 Hkl_rte1 = transforms.Hankel(rte1, 0)
 hz = (Hkl_rte1(rho)/(2*torch.pi)).numpy()
-
+frqs = frqs.real
 fig, axs = plt.subplots(1, 2, figsize=(8, 4))
 ax = plot_loglog(frqs.numpy(), hz_analytical, ax=axs[0])
 ax.set_ylabel('$H_z$ [A/m]')
