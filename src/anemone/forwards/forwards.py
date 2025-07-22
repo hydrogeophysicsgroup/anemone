@@ -137,14 +137,15 @@ class BaseForward:
                 tmp_u0 = u0(self.omega, self.lamda)
                 intg   = rte(self.sigma, self.thick, self.omega, self.lamda)*torch.exp(-tmp_u0*self.sfield_dz)
                 intg  *= self.lamda#**2 / tmp_u0                
-                if self.waveform is not None:
-                    intg /= -1j*self.omega#.squeeze()
-                if self.filterfunc is not None:
-                    intg *= self.filterfunc.omega_filter(self.omega)
+
                 return intg/c.fourpi
             
             hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device)
             res = integrate_around_loop(self.source, self.receiver, hkl1).squeeze().T
+            if self.waveform is not None:
+                res /= -1j*self.omega.squeeze()
+            if self.filterfunc is not None:
+                res *= self.filterfunc.omega_filter(self.omega).squeeze()
             return res
         ift = invFourier(frq_integrand, smp_per_decade=16, range=(self.tmin, self.tmax), device=self.device)
         _, _, self.t_eval = ift.calc_tvals(self.tmin, self.tmax)
