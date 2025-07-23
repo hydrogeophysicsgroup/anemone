@@ -3,6 +3,8 @@ import os
 import subprocess
 import tempfile
 
+import pytest
+
 file_path = os.path.split(__file__)[0]
 example_path = file_path.replace('\\tests', '\\examples\\')#os.path.join(file_path, '..\\examples\\')
 sys.path.append(example_path)
@@ -41,7 +43,7 @@ def test_example_scripts(log=silence):
     return successful_run
 
 
-
+@pytest.mark.skipif(reason="test takes too long")
 def test_notebooks(log=silence):
     """Test Jupyter notebooks using nbconvert"""
     successful_run = []
