@@ -1,7 +1,7 @@
-import torch
+import numpy as np
 import matplotlib.pyplot as plt
 from anemone.experiment import Loop, Receiver, getRz
-from anemone.transforms import Hankel
+from anemone.transforms import Hankel, Fourier
 from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0
 from numpy.linalg import norm
 
@@ -11,14 +11,19 @@ rx = Receiver()
 rmin = lp.min_horizontal_distance(rx)
 rmax = lp.max_horizontal_distance(rx)
 
-def integrand(wave_length):
-    sigma = torch.tensor([10, 1., 10])[:,None,None]
-    thick = torch.tensor([25, 50])[:,None,None]
-    omega = torch.logspace(-1, 5, 120)[None,:,None]*2*torch.pi
-    #omega = torch.tensor([100])*2*torch.pi
-    lmb = wave_length[None, None, :]
-    intg = (1.+rte(sigma, thick, omega, lmb))*lmb**2 / u0(omega, lmb)
-    return intg
+
+sigma = np.array([10, 1., 10])[:,None,None]
+thick = np.array([25, 50])[:,None,None]
+
+def frq_integrand(omega):
+    def integrand(wave_length):
+        lmb = wave_length[None, None, :]
+        intg = (1.+rte(sigma, thick, omega, lmb))*lmb**2 / u0(omega, lmb)
+        return np.squeeze(intg)
+    hkl = Hankel(integrand, 1)
+    _,hr = hkl.range(rmin, rmax)
+    return hr
+
 
 
 def hr_interp(r):
@@ -33,8 +38,8 @@ def integrate_around_loop(lp, rx, hr):
     n_dipoles = 0
     for i in range(len(lp)-1):
         Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
-        p1 = torch.einsum('...i,...i->...', Rz, lp_xyz[i])
-        p2 = torch.einsum('...i,...i->...', Rz, lp_xyz[i+1])
+        p1 = np.einsum('...i,...i->...', Rz, lp_xyz[i])
+        p2 = np.einsum('...i,...i->...', Rz, lp_xyz[i+1])
 
         p12 = p2-p1
         tdist = norm(p12, axis=-1)
@@ -59,10 +64,8 @@ from time import perf_counter as timer
 from scipy.interpolate import interp1d
 
 bt = timer()
-hkl = Hankel(integrand, 1)
-r, hr = hkl.range(rmin, rmax)
-# int_hr = interp1d(r, hr.T)
+int_hr = interp1d(r, hr.T)
 print(f'dipole time: {timer()-bt} s')
 
-# hz_loop = integrate_around_loop(lp, Receiver(), int_hr)
-# print(f'loop int time: {timer()-bt} s')
+hz_loop = integrate_around_loop(lp, Receiver(), int_hr)
+print(f'loop int time: {timer()-bt} s')

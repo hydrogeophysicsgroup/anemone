@@ -475,6 +475,41 @@ def rte_nbc(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     phi_n = (adm_freespace - adm_intrinsic[0])/(adm_freespace + adm_intrinsic[0])
     return phi_n
 
+def rte_nbc_laplace(sigma, thickness, s, wave_length):
+    """ rte = (Y_0 - hat Y_1)/(Y_0 + hat Y_1) - W&H eq 4.19 (pg 205)
+        where Y_0 is the intrinsic admittance
+        and hat Y_1 is the surface or boundary admittance
+        
+        assumes nd-arrays have been appropriately broadcasted with axis ordered as:
+        sigma, omega, wave_length
+
+    Args:
+        sigma         (nd-array): conductivity of each layer
+        thickness     (nd-array): thickness of each layer
+        omega         (nd-array): angular frequency
+        wave_length   (nd-array): wave_length (lambda)
+        mu      (float/nd-array): Defaults to mu0.
+        epsilon (float/nd-array): Defaults to epsilon0.
+
+    Returns:
+        reflection coefficients for transverse electric mode
+    """
+    n_layers=len(sigma)
+
+    lambda2 = wave_length**2
+
+    adm_intrinsic = torch.sqrt(lambda2 + c.mu0*s*sigma)
+    exp2uh = torch.exp(-2.*adm_intrinsic[:-1]*thickness)
+    
+    gamma_n = 0.
+    for i in range(n_layers-2, -1, -1):
+        H = adm_intrinsic[i] + adm_intrinsic[i+1]
+        R = c.mu0*s*(sigma[i] - sigma[i+1])/(H*H)
+        gamma_n = exp2uh[i]*(gamma_n + R)/(1. + gamma_n*R)
+    H = wave_length + adm_intrinsic[0]
+    R = -c.mu0*s*sigma[0]/(H*H)
+    return (R+gamma_n)/(1.+R*gamma_n)
+
 def calc_prop_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, pad=0):
     thick = torch.vstack([torch.zeros_like(thickness[:1]), thickness])
 
@@ -532,7 +567,7 @@ def calc_dpropmat(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsi
     answer[1,-1:] = 0.
         
     dsigma = sigma.clone()
-    dsigma[::2] *= 1.01
+    dsigma[::2] *= 1.02
     dpropmat = calc_prop_matrix(dsigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)
     dpropmat = torch.roll(dpropmat, -pad//2, dims=2)
 
@@ -547,7 +582,7 @@ def calc_dpropmat(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsi
     drte = torch.einsum('ij...,j...->i...', propmat, drte)
 
     dsigma = sigma.clone()
-    dsigma[1::2] *= 1.01
+    dsigma[1::2] *= 1.02
     dpropmat = calc_prop_matrix(dsigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)
     dpropmat = torch.roll(dpropmat, -pad//2, dims=2)
     
@@ -564,20 +599,14 @@ def calc_dpropmat(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsi
 
     
     mid = slice(None, len(sigma))
-    return (drte[1, mid]/drte[0, mid] - rte)/(sigma*0.01), rte
+    return (drte[1, mid]/drte[0, mid] - rte)/(sigma*0.02), rte
 
 def rte_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     if isinstance(mu, float):
         mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
     if isinstance(epsilon, float):
         epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
-    propmat = calc_prop_matrix(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
-    answer = torch.zeros((2,)+propmat.shape[2:], dtype=torch.complex128, device=thickness.device)
-    
-    answer[0, :] = 1.
-    for i in range(answer.shape[1]-2, -1, -1):
-        answer[:, i] = torch.einsum('ij...,j...->i...', propmat[:,:,i], answer[:, i+1])
-    rte = answer[1, 0] / answer[0, 0]    
+    _,rte = calc_dpropmat(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
     return torch.nan_to_num(rte)
 
 def drte_dsigma(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):

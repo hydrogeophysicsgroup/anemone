@@ -3,6 +3,9 @@ from anemone import physics
 import numpy as np
 import torch
 
+import pytest
+
+
 def calc_rte_halfspace(sigma, omega, wave_length):
     lambda_sqrd = wave_length*wave_length
     K1_sqrd     = physics.calc_wavenumber(sigma, omega)**2
@@ -67,6 +70,16 @@ def check_rte_convergence(rte_func):
     
     thick = torch.tensor([100, 10], dtype=torch.complex128)
     c_rte = torch.squeeze(rte_func(sigma[:,None,None], thick[:, None,None], omega[None,:,None], wave_length[None,None,:]))        
+
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        plt.semilogx(wave_length.numpy(), rte_halfspace.numpy(), 'k-', label='Halfspace')
+        plt.semilogx(wave_length.numpy(), c_rte.numpy(), 'r--', label=rte_func.__name__)
+        plt.xlabel('Wavelength (m)')
+        plt.ylabel('RTE')
+        plt.legend()
+        plt.show()
+
     assert np.allclose(rte_halfspace.numpy(), c_rte.numpy()), f'{rte_func.__name__} did not converge as expected'
 
 def test_rte_convergence():
@@ -77,6 +90,10 @@ def test_rte_memop_convergence():
 
 def test_rte_convergence_nbc():
     check_rte_convergence(physics.rte_nbc)
+
+@pytest.mark.skipif(reason="not used in main codebase")
+def test_rte_convergence_nbc_laplace():
+    check_rte_convergence(physics.rte_nbc_laplace)
 
 def test_rtm_convergence():
     from anemone import constants as c
@@ -108,4 +125,6 @@ def test_rtm_convergence():
     assert np.allclose(rtm_halfspace.numpy(), c_rte.numpy()), 'rtm did not converge as expected'
 
 if __name__ == '__main__':
-    test_frequency_response()
+    # test_frequency_response()
+    test_rte_convergence()
+    # test_rte_convergence_nbc_laplace()

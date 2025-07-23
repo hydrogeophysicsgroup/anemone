@@ -41,7 +41,7 @@ def johansen1979_Hhat_nu(s, nu=0):
     return Hhat_nu
 
 
-def christensen1990_eq16(v, sc, nu=0, a=0.1, term_max=50, convergence_threshold=1e-9):
+def christensen1990_eq16(v, sc, nu=0, a=0.1, term_max=100, convergence_threshold=1e-16):
     """this equation is for v<ln(2)"""
     # assert np.all(v<np.log(2)), "positive value of v will not converge"
     delta = 1./(2*sc)
@@ -62,7 +62,7 @@ def christensen1990_eq16(v, sc, nu=0, a=0.1, term_max=50, convergence_threshold=
         dHnu = numerator / denominator
         H_nu_sum1 += negOne_pow_n*dHnu
 
-        if np.all(dHnu < convergence_threshold*H_nu_sum1):
+        if np.all(dHnu < convergence_threshold):#*H_nu_sum1):
             break
     if n==term_max-1:
         print('hankel coefficients didnt converge')
@@ -78,7 +78,7 @@ def christensen1990_eq16(v, sc, nu=0, a=0.1, term_max=50, convergence_threshold=
         dHnu = np.imag(np.exp(1j*2*pi*sc*v)*np.exp(4*np.pi *
                        a*sc*n*v)*johansen1979_Hhat_nu(xi_minus, nu=nu))
         H_nu_partial_sum2 += dHnu
-        if np.all(np.abs(dHnu) < convergence_threshold*np.abs(H_nu_partial_sum2)):
+        if np.all(np.abs(dHnu) < convergence_threshold):#*np.abs(H_nu_partial_sum2)):
             break
     H_nu_sum2 = 2*a*np.exp(2*pi*a*sc*v)*H_nu_partial_sum2
     if n==term_max-1:
@@ -86,7 +86,7 @@ def christensen1990_eq16(v, sc, nu=0, a=0.1, term_max=50, convergence_threshold=
 
     return H_nu_sum1 - H_nu_sum2.astype(complex)
 
-def christensen1990_eq17(v, sc, nu=0, a=0.1, term_max=50, convergence_threshold=1e-9):
+def christensen1990_eq17(v, sc, nu=0, a=0.1, term_max=100, convergence_threshold=1e-12):
     n = 0
     xi_plus = sc+1j*2*a*sc*(n+0.5)
     H_nu_partial_sum = np.exp(-4*pi*a*sc*n*v)*johansen1979_Hhat_nu(xi_plus, nu=nu)
@@ -102,7 +102,7 @@ def christensen1990_eq17(v, sc, nu=0, a=0.1, term_max=50, convergence_threshold=
     return H_nu.astype(complex)
 
 
-def christensen1990_eq41(v, delta, Delta1, a, sc, nu=0, smp_per_decade=10, term_max=50, convergence_threshold=1e-9):
+def christensen1990_eq41(v, delta, Delta1, a, sc, nu=0, smp_per_decade=10, term_max=100, convergence_threshold=1e-12):
     n=0
     partial_sum = delta*christensen1990_p_hat(n*delta*Delta1, a)*johansen1979_Hhat_nu(n*Delta1, nu=nu)*np.exp(1j*2*pi*n*v*Delta1)
 
@@ -205,7 +205,7 @@ def hankel_coefficients(order, log10min, log10max, smp_per_decade, omega_0):
     return torch.from_numpy(lamda), torch.from_numpy(fc)
 
 class Hankel:
-    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10, device=None, range=None, tolerance=None, omega_0=np.pi/4.):
+    def __init__(self, func, order, log10min=-20, log10max=10, smp_per_decade=10, device=None, range=None, tolerance=None, omega_0=np.pi/5.):
         self.func    = func
         self.nu    = order
         self.smp_per_decade = smp_per_decade
@@ -419,31 +419,12 @@ class invLaplace:
         self.n_coefficients = n_coefficients
         
 
-    # def __call__(self, t):
-    #     # ntimes = t.shape[-1]
-
-    #     q = (c.log2 / t)[:, None]
-    #     respt1 = self.func(q[0,:]*self.i)
-    #     if respt1.dtype != self.v.dtype:
-    #         self.v = self.v.to(respt1.dtype)
-            
-    #     res1 = q[0,:]*respt1@self.v
-    #     res = torch.zeros(t.shape+res1.shape, dtype=respt1.dtype, device=self.device)
-    #     res[0] = res1
-    #     for i_t in range(1, t.shape[-1]):
-    #         res[i_t] = q[i_t,:]*self.func(q[i_t,:]*self.i)@self.v
-    #     # print('the shape of res is ', res.shape)
-    #     return res.T
-
     def __call__(self, t):
         q = (c.log2 / t)[:, None]
         qi = (q*self.i).flatten()
-        # print('the shape of qi is ', qi.shape)
         respt1 = self.func(qi)
-        # print('the shape of respt1 is ', respt1.shape)
         respt1 = respt1.reshape(respt1.shape[:-1]+t.shape+self.i.shape)
         respt1[..., :,:] *= q
-        # print('the shape of respt1 is ', respt1.shape)
         if respt1.dtype != self.v.dtype:
             self.v = self.v.to(respt1.dtype)
         res = respt1@self.v            
@@ -552,9 +533,9 @@ class Hankel:
         self.smp_per_decade = smp_per_decade
         self.n_decades = log10max-log10min
         hkl = hankel_coefficients(order, log10min, log10max, smp_per_decade, omega_0)
-        if tolerance is not None:
-            idxmin, idxmax = coefficient_bounds(hkl[1].cpu().numpy(), tolerance=tolerance)
-            hkl = hkl[0][idxmin:idxmax], hkl[1][idxmin:idxmax]
+        # if tolerance is not None:
+        #     idxmin, idxmax = coefficient_bounds(hkl[1].cpu().numpy(), tolerance=tolerance)
+        #     hkl = hkl[0][idxmin:idxmax], hkl[1][idxmin:idxmax]
         self.tolerance = tolerance
 
         self.func_results = None       
@@ -670,7 +651,7 @@ class Hankel:
         r = r if isinstance(r, torch.Tensor) else torch.tensor(r, device=self.device)
         return self.interpfunc(r)#.to(self.device)
     
-    def preintegrate(self, GeomOperator, rmin, rmax, tolerance=None):
+    def preintegrate(self, GeomOperator, rmin, rmax):
         if self.func_results is None:
             self.func_results = self.func(self.lamda)
             if not self.lambda_included: 
@@ -701,30 +682,35 @@ class Hankel:
                 i_offset *= -1
                 FC[i_offset:] += geomz[i]*self.fc[..., :-i_offset] / rout[i]
         
-        if tolerance is not None:
-            idxmin, idxmax = coefficient_bounds(FC.cpu().numpy(), tolerance=tolerance)
+        if self.tolerance is not None:
+            idxmin, idxmax = coefficient_bounds(FC.cpu().numpy(), tolerance=self.tolerance)
+            idx_slice = slice(idxmin, idxmax)
+        else:
+            idx_slice = slice(None, None)
 
-        return torch.einsum('...i,i->...', self.func_results, FC), FC[idxmin:idxmax], self.lamda[idxmin:idxmax]
+        return torch.einsum('...i,i->...', self.func_results, FC), FC[idx_slice], self.lamda[..., idx_slice]
 
 class Fourier(Hankel):
     """ A fourier transform for logarithmically sampled data. The implementation uses hankel transforms at the base.
         See Johansen and Sorensen 1979 - Fast Hankel Transforms eq.  87 + 88
     """
         
-    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None, range=None):
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None, range=None, tolerance=None):
         def f1(lamda):
             return func(lamda/c.sqrt_twopi)/torch.sqrt(lamda)
-        super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device, None, )
+        super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device, None)
         self.lambda_included = False
         _, realfc = hankel_coefficients(-0.5, log10min, log10max, smp_per_decade, omega_0=0.6221)
         _, imagfc = hankel_coefficients( 0.5, log10min, log10max, smp_per_decade, omega_0=0.6221)
-        imagfc = imagfc.to(self.fc.device)
-        self.fc = torch.complex(realfc, -1*imagfc)
+        # imagfc = imagfc
+        self.fc = torch.complex(realfc, -1*imagfc).to(self.fc.device)
+        self.f1 = f1
        
 
         if range is not None:
             self._recenter_function(range)
             self.create_interpolator(range[0], range[1])
+
     
     def f2r(self, f):
         """frequency to r"""
@@ -748,13 +734,68 @@ class Fourier(Hankel):
         return self.interpfunc(r)
 
 
+    def calc_tvals(self, tmin, tmax):
+        rmin,rmax = self.f2r(tmin), self.f2r(tmax)
+        if not isinstance(rmin, torch.Tensor): rmin = torch.tensor(rmin, device=self.device)
+        if not isinstance(rmax, torch.Tensor): rmax = torch.tensor(rmax, device=self.device)
+        imin = int(torch.floor(self.r_to_idx(rmin)))-2
+        imax = int(torch.ceil( self.r_to_idx(rmax)))+2
+        i_offsets = torch.arange(imin, imax, device=self.device)
+        rout = self.idx_to_r(i_offsets).to(self.lamda.dtype)
+        return i_offsets, rout, self.r2f(rout)
+
+    def preintegrate(self, timeOperator, tmin, tmax):
+        i_offsets, rout, tout = self.calc_tvals(tmin, tmax)
+        Wmat = timeOperator(tout).to(torch.complex128)
+
+        if self.func_results is None:
+            self.func_results = self.func(self.lamda)
+            if not self.lambda_included: 
+                self.func_results *= self.lamda
+
+
+        if self.device is not None:
+            rout = rout.to(self.device)
+            Wmat = Wmat.to(self.device)
+            i_offsets = i_offsets.to(self.device)
+        if self.fc.dtype != self.func_results.dtype:
+            self.fc = self.fc.to(self.func_results.dtype)   
+
+        FC = torch.zeros(Wmat.shape[:-1]+self.fc.shape, dtype=torch.complex128, device=self.device)
+        sqRout = torch.sqrt(rout)
+        
+        for i, i_offset in enumerate(i_offsets):
+            if i_offset == 0:
+                FC += Wmat[..., i, None]*self.fc*sqRout[i]/rout[i]
+            elif i_offset > 0:
+                FC[..., :-i_offset] += Wmat[..., i, None]*self.fc[i_offset:]*sqRout[i]/rout[i]
+            else:
+                i_offset *= -1
+                FC[..., i_offset:] += Wmat[..., i, None]*self.fc[:-i_offset]*sqRout[i]/rout[i]
+        
+        
+        if self.tolerance is not None:
+            idxmin, idxmax = FC.shape[-1]-1, 0
+            for i in range(len(FC)):
+                cimin,cimax = coefficient_bounds(FC[i].cpu().numpy(), tolerance=self.tolerance)
+                idxmin = min(idxmin, cimin)
+                idxmax = max(idxmax, cimax)
+
+            return torch.einsum('ij,...j->...i', FC, self.func_results), FC[..., idxmin:idxmax], self.lamda.squeeze()[idxmin:idxmax]
+        else:
+            return torch.einsum('ij,...j->...i', FC, self.func_results), FC, self.lamda.squeeze()
+
+
+
 class invFourier(Fourier):
-    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=20, device=None, range=None):
+    def __init__(self, func, log10min=-20, log10max=10, smp_per_decade=16, device=None, range=None, tolerance=None):
         super().__init__(func, log10min, log10max, smp_per_decade, device, None)
         self.lambda_included = False        
         self.fc = self.fc.real - 1j*self.fc.imag
+        self.tolerance = tolerance
         if range is not None:
             self._recenter_function(range)
             self.create_interpolator(range[0], range[1])
     def __repr__(self) -> str:
         return 'X(f)->x(t)'
+    
