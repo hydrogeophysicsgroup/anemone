@@ -40,7 +40,7 @@ def test_example_scripts(log=silence):
             successful_run.append(False)
 
     assert all(successful_run), "Some example scripts failed to run"
-    return successful_run
+    
 
 
 @pytest.mark.skipif(reason="test takes too long")
