@@ -14,9 +14,9 @@ def test_tikhonov_few_layer():
     mod_true = LogResistivity.few_layers(rho, thk)
 
 
-    dbdt_true = 10**fwrTD(rho, thk)
+    dbdt_true = fwrTD(rho, thk).exp()
     d_relerr = compute_relstd(fwrTD.times, dbdt_true, current=10.)
-    d_err = torch.log10(1. + d_relerr)
+    d_err = torch.log(1. + d_relerr)
     d_obs = dbdt_true + dbdt_true * torch.randn_like(dbdt_true) * d_relerr
 
     # if __name__ == '__main__':
@@ -26,7 +26,7 @@ def test_tikhonov_few_layer():
     #     plt.loglog(fwrTD.times, d_obs, 'o', label='Observed')
     #     plt.show()
 
-    d_obs = torch.abs(d_obs).log10()
+    d_obs = torch.abs(d_obs).log()
 
     res_start = LogResistivity.few_layers([2*torch.tensor([20,21,20], dtype=torch.double)], torch.tensor([30,30]))
     inv = BaseInversion(d_obs, d_err, res_start, fwrTD)
@@ -43,8 +43,8 @@ def test_tikhonov_few_layer():
         mod_true.plot(axs=axs[:1], color='red', label='True model')
 
         d_pred = fwrTD(*res_mod.mod)
-        axs[1].loglog(fwrTD.times, 10**d_obs, 'o', label='Observed')
-        axs[1].loglog(fwrTD.times, 10**d_pred, '-', label='Predicted')
+        axs[1].loglog(fwrTD.times, d_obs.exp(), 'o', label='Observed')
+        axs[1].loglog(fwrTD.times, d_pred.exp(), '-', label='Predicted')
         plt.show()
 
 def test_tikhonov_smooth():
@@ -58,12 +58,12 @@ def test_tikhonov_smooth():
     mod_true = LogResistivity.few_layers(rho, thk)
 
 
-    dbdt_true = 10**fwrTD(rho, thk)
+    dbdt_true = fwrTD(rho, thk).exp()
     d_relerr = compute_relstd(fwrTD.times, dbdt_true, current=10.)
-    d_err = torch.log10(1. + d_relerr)
+    d_err = torch.log(1. + d_relerr)
     d_obs = dbdt_true + dbdt_true * torch.randn_like(dbdt_true) * d_relerr
 
-    d_obs = torch.abs(d_obs).log10()
+    d_obs = torch.abs(d_obs).log()
 
     res_start = LogResistivity.smooth(torch.ones(31, dtype=torch.double)*50, torch.cumsum(torch.logspace(0,1.5,30), 0))
 
@@ -81,8 +81,8 @@ def test_tikhonov_smooth():
         mod_true.plot(axs=axs[:1], color='red', label='True model')
 
         d_pred = fwrTD(*res_mod.mod)
-        axs[1].loglog(fwrTD.times, 10**d_obs, 'o', label='Observed')
-        axs[1].loglog(fwrTD.times, 10**d_pred, '-', label='Predicted')
+        axs[1].loglog(fwrTD.times, d_obs.exp(), 'o', label='Observed')
+        axs[1].loglog(fwrTD.times, d_pred.exp(), '-', label='Predicted')
         plt.show()
 
 def test_fastjacobian():
@@ -96,12 +96,12 @@ def test_fastjacobian():
     mod_true = LogResistivity.few_layers(rho, thk)
 
 
-    dbdt_true = 10**fwrTD(rho, thk)
+    dbdt_true = fwrTD(rho, thk).exp()
     d_relerr = compute_relstd(fwrTD.times, dbdt_true, current=10.)
-    d_err = torch.log10(1. + d_relerr)
+    d_err = torch.log(1. + d_relerr)
     d_obs = dbdt_true + dbdt_true * torch.randn_like(dbdt_true) * d_relerr
 
-    d_obs = torch.abs(d_obs).log10()
+    d_obs = torch.abs(d_obs).log()
 
     res_start = LogResistivity.smooth(torch.ones(31, dtype=torch.double)*50, torch.cumsum(torch.logspace(0,1.5,30), 0))
 
@@ -121,8 +121,8 @@ def test_fastjacobian():
         mod_true.plot(axs=axs[:1], color='red', label='True model')
 
         d_pred = fwrTD(*res_mod.mod)
-        axs[1].loglog(fwrTD.times, 10**d_obs, 'o', label='Observed')
-        axs[1].loglog(fwrTD.times, 10**d_pred, '-', label='Predicted')
+        axs[1].loglog(fwrTD.times, d_obs.exp(), 'o', label='Observed')
+        axs[1].loglog(fwrTD.times, d_pred.exp(), '-', label='Predicted')
         plt.show()
 
 def test_lci():
@@ -154,10 +154,10 @@ def test_lci():
         m_true = LogResistivity.few_layers(crho, thk)
         m_trues.append(m_true)
         
-        dbdt = 10**fwr(crho, thk)#.exp()
+        dbdt = fwr(crho, thk).exp()
         d_err = compute_relstd(fwr.times, dbdt, current=25.)
-        d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log10()
-        tmp_inv = fastJac(d_obs, (1. + d_err).log10(), res_start.copy(), fwr)
+        d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log()
+        tmp_inv = fastJac(d_obs, (1. + d_err).log(), res_start.copy(), fwr)
 
         tmp_inv.setup_matrices()
         inv_list.append(tmp_inv)    
@@ -165,8 +165,8 @@ def test_lci():
     from time import time as timer
     bt = timer()
     lci = LCI(inv_list)
-    lci.smoothness_vert = 1e3
-    lci.smoothness_horiz = 1e2
+    lci.smoothness_vert = 0.8
+    lci.smoothness_horiz = 0.4
     res_mods = lci.invert(iter_cap=5)
     print(f"LCI inversion took {timer()-bt:.2f} seconds")
 
@@ -181,9 +181,9 @@ def test_lci():
         _,thick = res_mods[0].mod
         z = torch.cumsum(thick, 0)
         for i, (mtrue, res_mod) in enumerate(zip(m_trues, res_mods)):
-            result.append(Log.standard(res_mod.values[0].log10(), z, 'rho', bottom=200, xy=(i,0)))
+            result.append(Log.standard(res_mod.values[0].log(), z, 'rho', bottom=200, xy=(i,0)))
             cres,thick = mtrue.mod
-            actual.append(Log.standard(cres.log10(), np.cumsum(thick), 'rho', bottom=200, xy=(i,0)))
+            actual.append(Log.standard(cres.log(), np.cumsum(thick), 'rho', bottom=200, xy=(i,0)))
         profile = ([-1,0], [len(thick1)+1, 0])
         result = Section(result, proj_pnts=profile)
         actual = Section(actual, proj_pnts=profile)

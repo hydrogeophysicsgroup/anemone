@@ -52,7 +52,7 @@ def logify_forward(cls):
     class LogFwr(cls):
         def __call__(self, *args, **kwargs):
             if not kwargs.get('jac', False):
-                return torch.abs(super().__call__(*args, **kwargs)).log10()
+                return torch.abs(super().__call__(*args, **kwargs)).log()
             else:
                 return super().__call__(*args, **kwargs)
     return LogFwr
@@ -412,7 +412,7 @@ class Forward(BaseForward):
             
             Hr = torch.einsum('...i,i->...', wvlngth_integrand(self.lmb.squeeze()), self.geomz)
             if self.filterfunc is not None:
-                Hr *= self.filterfunc.omega_filter(omega)
+                Hr *= self.filterfunc.omega_filter(omega.squeeze())
             if self.waveform is not None:
                 Hr /= -1j*omega.squeeze()
             return Hr.squeeze()
