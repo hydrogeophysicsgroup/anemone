@@ -85,7 +85,7 @@ class BaseForward:
 
         self.waveform = waveform
         if t_gatewidth is not None:
-            if isinstance(t_gatewidth, float): t_gatewidth = torch.ones_like(self.times)*t_gatewidth
+            if isinstance(t_end, float): t_end = torch.ones_like(self.times)*t_end
             elif not isinstance(t_gatewidth, torch.Tensor) and t_gatewidth is not None: t_gatewidth = torch.tensor(t_gatewidth, device=self.times.device)
             self.t_gatewidth = t_gatewidth
             self.t_st = self.times-t_gatewidth/2.
@@ -421,13 +421,13 @@ class Forward(BaseForward):
         return Ht.real
         
     def __call__(self, rho, thickness, jac=False):
-        self.rho = ((rho+0j)[..., None, None])#.to(self.device)
+        self.rho = ((rho+0j)[..., None, None])
         if rho.ndim > thickness.ndim:
             thickness = thickness[:, None, ...]
-        self.thick = ((thickness+0j)[..., None, None])#.to(self.device)
+        self.thick = ((thickness+0j)[..., None, None])
         if jac:
             G = self.jacobian()
-            return -G*c.mu0 / rho[:, None]**2
+            return G*c.mu0 / rho[:, None]**2
         else:            
             return self.forward()*c.mu0
         
@@ -584,7 +584,6 @@ class ForwardLaplace6(ForwardLaplace):
         else:
             return torch.einsum('...ik,...jk->...ij', Ht, self.t2t).squeeze()
 
-
 class ForwardLaplace7(ForwardLaplace):
     geomz = None
     t2t   = None
@@ -633,7 +632,6 @@ class ForwardLaplace7(ForwardLaplace):
         self.thick = thickness[..., None, None]
         return self.forward()*c.mu0
     
-
 def waveform_matrix_with_primary(t_in, t_out, waveform):
     t_out = t_out.to(torch.double)
     t_in  = t_in.to(torch.double)
@@ -934,7 +932,7 @@ class ForwardMatrix(ForwardLaplace6):
             return -G*c.mu0 / rho[:, None]**2
         else:            
             return self.forward()*c.mu0
-        
+
 class VMDForward(Forward):
     geomz = None
     t2t   = None

@@ -141,7 +141,8 @@ def test_lci():
 
 
     res_start = LogResistivity.smooth(torch.ones(len(z)+1)*50., z)
-    thick1 = torch.linspace(0, 20, 10).to(torch.double)#[:3]
+    # res_start.set_device(torch.double)
+    thick1 = torch.linspace(0, 20, 50).to(torch.double)#[:3]
     inv_list = []
     m_trues=[]
 
@@ -154,19 +155,19 @@ def test_lci():
         m_true = LogResistivity.few_layers(crho, thk)
         m_trues.append(m_true)
         
-        dbdt = 10**fwr(crho, thk)#.exp()
-        d_err = compute_relstd(fwr.times, dbdt, current=25.)
-        d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log10()
-        tmp_inv = fastJac(d_obs, (1. + d_err).log10(), res_start.copy(), fwr)
+        dbdt = fwr(crho, thk).exp()
+        d_err = compute_relstd(fwr.times, dbdt, current=10.)
+        d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log()
+        tmp_inv = fastJac(d_obs, (1. + d_err).log(), res_start.copy(), fwr)
 
-        tmp_inv.setup_matrices()
+        # tmp_inv.setup_matrices()
         inv_list.append(tmp_inv)    
     print(f"Created {len(inv_list)} inversions")
     from time import time as timer
     bt = timer()
     lci = LCI(inv_list)
-    lci.smoothness_vert = 1e3
-    lci.smoothness_horiz = 1e2
+    lci.vertical_smoothness = 0.8
+    lci.horizontal_smoothness = 0.8
     res_mods = lci.invert(iter_cap=5)
     print(f"LCI inversion took {timer()-bt:.2f} seconds")
 
