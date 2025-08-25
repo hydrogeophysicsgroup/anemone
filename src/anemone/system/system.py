@@ -295,6 +295,15 @@ class Waveform:
         wv = torch.tensor([0, 1, 1, 0], dtype=torch.double)
         return cls(t, wv)
 
+class SystemResponse(Waveform):
+    def __init__(self, time, dSRdt):
+        np_time = time.numpy()
+        dtime = torch.from_numpy(np.diff(np_time, prepend=np_time[0]))
+        amplitude = dSRdt * dtime
+        super().__init__(time, dSRdt)
+        self.d2wdt2 = amplitude
+
+
 class ButterworthFilter:
     def __init__(self, fcut, order=1):
         self.fcut = fcut
