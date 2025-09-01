@@ -78,3 +78,5 @@ def fastjacobian(cls):
             G /= 10**self.data_predicted
             return G.T
     return FastJacobian
+
+fastJac = fastjacobian(Tikhonov)

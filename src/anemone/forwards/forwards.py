@@ -428,7 +428,7 @@ class Forward(BaseForward):
         self.thick = ((thickness+0j)[..., None, None])#.to(self.device)
         if jac:
             G = self.jacobian()
-            return -G*c.mu0 / rho[:, None]**2
+            return G*c.mu0 / rho[:, None]**2
         else:            
             return self.forward()*c.mu0
         
