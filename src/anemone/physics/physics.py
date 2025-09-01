@@ -616,3 +616,14 @@ def drte_dsigma(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilo
         epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
     dsigma,_ = calc_dpropmat(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
     return torch.nan_to_num(dsigma)
+
+def rte_halfspace(sigma, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    if isinstance(mu, float):
+        mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
+    if isinstance(epsilon, float):
+        epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
+    
+    k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
+    u = torch.sqrt(wave_length**2 - k2)
+    rte = (wave_length - u) / (wave_length+u)
+    return torch.nan_to_num(rte)

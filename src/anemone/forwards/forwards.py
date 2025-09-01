@@ -361,6 +361,7 @@ class Forward(BaseForward):
         self.t2t = None
 
     def forward(self):
+
         def frq_integrand(f):
             self.omega = c.twopi*f[None,:,None]
             def wvlngth_integrand(wave_length):
@@ -693,10 +694,10 @@ class BstepLaplace(ForwardLaplace):
             res[None, ...] *= self.lmb / c.fourpi
             return res.swapaxes(-2,-1)
         if self.geomz is None:
-            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=16)
+            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=16, tolerance=self.tolerance)
             def geomz_r(r):
                 return self.source.geomz(self.receiver, r).to(torch.double).to(self.device)
-            Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax, tolerance=self.tolerance)
+            Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
             self.sfield_rte = None
         else:
             Hstep = torch.einsum('...i,i->...', wvlngth_integrand(self.lmb.squeeze()), self.geomz)
@@ -740,10 +741,10 @@ class BstepHankel(BaseForward):
                 return intg
             
             if self.geomz is None:
-                hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10)
+                hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10, tolerance=self.tolerance)
                 def geomz_r(r):
                     return self.source.geomz(self.receiver, r).to(torch.double).to(self.device)
-                Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax, tolerance=self.tolerance)
+                Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
                 self.sfield_rte = None
             else:
                 Hstep = (wvlngth_integrand(self.lmb.squeeze())@self.geomz).squeeze()
@@ -834,7 +835,7 @@ class OnTimeForward:
         
     def forward(self):
         if self.hankel is None:
-            self.hankel = BstepHankel(self.source, self.receiver, self.t_switch, self.tmax, tolerance=self.tolerance)
+            self.hankel = BstepHankel(self.source, self.receiver, self.t_switch, self.tmax)
 
         t, bstep_hankel = self.hankel.get_bstep(self.rho, self.thick)
         dt = t[1]/t[0]
@@ -843,7 +844,7 @@ class OnTimeForward:
         self.t_laplace = t[0]*dt**torch.arange(-Ndec, 0)
 
         if self.laplace is None:
-            self.laplace = BstepLaplace(self.source, self.receiver, self.t_laplace, tolerance=self.tolerance)
+            self.laplace = BstepLaplace(self.source, self.receiver, self.t_laplace)
         bstep_laplace = self.laplace(self.rho, self.thick)
         if self.t2t is None:
             self.t_in = torch.concat([self.t_laplace, t])
