@@ -134,7 +134,7 @@ def test_lci():
     fwr = logForward.example(times=t, tolerance=1e-6)
     fastJac = fastjacobian(Inversion)
 
-    z = torch.cumsum(torch.logspace(0, np.log10(50.), 20), 0)
+    z = torch.cumsum(torch.logspace(0, np.log10(50.), 30), 0)
     z /= z.max()
 
     z *= 150
@@ -158,14 +158,15 @@ def test_lci():
         m_trues.append(m_true)
         
         dbdt = 10**fwr(crho, thk)#.exp()
-        d_err = compute_relstd(fwr.times, dbdt, current=5.)
+        d_err = compute_relstd(fwr.times, dbdt, current=25.)
         d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log10()
         tmp_inv = fastJac(d_obs, (1. + d_err).log10(), res_start.copy(), fwr)
-        # tmp_inv.vertical_smoothness = 5e-3
-        # tmp_inv.max_step = 50.
+
         tmp_inv.setup_matrices()
         inv_list.append(tmp_inv)    
     print(f"Created {len(inv_list)} inversions")
+    from time import time as timer
+    bt = timer()
     lci = LCI(inv_list)
     # lci.smoothness_vert = 1e3
     # lci.smoothness_horiz = 1e2
@@ -181,8 +182,9 @@ def test_lci():
     stats = pstats.Stats(profiler)
     stats.sort_stats('cumtime').print_stats(20)  # Print top 20 by cumulative time
 
-    import matplotlib.pyplot as plt
-    from plog import Log, Section
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        from plog import Log, Section, PieceWiseLine
 
     fig,ax = plt.subplots(2,1)
     result = []

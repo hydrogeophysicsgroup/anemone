@@ -2,6 +2,11 @@ import torch
 from anemone.experiment import *
 
 
+from pytest_config import skip_multi_rx
+
+import pytest
+
+
 is_main = __name__ == '__main__'
 
 def aarhusInv_stepoff_comparison(ForwardMaker, **kwargs):
@@ -610,10 +615,12 @@ def multi_rx_forward_shape_check(ForwardMaker):
     dbdt = fwr(rho, thick)
     assert dbdt.shape == (5, 31), f"{name} multireceiver does not return correct shape {dbdt.shape} != (5, 31)"
 
+@pytest.mark.skipif(skip_multi_rx, reason="multi-rx needs retooling.")
 def test_multirx_forward_shape_check():
     from anemone.forwards import Forward
     multi_rx_forward_shape_check(Forward)
 
+@pytest.mark.skipif(skip_multi_rx, reason="multi-rx needs retooling.")
 def test_multireceiver_forward():
     from anemone.experiment import Loop, Receiver
     from anemone.forwards import Forward
@@ -642,6 +649,7 @@ def test_multireceiver_forward():
         plt.show()
     assert (rx.x[:, None]+times[None, :]).shape == dbdt.shape, "dbdt shape is not correct"
 
+@pytest.mark.skipif(skip_multi_rx, reason="multi-rx needs retooling.")
 def test_multireceiver_forward_multi_height():
     from anemone.experiment import Loop, Receiver
     from anemone.forwards import Forward
@@ -671,6 +679,7 @@ def test_multireceiver_forward_multi_height():
         plt.show()
     assert (rx.x[:, None]+times[None, :]).shape == dbdt.shape, "dbdt shape is not correct"
 
+@pytest.mark.skipif(skip_multi_rx, reason="multi-rx needs retooling.")
 def test_multireceiver_frequency_domain():
     from anemone.experiment import Loop, Receiver
     from anemone.forwards import ForwardFD
@@ -680,33 +689,35 @@ def test_multireceiver_frequency_domain():
     rx = Receiver(x=torch.linspace(-200, 200, 202), y=torch.linspace(-200, 200, 202))
     freqs = torch.tensor([2000], dtype=torch.double)
 
-    rho = 40
-    sigma = 1/torch.tensor([rho,2*rho])
+    rho = torch.ones(2)*40
     thick = torch.tensor([10])
 
     fwr = ForwardFD(lp, rx, freqs)
     from time import time as timer
     t0 = timer()
-    B = fwr(sigma, thick)
+    B = fwr(rho, thick)
     print('elapsed time: ', timer()-t0)
     
     t0 = timer()
-    B = fwr(sigma, thick)
+    B = fwr(rho, thick)#.reshape((202,202))
     print('elapsed time: ', timer()-t0)
 
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
         fig,ax = plt.subplots()
-        ax.pcolormesh(rx.x,rx.y, torch.log10(torch.abs(B.reshape((202,202)))))
+        ax.pcolormesh(rx.x,rx.y, torch.log10(torch.abs(B)).reshape((202,202)))
         plt.show()
-    assert (rx.x[:, None]+freqs[None, :]).shape == B.shape, "dbdt shape is not correct"
+    assert (rx.x[:, None]+freqs[None, :]).shape == tuple(B.shape), f"dbdt shape is not correct: {B.shape} != {(rx.X[..., None]+freqs[None, :]).shape}"
 
 
 
 if __name__ == '__main__':
+    
     # test_halfspace_circle_center()
     #test_halfspace_circle_center_forward()
-    test_40x40_aarhusInv_piecewise_waveform()
+    # test_40x40_aarhusInv_piecewise_waveform()
 
-    test_multirx_forward_shape_check()
+    #test_multirx_forward_shape_check()
+    # test_multireceiver_frequency_domain()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
+    pass

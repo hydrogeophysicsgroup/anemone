@@ -17,4 +17,6 @@ for ax,omega,name in zip(axs, [pi, pi/2, pi/4], ['$\pi$', '$\pi/2$', '$\pi/4$'])
 ax.set_xlabel('$v$')
 ax.set_ylim(-1,1)
 axs[0].set_title('Optimized $J_o$-filters $s_c$=1.25')
-plt.show()
+
+if __name__ == "__main__":
+    plt.show()

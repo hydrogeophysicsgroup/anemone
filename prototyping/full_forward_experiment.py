@@ -1,11 +1,12 @@
 import torch
 
-print(f'default number of threads {torch.get_num_threads()}')
-print(f'default number of interop threads {torch.get_num_interop_threads()}')
-torch.set_num_interop_threads(16)
+if __name__ == "__main__": 
+    print(f'default number of threads {torch.get_num_threads()}')
+    print(f'default number of interop threads {torch.get_num_interop_threads()}')
+# torch.set_num_interop_threads(16)
 
 from anemone.experiment import Loop, Receiver
-from anemone.transforms import Hankel, Fourier, plot_loglog
+from anemone.transforms import Hankel, Fourier
 from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,7 +22,7 @@ sigma = torch.tensor([100,200], dtype=torch.complex128)[:,None,None]
 thick = torch.tensor([50], dtype=torch.complex128)[:,None,None]
 
 
-@torch.jit.script
+# @torch.jit.script
 def frq_integrand(omega):
     f = omega[None,:,None]
     def integrand(wave_length):
@@ -30,8 +31,8 @@ def frq_integrand(omega):
         return torch.squeeze(intg)
     hkl = Hankel(integrand, 1)
     r,hr = hkl.range(rmin, rmax)
-    s = -1*torch.tensor(lp.s_of_r(rx, r.numpy()), dtype=torch.complex128)
-    res = hr.T@s
+    s = 0j-1*lp.geomz(rx, r)
+    res = hr@s.T
     return torch.squeeze(res)*omega
 
 from time import perf_counter as timer
@@ -46,4 +47,6 @@ for i in range(5):
     bt = timer()
     f_t = Fourier(frq_integrand)
     t,dbdt = f_t.range(1e-5, 1e-1)
-    print(f'{num_threads} threads, dipole time: {timer()-bt} s')
+    delta_t = timer() - bt
+    if __name__ == "__main__": 
+        print(f'{num_threads} threads, dipole time: {delta_t} s')

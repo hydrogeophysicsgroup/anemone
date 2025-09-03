@@ -124,7 +124,7 @@ class Loop:
                 numerator = torch.abs(v1x*v2y-v2x*v1y)
                 cmin = torch.min(numerator/torch.sqrt(v2r))
                 if cmin < overall_min: overall_min = cmin*1
-        return torch.tensor(overall_min)
+        return overall_min
     
     def max_horizontal_distance(self, rx):
         overall_max = 0
