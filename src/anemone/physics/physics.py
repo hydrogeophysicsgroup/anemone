@@ -22,6 +22,7 @@ def calc_wavenumber(sigma, omega, mu=c.mu0, epsilon=c.epsilon0, sqrt=True):
     """get the intrinsic complex wavenumber 'k' 
        see equation 4.30 in ward in hohmann (pg 207)
     """
+
     k = mu*omega*(epsilon*omega - 1j*sigma)
     if sqrt: k = torch.sqrt(k)
     return k
@@ -134,12 +135,12 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=c.mu0, eps
         reflection coefficients for transverse electric mode
     """
     if isinstance(mu, float):
-        mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu
+        mu = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*mu#.to(sigma.device)
         zn = 1.
     else:
         zn = None
     if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
+        epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon#.to(sigma.device)
 
     n_layers=len(sigma)
 
@@ -511,6 +512,13 @@ def rte_nbc_laplace(sigma, thickness, s, wave_length):
     return (R+gamma_n)/(1.+R*gamma_n)
 
 def calc_prop_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, pad=0):
+    # print('sigma device: ', sigma.device)
+    # print('thickness device: ', thickness.device)
+    # print('omega device: ', omega.device)
+    # print('wave_length device: ', wave_length.device)
+    # print('mu device: ', mu.device)
+    # print('epsilon device: ', epsilon.device)
+
     thick = torch.vstack([torch.zeros_like(thickness[:1]), thickness])
 
     lambda2 = wave_length**2
@@ -528,7 +536,7 @@ def calc_prop_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.e
     d_un    = 1.-unratio
     m_un    = 1.+unratio
 
-    propmat = torch.zeros((2,2, m_un.shape[0]+pad)+m_un.shape[1:], dtype=torch.complex128)
+    propmat = torch.zeros((2,2, m_un.shape[0]+pad)+m_un.shape[1:], dtype=torch.complex128, device=sigma.device)
     if pad>0:
         propmat[0,0,:pad] = 1.
         propmat[1,1,:pad] = 1.
@@ -548,7 +556,7 @@ def calc_dpropmat(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsi
 
     pad = 2
 
-    propmat = calc_prop_matrix(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)
+    propmat = calc_prop_matrix(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)#.to(sigma.device)
     propmat = torch.roll(propmat, -pad//2, dims=2)
 
     answer = torch.zeros((2,)+propmat.shape[2:], dtype=torch.complex128, device=thickness.device)
@@ -568,7 +576,7 @@ def calc_dpropmat(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsi
         
     dsigma = sigma.clone()
     dsigma[::2] *= 1.02
-    dpropmat = calc_prop_matrix(dsigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)
+    dpropmat = calc_prop_matrix(dsigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)#.to(sigma.device)
     dpropmat = torch.roll(dpropmat, -pad//2, dims=2)
 
     drte = torch.einsum('ij...,j...->i...', dpropmat, answer)

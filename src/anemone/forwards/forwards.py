@@ -1,5 +1,5 @@
 from anemone.transforms import Hankel, invFourier, CubicSpline, invLaplace, coefficient_bounds
-from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0, colecole, mpa2colecole, colecole2mpa
+from anemone.physics import refl_transverse_electric_memopt as rte, freespace_u0 as u0, colecole, mpa2colecole, colecole2mpa
 from anemone.physics import rte_nbc_laplace as rtelap
 from anemone.physics import drte_dsigma
 from anemone import constants as c
@@ -374,6 +374,7 @@ class Forward(BaseForward):
                 def geomz_r(r):
                     return self.source.geomz(self.receiver, r).to(torch.double).to(self.device)
                 Hr, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
+                self.geomz.to(self.device)
             else:
                 Hr = torch.einsum('...i,i->...', wvlngth_integrand(self.lmb.squeeze()), self.geomz)
             if self.filterfunc is not None:
@@ -394,12 +395,15 @@ class Forward(BaseForward):
 
             
             Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
+            self.omega1.to(self.device)
+            self.t2t.to(self.device)
         else:
             Ht = torch.einsum('ij,...j->...i', self.t2t, self.cbft.f1(self.omega1.squeeze())*self.omega1.squeeze())
         self.dpred = Ht.real
         return self.dpred
     
     def jacobian(self):
+        # print('hit jacobian')
         def frq_integrand(f):
             omega = c.twopi*f[None,:,None]
             def wvlngth_integrand(wave_length):
@@ -420,10 +424,10 @@ class Forward(BaseForward):
         return Ht.real
         
     def __call__(self, rho, thickness, jac=False):
-        self.rho = ((rho+0j)[..., None, None])#.to(self.device)
+        self.rho = ((rho+0j)[..., None, None]).to(self.device)
         if rho.ndim > thickness.ndim:
             thickness = thickness[:, None, ...]
-        self.thick = ((thickness+0j)[..., None, None])#.to(self.device)
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
         if jac:
             G = self.jacobian()
             return -G*c.mu0 / rho[:, None]**2

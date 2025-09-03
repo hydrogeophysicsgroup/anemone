@@ -126,22 +126,25 @@ def test_fastjacobian():
         plt.show()
 
 def test_lci():
-    gpu = torch.device('cpu')
+    gpu = torch.device('cuda')
+    print('number of threads: ', torch.get_num_threads())
+    # torch.set_num_threads(40)
     logForward = logify_forward(Forward)
     t = torch.logspace(-5.5, -2, 51, device=gpu, dtype=torch.double)
-    fwr = logForward.example(times=t, tolerance=1e-3)
+    fwr = logForward.example(times=t, tolerance=1e-6)
     fastJac = fastjacobian(Inversion)
 
     z = torch.cumsum(torch.logspace(0, np.log10(50.), 20), 0)
     z /= z.max()
+
     z *= 150
 
     rho_true = torch.tensor([75., 10., 60.], device=gpu, dtype=torch.double)
     thk_true = torch.tensor([50, 30], device=gpu, dtype=torch.double)
 
 
-    res_start = LogResistivity.smooth(torch.ones(21)*50., z)
-    thick1 = torch.linspace(0, 20, 15).to(torch.double)#[:3]
+    res_start = LogResistivity.smooth(torch.ones(21)*50., z, device=gpu)
+    thick1 = torch.linspace(0, 20, 100).to(torch.double)#[:3]
     inv_list = []
     m_trues=[]
 
@@ -151,7 +154,7 @@ def test_lci():
         crho = rho_true.clone()
         crho[1] += abs(i-len(thick1)//2)*2.
         crho[2] -= abs((i-5)*70/len(thick1))
-        m_true = LogResistivity.few_layers(crho, thk)
+        m_true = LogResistivity.few_layers(torch.clamp(crho, 5), thk)
         m_trues.append(m_true)
         
         dbdt = 10**fwr(crho, thk)#.exp()
@@ -164,9 +167,19 @@ def test_lci():
         inv_list.append(tmp_inv)    
     print(f"Created {len(inv_list)} inversions")
     lci = LCI(inv_list)
-    lci.smoothness_vert = 1e3
-    lci.smoothness_horiz = 1e2
+    # lci.smoothness_vert = 1e3
+    # lci.smoothness_horiz = 1e2
+    from time import time as timer
+    import cProfile
+    import pstats
+    profiler = cProfile.Profile()
+    profiler.enable()
+
     res_mods = lci.invert(iter_cap=10)
+
+    profiler.disable()
+    stats = pstats.Stats(profiler)
+    stats.sort_stats('cumtime').print_stats(20)  # Print top 20 by cumulative time
 
     import matplotlib.pyplot as plt
     from plog import Log, Section
@@ -177,11 +190,11 @@ def test_lci():
     _,thick = res_mods[0].mod
     z = torch.cumsum(thick, 0)
     for i, (mtrue, res_mod) in enumerate(zip(m_trues, res_mods)):
-        result.append(Log.standard(res_mod.values[0].log10(), z, 'rho', xy=(i,0)))
+        result.append(Log.standard(res_mod.values[0].cpu().log10(), z, 'rho', xy=(i,0)))
         cres,thick = mtrue.mod
-        actual.append(Log.standard(cres.log10(), np.cumsum(thick), 'rho', xy=(i,0)))
-    result = Section(result)
-    actual = Section(actual)
+        actual.append(Log.standard(cres.cpu().log10(), np.cumsum(thick.cpu()), 'rho', xy=(i,0)))
+    result = Section(result, proj_pnts=[(-1, 0), (i/2, 0), (i+1, 0)])
+    actual = Section(actual, proj_pnts=[(-1, 0), (i/2, 0), (i+1, 0)])
     result.plot(axs=ax[0], cmap='turbo', vmin=0, vmax=2)
     actual.plot(axs=ax[1], cmap='turbo', vmin=0, vmax=2)
     plt.show()
