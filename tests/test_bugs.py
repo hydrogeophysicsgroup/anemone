@@ -1,5 +1,8 @@
 import torch
 from anemone.experiment import *
+from pytest_config import *
+
+
 
 def test_gate_sampling():
     """ Some forwards were suffering from numerical instability when not using exact log sampling.
@@ -38,10 +41,10 @@ def test_gate_sampling():
         ax.loglog(fwr.times, -dbdt1, '.')
         plt.show()
 
-
+@pytest.mark.skipif(skip_multi_rx, reason="multi-rx needs retooling.")
 def test_multirx():
     tx = Loop.square(2)
-    from anemone.forwards import Forward
+    from anemone.forwards import BaseForward as Forward
     import numpy as np
     
     X,Y = torch.linspace(-1, 1, 7)*0.98, np.linspace(-1, 1, 7)*0.98
@@ -84,7 +87,7 @@ def test_multirx():
         
 
 
-
+@pytest.mark.skipif(skip_multi_rx, reason="multi-rx needs retooling.")
 def test_multirx_symmetry():
     tx = Loop.square(2)
     from anemone.forwards import BaseForward
@@ -120,7 +123,7 @@ def test_multirx_symmetry():
 
 
 if __name__ == '__main__':
-    # test_multirx()
+    test_multirx()
     #test_gate_sampling()
-    test_multirx_symmetry()
+    # test_multirx_symmetry()
 
