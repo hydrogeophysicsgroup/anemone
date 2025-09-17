@@ -1,6 +1,11 @@
 from dolphinv import *
 import torch
 
+class BaseModel(BaseModel):
+    def modelize(self, mvec):
+        mod_par = [torch.from_numpy(m).to(torch.double) for m in super().modelize(mvec)]
+        return mod_par
+
 class Resistivity(BaseModel):
     def __init__(self, values, **kwargs):
         res_bnds = kwargs.pop('res_bnds', (1e-1, 2e4))
@@ -8,12 +13,12 @@ class Resistivity(BaseModel):
         
         if not isinstance(values, list):
             values = [values]
-        upper_bounds = [torch.ones_like(values[0])*res_bnds[1]]
-        lower_bounds = [torch.ones_like(values[0])*res_bnds[0]]
+        upper_bounds = [np.ones_like(values[0])*res_bnds[1]]
+        lower_bounds = [np.ones_like(values[0])*res_bnds[0]]
         names = ['resistivity']
         if len(values) == 2:
-            upper_bounds.append(torch.ones_like(values[1])*thk_bnds[1])
-            lower_bounds.append(torch.ones_like(values[1])*thk_bnds[0])
+            upper_bounds.append(np.ones_like(values[1])*thk_bnds[1])
+            lower_bounds.append(np.ones_like(values[1])*thk_bnds[0])
             names.append('thickness')
         kwargs['names'] = names
         kwargs.setdefault('lower_bounds', lower_bounds)
@@ -29,14 +34,14 @@ class MPA(BaseModel):
         c_bnds   = kwargs.pop('c_bnds',   (1e-3, 1e4))
         thk_bnds = kwargs.pop('thk_bnds', (1,    100))
 
-        upper_bounds = [torch.ones_like(val)*bnds[1] for val,bnds in zip(values, [res_bnds, phi_bnds, tau_bnds, c_bnds])]
-        lower_bounds = [torch.ones_like(val)*bnds[0] for val,bnds in zip(values, [res_bnds, phi_bnds, tau_bnds, c_bnds])]
+        upper_bounds = [np.ones_like(val)*bnds[1] for val,bnds in zip(values, [res_bnds, phi_bnds, tau_bnds, c_bnds])]
+        lower_bounds = [np.ones_like(val)*bnds[0] for val,bnds in zip(values, [res_bnds, phi_bnds, tau_bnds, c_bnds])]
         if not isinstance(values, list):
             values = [values]
         names = ['resistivity', 'phi', 'tau', 'c']
         if len(values) == 5:
-            upper_bounds.append(torch.ones_like(values[-1])*thk_bnds[1])
-            lower_bounds.append(torch.ones_like(values[-1])*thk_bnds[0])
+            upper_bounds.append(np.ones_like(values[-1])*thk_bnds[1])
+            lower_bounds.append(np.ones_like(values[-1])*thk_bnds[0])
             names.append('thickness')
         kwargs['names'] = names
         kwargs.setdefault('lower_bounds', lower_bounds)
@@ -51,14 +56,14 @@ class ColeCole(BaseModel):
         c_bnds   = kwargs.pop('c_bnds',   (1e-3, 1e4))
         thk_bnds = kwargs.pop('thk_bnds', (1,    100))
 
-        upper_bounds = [torch.ones_like(val)*bnds[1] for val,bnds in zip(values, [res_bnds, m_bnds, tau_bnds, c_bnds])]
-        lower_bounds = [torch.ones_like(val)*bnds[0] for val,bnds in zip(values, [res_bnds, m_bnds, tau_bnds, c_bnds])]
+        upper_bounds = [np.ones_like(val)*bnds[1] for val,bnds in zip(values, [res_bnds, m_bnds, tau_bnds, c_bnds])]
+        lower_bounds = [np.ones_like(val)*bnds[0] for val,bnds in zip(values, [res_bnds, m_bnds, tau_bnds, c_bnds])]
         if not isinstance(values, list):
             values = [values]
         names = ['resistivity', 'm', 'tau', 'c']
         if len(values) == 5:
-            upper_bounds.append(torch.ones_like(values[-1])*thk_bnds[1])
-            lower_bounds.append(torch.ones_like(values[-1])*thk_bnds[0])
+            upper_bounds.append(np.ones_like(values[-1])*thk_bnds[1])
+            lower_bounds.append(np.ones_like(values[-1])*thk_bnds[0])
             names.append('thickness')
         kwargs['names'] = names
         kwargs.setdefault('lower_bounds', lower_bounds)
@@ -69,14 +74,23 @@ LogResistivity = logify(Resistivity)
 LogMPA = logify(MPA)
 LogColeCole = logify(ColeCole)
 
+class BaseInversion(BaseInversion):
+    def mforward(self, mvec):
+        return super().mforward(mvec).detach().cpu().numpy()
+
+class Tikhonov(Tikhonov):
+    def mforward(self, mvec):
+        return super().mforward(mvec).detach().cpu().numpy()
+
 def fastjacobian(cls):
     class FastJacobian(cls):
         def jacobian(self, mvec):
             rho, thick = self.model.modelize(mvec)
-            G = self.forward(rho, thick, jac=True)
+            # rho = torch.from_numpy(rho)
+            thick = torch.from_numpy(thick)# if thick is not None else None
+            G = self.forward(rho, thick, jac=True)#.detach().cpu().numpy()
             G *= rho[:, None]
-            G /= 10**self.data_predicted
-            return G.T
+            G /= 10**self._dpred
+            return G.T.detach().cpu().numpy()
     return FastJacobian
 
-fastJac = fastjacobian(Tikhonov)

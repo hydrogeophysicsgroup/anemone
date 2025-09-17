@@ -60,12 +60,12 @@ def test_tikhonov_smooth():
 
     dbdt_true = 10**fwrTD(rho, thk)
     d_relerr = compute_relstd(fwrTD.times, dbdt_true, current=10.)
-    d_err = torch.log10(1. + d_relerr)
+    d_err = torch.log10(1. + d_relerr).numpy()
     d_obs = dbdt_true + dbdt_true * torch.randn_like(dbdt_true) * d_relerr
 
-    d_obs = torch.abs(d_obs).log10()
+    d_obs = torch.abs(d_obs).log10().numpy()
 
-    res_start = LogResistivity.smooth(torch.ones(31, dtype=torch.double)*50, torch.cumsum(torch.logspace(0,1.5,30), 0))
+    res_start = LogResistivity.smooth(np.ones(31)*50, np.cumsum(np.logspace(0,1.5,30)))
 
     inv = Tikhonov(d_obs, d_err, res_start, fwrTD)
     inv.data_misfit_acceptance_threshold = 0.9
@@ -89,7 +89,7 @@ def test_fastjacobian():
     logForward = logify_forward(Forward)
 
     times = torch.logspace(-5,-2, 32)
-    fwrTD = logForward.example(times=times, tolerance=1e-4)
+    fwrTD = logForward.example(times=times, tolerance=1e-6)
 
     rho = torch.tensor([20, 80, 40])
     thk = torch.tensor([30,40.])
@@ -98,12 +98,13 @@ def test_fastjacobian():
 
     dbdt_true = 10**fwrTD(rho, thk)
     d_relerr = compute_relstd(fwrTD.times, dbdt_true, current=10.)
-    d_err = torch.log10(1. + d_relerr)
+    d_err = torch.log10(1. + d_relerr).numpy()
     d_obs = dbdt_true + dbdt_true * torch.randn_like(dbdt_true) * d_relerr
 
-    d_obs = torch.abs(d_obs).log10()
+    d_obs = torch.abs(d_obs).log10().numpy()
 
-    res_start = LogResistivity.smooth(torch.ones(31, dtype=torch.double)*50, torch.cumsum(torch.logspace(0,1.5,30), 0))
+    res_start = LogResistivity.smooth(np.ones(31)*50, np.cumsum(np.logspace(0,1.5,30)))
+
 
     fastJac = fastjacobian(Tikhonov)
 
@@ -129,10 +130,10 @@ def test_lci():
     gpu = torch.device('cpu')
     logForward = logify_forward(Forward)
     t = torch.logspace(-5.5, -2, 51, device=gpu, dtype=torch.double)
-    fwr = logForward.example(times=t, tolerance=1e-5)
-    fastJac = fastjacobian(Inversion)
+    fwr = logForward.example(times=t, tolerance=1e-6)
+    fastJac = fastjacobian(Tikhonov)
 
-    z = torch.cumsum(torch.logspace(0, np.log10(50.), 30), 0)
+    z = np.cumsum(np.logspace(0, np.log10(50.), 30))
     z /= z.max()
     z *= 150
 
@@ -140,8 +141,8 @@ def test_lci():
     thk_true = torch.tensor([50, 30], device=gpu, dtype=torch.double)
 
 
-    res_start = LogResistivity.smooth(torch.ones(len(z)+1)*50., z)
-    thick1 = torch.linspace(0, 20, 10).to(torch.double)#[:3]
+    res_start = LogResistivity.smooth(np.ones(len(z)+1)*50., z)
+    thick1 = torch.linspace(0, 20, 50).to(torch.double)#[:3]
     inv_list = []
     m_trues=[]
 
@@ -157,7 +158,7 @@ def test_lci():
         dbdt = 10**fwr(crho, thk)#.exp()
         d_err = compute_relstd(fwr.times, dbdt, current=25.)
         d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log10()
-        tmp_inv = fastJac(d_obs, (1. + d_err).log10(), res_start.copy(), fwr)
+        tmp_inv = fastJac(d_obs.numpy(), (1. + d_err).log10().numpy(), res_start.copy(), fwr)
 
         tmp_inv.setup_matrices()
         inv_list.append(tmp_inv)    
@@ -179,11 +180,11 @@ def test_lci():
         result = []
         actual = []
         _,thick = res_mods[0].mod
-        z = torch.cumsum(thick, 0)
+        z = np.cumsum(thick)
         for i, (mtrue, res_mod) in enumerate(zip(m_trues, res_mods)):
             result.append(Log.standard(res_mod.values[0].log10(), z, 'rho', bottom=200, xy=(i,0)))
             cres,thick = mtrue.mod
-            actual.append(Log.standard(cres.log10(), np.cumsum(thick), 'rho', bottom=200, xy=(i,0)))
+            actual.append(Log.standard(np.log10(cres.numpy()), np.cumsum(thick.numpy()), 'rho', bottom=200, xy=(i,0)))
         profile = ([-1,0], [len(thick1)+1, 0])
         result = Section(result, proj_pnts=profile)
         actual = Section(actual, proj_pnts=profile)

@@ -1,5 +1,5 @@
 from anemone.transforms import Hankel, invFourier, CubicSpline, invLaplace, coefficient_bounds
-from anemone.physics import refl_transverse_electric as rte, freespace_u0 as u0, colecole, mpa2colecole, colecole2mpa
+from anemone.physics import rte_raiche1999 as rte, freespace_u0 as u0, colecole, mpa2colecole, colecole2mpa
 from anemone.physics import rte_nbc_laplace as rtelap
 from anemone.physics import drte_dsigma
 from anemone import constants as c
@@ -422,6 +422,7 @@ class Forward(BaseForward):
         return Ht.real
         
     def __call__(self, rho, thickness, jac=False):
+        # with torch.no_grad():
         self.rho = ((rho+0j)[..., None, None])#.to(self.device)
         if rho.ndim > thickness.ndim:
             thickness = thickness[:, None, ...]
@@ -430,6 +431,7 @@ class Forward(BaseForward):
             G = self.jacobian()
             return G*c.mu0 / rho[:, None]**2
         else:            
+
             return self.forward()*c.mu0
         
     def __add__(self, other):
