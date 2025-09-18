@@ -57,7 +57,6 @@ def logify_forward(cls):
                 return super().__call__(*args, **kwargs)
     return LogFwr
 
-
 class BaseForward:
     """ Has everything that the Forward needs, but is very slow. 
         Good for understanding the physics, but not for production use.
@@ -880,7 +879,7 @@ class ForwardHankel6(BaseForward):
                 hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10)
                 def geomz_r(r):
                     return self.source.geomz(self.receiver, r).to(torch.double).to(self.device)
-                Ht, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax, tolerance=1e-3)
+                Ht, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax, tolerance=1e-5)
             else:
                 Ht = torch.einsum('...i,i->...', wvlngth_integrand(self.lmb.squeeze()), self.geomz).real
             if self.filterfunc is not None:
