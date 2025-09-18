@@ -420,7 +420,9 @@ class Forward(BaseForward):
         return Ht.real
         
     def __call__(self, rho, thickness, jac=False):
-        self.rho = ((rho+0j)[..., None, None])
+        if not isinstance(rho, torch.Tensor):       rho       = torch.tensor(rho)
+        if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)        
+        self.rho = ((rho+0j)[..., None, None])#.to(self.device)
         if rho.ndim > thickness.ndim:
             thickness = thickness[:, None, ...]
         self.thick = ((thickness+0j)[..., None, None])
