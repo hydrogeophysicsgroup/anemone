@@ -1,5 +1,5 @@
 from anemone.inversion import *
-from anemone.forwards import Forward, logify_forward
+from anemone.forwards import Forward, Forward2, logify_forward
 from anemone.system import Loop, Receiver, Waveform, FilterChain, ButterworthFilter
 from anemone.experiment import compute_relstd
 
@@ -128,13 +128,12 @@ def test_fastjacobian():
 def test_lci():
     gpu = torch.device('cuda')
     print('number of threads: ', torch.get_num_threads())
-    # torch.set_num_threads(40)
     logForward = logify_forward(Forward)
     t = torch.logspace(-5.5, -2, 51, device=gpu, dtype=torch.double)
     fwr = logForward.example(times=t, tolerance=1e-6)
     fastJac = fastjacobian(Inversion)
 
-    z = torch.cumsum(torch.logspace(0, np.log10(50.), 30), 0)
+    z = torch.cumsum(torch.logspace(0, np.log10(50.), 20), 0)
     z /= z.max()
 
     z *= 150
@@ -143,12 +142,13 @@ def test_lci():
     thk_true = torch.tensor([50, 30], device=gpu, dtype=torch.double)
 
 
-    res_start = LogResistivity.smooth(torch.ones(21)*50., z, device=gpu)
-    thick1 = torch.linspace(0, 20, 100).to(torch.double)#[:3]
+    res_start = LogResistivity.smooth(torch.ones(len(z)+1)*50., z, device=gpu)
+    thick1 = torch.linspace(0, 20, 15).to(torch.double)#[:3]
     inv_list = []
     m_trues=[]
 
     for i,dthick in enumerate(thick1):
+        this_fwr = fwr.copy()
         thk = thk_true.clone()
         thk[0] += dthick
         crho = rho_true.clone()
@@ -157,10 +157,10 @@ def test_lci():
         m_true = LogResistivity.few_layers(torch.clamp(crho, 5), thk)
         m_trues.append(m_true)
         
-        dbdt = 10**fwr(crho, thk)#.exp()
+        dbdt = 10**this_fwr(crho, thk)#.exp()
         d_err = compute_relstd(fwr.times, dbdt, current=25.)
         d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log10()
-        tmp_inv = fastJac(d_obs, (1. + d_err).log10(), res_start.copy(), fwr)
+        tmp_inv = fastJac(d_obs, (1. + d_err).log10(), res_start.copy(), this_fwr)
 
         tmp_inv.setup_matrices()
         inv_list.append(tmp_inv)    

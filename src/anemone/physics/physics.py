@@ -19,10 +19,9 @@ def calc_zy(sigma, omega, epsilon=c.epsilon0, mu=c.mu0):
 
 
 def calc_wavenumber(sigma, omega, mu=c.mu0, epsilon=c.epsilon0, sqrt=True):
-    """get the intrinsic complex wavenumber 'k' 
-       see equation 4.30 in ward in hohmann (pg 207)
+    """ get the intrinsic complex wavenumber 'k' 
+        see equation 4.30 in Ward and Hohmann (pg 207)
     """
-
     k = mu*omega*(epsilon*omega - 1j*sigma)
     if sqrt: k = torch.sqrt(k)
     return k
