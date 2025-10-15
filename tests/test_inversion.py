@@ -162,7 +162,7 @@ def test_lci():
         d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log10()
         tmp_inv = fastJac(d_obs, (1. + d_err).log10(), res_start.copy(), this_fwr)
 
-        tmp_inv.setup_matrices()
+        # tmp_inv.setup_matrices()
         inv_list.append(tmp_inv)    
     print(f"Created {len(inv_list)} inversions")
     from time import time as timer
