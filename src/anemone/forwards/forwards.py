@@ -53,7 +53,7 @@ def logify_forward(cls):
     class LogFwr(cls):
         def __call__(self, *args, **kwargs):
             if not kwargs.get('jac', False):
-                return torch.abs(super().__call__(*args, **kwargs)).log10()
+                return torch.abs(super().__call__(*args, **kwargs)).log()
             else:
                 return super().__call__(*args, **kwargs)
     return LogFwr
@@ -178,10 +178,10 @@ class BaseForward:
     def __call__(self, rho, thickness):
         if not isinstance(rho, torch.Tensor):       rho       = torch.tensor(rho)
         if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)
-        self.rho = ((rho+0j)[..., None, None])#.to(self.device)
+        self.rho = ((rho+0j)[..., None, None]).to(self.device)
         if rho.ndim > thickness.ndim:
             thickness = thickness[:, None, ...]
-        self.thick = ((thickness+0j)[..., None, None])#.to(self.device)
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
         return self.forward().squeeze().real*c.mu0
 
     @classmethod
@@ -364,7 +364,7 @@ class Forward(BaseForward):
             print('preparing forward model...')
             from inspect import signature
             n_params = len([x for x in str(signature(self.__call__)).split(',') if '=' not in x and x.strip() != ''])
-            phys_params = [torch.ones(2)]*n_params
+            phys_params = [torch.ones(2, device=self.device)]*n_params
             _ = self(*phys_params)        
 
     def forward(self):
@@ -373,8 +373,8 @@ class Forward(BaseForward):
             def wvlngth_integrand(wave_length):
                 """ Hz from horizontal electric dipole. """
                 self.lmb = wave_length[None, None, :]          
-                self.tmp_u0 = u0(self.omega, self.lmb)
-                self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)*self.lmb / c.fourpi
+                # self.tmp_u0 = u0(self.omega, self.lmb)
+                self.sfield_rte = torch.exp(-self.lmb*self.sfield_dz)*self.lmb / c.fourpi
                 intg = rte(self.sigma, self.thick, self.omega, self.lmb)*self.sfield_rte
                 return intg.squeeze()
             if self.geomz is None:
@@ -442,6 +442,10 @@ class Forward(BaseForward):
             return G*c.mu0 / rho[:, None]**2
         else:            
             return self.forward()*c.mu0
+    
+    def copy(self):
+        from copy import deepcopy
+        return deepcopy(self)
         
     def __add__(self, other):
         assert other.kind       == self.kind,       "Forwards must be the same type"

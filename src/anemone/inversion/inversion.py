@@ -75,8 +75,11 @@ def fastjacobian(cls):
             rho, thick = self.model.modelize(mvec)
             G = self.forward(rho, thick, jac=True)
             G *= rho[:, None]
-            G /= 10**self.data_predicted#.exp()
+            G /= self.data_predicted.exp()
             return G.T
+        def copy(self):
+            from copy import deepcopy
+            return deepcopy(self)               
     return FastJacobian
 
 fastJac = fastjacobian(Tikhonov)
