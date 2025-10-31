@@ -65,12 +65,24 @@ class BaseForward:
     omega = None
     lamda = None
     kind = 'res-only'
+    t_end = None
 
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None):
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None):
         warnings.warn("BaseForward is very slow, use Forward instead.", DeprecationWarning)
         self.source = source
         self.receiver = receiver
         self.times = times if isinstance(times, torch.Tensor) else torch.tensor(times)
+
+        if t_end is not None:
+            self.t_st = self.times
+            self.t_end= t_end
+            self.times = (self.t_st * self.t_end)**0.5
+            self.tmin = self.t_st.min()
+            self.tmax = self.t_end.max()
+        else:
+            self.tmin = self.times.min()
+            self.tmax = self.times.max()
+
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(times.device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(times.device)
         self.srcz = torch.tensor([source.z[0]], dtype=torch.float64)
@@ -84,20 +96,7 @@ class BaseForward:
         self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)
 
         self.waveform = waveform
-        if t_gatewidth is not None:
-            if isinstance(t_end, float): t_end = torch.ones_like(self.times)*t_end
-            elif not isinstance(t_gatewidth, torch.Tensor) and t_gatewidth is not None: t_gatewidth = torch.tensor(t_gatewidth, device=self.times.device)
-            self.t_gatewidth = t_gatewidth
-            self.t_st = self.times-t_gatewidth/2.
-            self.t_end= self.times+t_gatewidth/2.
-        else:
-            self.t_gatewidth=None
-        if self.t_gatewidth is not None:
-            self.tmin = self.t_st.min()
-            self.tmax = self.t_end.max()
-        else:
-            self.tmin = self.times.min()
-            self.tmax = self.times.max()
+
         
         
 
@@ -159,7 +158,7 @@ class BaseForward:
             dbdt = resp_step @ self.waveform.d2wdt2
         else:
             dbdt = self._ft(self.t_eval).real
-        if self.t_gatewidth is not None:
+        if self.t_end is not None:
             tmp_ft = CubicSpline(self.t_eval, dbdt, transform=torch.log10)
             return tmp_ft.integrate(self.t_st, self.t_end, normalize=True).real
         else:
@@ -258,9 +257,9 @@ class BaseForward:
 from anemone.experiment import Loop, Receiver
 
 class ForwardCentralCircle(BaseForward):
-    def __init__(self, radius, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None):
+    def __init__(self, radius, times, waveform=None, filterfunc=None, t_end=None, tolerance=None):
         tx,rx = Loop.circle(radius), Receiver()
-        super().__init__(tx, rx, times, waveform, filterfunc, t_gatewidth, tolerance)
+        super().__init__(tx, rx, times, waveform, filterfunc, t_end, tolerance)
         self.tx_radius = torch.tensor(radius, dtype=torch.double)
         self.device = times.device
         self.rte = []
@@ -303,8 +302,8 @@ class ForwardLaplace(BaseForward):
     sfield_rte = None
     pfield = None
     tmp_u0 = None
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, t_smp_per_decade=12):
-        super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance)
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None, t_smp_per_decade=12):
+        super().__init__(source, receiver, times, waveform, filterfunc, t_end, tolerance)
         if waveform is not None:
             if self.tmin<0: 
                 self.tmin = torch.tensor([1e-9])
@@ -357,8 +356,9 @@ class Forward(BaseForward):
     geomz = None
     t2t   = None
 
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, precalc=True):
-        super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance)
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None, precalc=True):
+        print('are we really using this?')
+        super().__init__(source, receiver, times, waveform, filterfunc, t_end, tolerance)
         self.t2t = None
         if precalc:
             print('preparing forward model...')
@@ -394,7 +394,7 @@ class Forward(BaseForward):
         if self.t2t is None:
             self.cbft=invFourier(frq_integrand, device=self.device, tolerance=self.tolerance)
             def t2t_func(t_in):
-                if self.t_gatewidth is not None:
+                if self.t_end is not None:
                     waveform_matrix = wv_to_t(t_in, t_in, waveform=self.waveform)
                     gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
                     return gate_matrix @ waveform_matrix
@@ -486,8 +486,8 @@ class Forward2(Forward):
     t2t   = None
     prev_rho = None
 
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None):
-        super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance)
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None):
+        super().__init__(source, receiver, times, waveform, filterfunc, t_end, tolerance)
         self.t2t = None
 
     def forward(self):
@@ -518,7 +518,7 @@ class Forward2(Forward):
         if self.t2t is None:
             self.cbft=invFourier(frq_integrand, device=self.device, tolerance=self.tolerance)
             def t2t_func(t_in):
-                if self.t_gatewidth is not None:
+                if self.t_end is not None:
                     waveform_matrix = wv_to_t(t_in, t_in, waveform=self.waveform)
                     gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
                     return gate_matrix @ waveform_matrix
@@ -657,8 +657,8 @@ class ForwardLaplace6(ForwardLaplace):
     geomz = None
     t2t   = None
 
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, t_smp_per_decade=12):
-        super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance, t_smp_per_decade)
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None, t_smp_per_decade=12):
+        super().__init__(source, receiver, times, waveform, filterfunc, t_end, tolerance, t_smp_per_decade)
         self.t2t = wv_to_t(self.times, self.t_eval, waveform=self.waveform)#.to_sparse()
 
     def forward(self):
@@ -697,8 +697,8 @@ class ForwardLaplace7(ForwardLaplace):
     geomz = None
     t2t   = None
 
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, t_smp_per_decade=12):
-        super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance, t_smp_per_decade)
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None, t_smp_per_decade=12):
+        super().__init__(source, receiver, times, waveform, filterfunc, t_end, tolerance, t_smp_per_decade)
         self.t2t = wv_to_t(self.times, self.t_eval, waveform=self.waveform)#.to_sparse()
 
     def forward(self):
@@ -970,8 +970,8 @@ class ForwardHankel6(BaseForward):
     geomz = None
     t2t   = None
 
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None, t_smp_per_decade=12):
-        super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance, t_smp_per_decade)
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None, t_smp_per_decade=12):
+        super().__init__(source, receiver, times, waveform, filterfunc, t_end, tolerance, t_smp_per_decade)
         self.t2t = wv_to_t(self.times, self.t_eval, waveform=self.waveform)#.to_sparse()
 
     def forward(self):
@@ -1046,11 +1046,11 @@ class VMDForward(Forward):
     geomz = None
     t2t   = None
 
-    def __init__(self, source_height, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None):
+    def __init__(self, source_height, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None):
         tx = Loop.square(1., z=source_height)
         self.rx_dist = torch.sqrt(receiver.x**2 + receiver.y**2)
         self.t2t = None
-        super().__init__(tx, receiver, times, waveform, filterfunc, t_gatewidth, tolerance)
+        super().__init__(tx, receiver, times, waveform, filterfunc, t_end, tolerance)
         
 
     def forward(self):
@@ -1075,7 +1075,7 @@ class VMDForward(Forward):
         if self.t2t is None:
             self.cbft=invFourier(frq_integrand, device=self.device, tolerance=self.tolerance)
             def t2t_func(t_in):
-                if self.t_gatewidth is not None:
+                if self.t_end is not None:
                     waveform_matrix = wv_to_t(t_in, t_in, waveform=self.waveform)
                     gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
                     return gate_matrix @ waveform_matrix
@@ -1094,8 +1094,8 @@ class ForwardFlow(BaseForward):
     geomz = None
     t2t   = None
 
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=None):
-        super().__init__(source, receiver, times, waveform, filterfunc, t_gatewidth, tolerance)
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None):
+        super().__init__(source, receiver, times, waveform, filterfunc, t_end, tolerance)
         self.t2t = None
 
     def forward(self):
@@ -1125,7 +1125,7 @@ class ForwardFlow(BaseForward):
         if self.t2t is None:
             self.cbft=invFourier(frq_integrand, device=self.device, tolerance=self.tolerance)
             def t2t_func(t_in):
-                if self.t_gatewidth is not None:
+                if self.t_end is not None:
                     waveform_matrix = wv_to_t(t_in, t_in, waveform=self.waveform)
                     gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
                     return gate_matrix @ waveform_matrix
