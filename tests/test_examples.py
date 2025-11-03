@@ -6,7 +6,7 @@ import tempfile
 import pytest
 
 file_path = os.path.split(__file__)[0]
-example_path = file_path.replace('\\tests', '\\examples\\')#os.path.join(file_path, '..\\examples\\')
+example_path = file_path.replace('\\tests', '\\examples\\')
 sys.path.append(example_path)
 
 print(example_path)
@@ -36,7 +36,7 @@ def test_example_scripts(log=silence):
             log(f"✅\t{module_name}")
             successful_run.append(True)
         except Exception as e:
-            log(f"❌\t{module_name} - Error: {str(e)}")
+            log(f"❌\t{module_name:<50} - Error: {str(e)}")
             successful_run.append(False)
 
     assert all(successful_run), "Some example scripts failed to run"
@@ -115,4 +115,4 @@ def test_notebooks(log=silence):
 
 if __name__ == "__main__":
     test_example_scripts(log=print)
-    test_notebooks(log=print)
+    # test_notebooks(log=print)
