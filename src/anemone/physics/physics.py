@@ -522,9 +522,12 @@ def rte_raiche1999(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.eps
     n_layers=len(sigma)
 
     lambda2 = wave_length**2
+
+
     
     Fj = 0.
     sj1 = torch.sqrt(lambda2 + 1j*omega*mu[-1]*sigma[-1])
+
     for i in range(n_layers-2, -1, -1):
         sj = torch.sqrt(lambda2 +  1j*omega*mu[i]*sigma[i])
         RTEj = 1j*omega*mu[i]*(sigma[i] - sigma[i+1])/(sj + sj1)**2
