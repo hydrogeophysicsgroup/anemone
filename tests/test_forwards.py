@@ -713,8 +713,8 @@ def test_multireceiver_frequency_domain():
 
 if __name__ == '__main__':
     
-    # test_halfspace_circle_center()
-    #test_halfspace_circle_center_forward()
+    test_halfspace_circle_center()
+    test_halfspace_circle_center_forward()
     # test_40x40_aarhusInv_piecewise_waveform()
 
     #test_multirx_forward_shape_check()
