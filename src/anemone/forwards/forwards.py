@@ -135,7 +135,7 @@ class BaseForward:
                 
                 tmp_u0 = u0(self.omega, self.lamda)
                 intg   = rte(self.sigma, self.thick, self.omega, self.lamda)*torch.exp(-tmp_u0*self.sfield_dz)
-                intg  *= self.lamda#**2 / tmp_u0                
+                intg  *= self.lamda
 
                 return intg/c.fourpi
             
@@ -357,11 +357,9 @@ class Forward(BaseForward):
     t2t   = None
 
     def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None, precalc=True):
-        print('are we really using this?')
         super().__init__(source, receiver, times, waveform, filterfunc, t_end, tolerance)
         self.t2t = None
         if precalc:
-            print('preparing forward model...')
             from inspect import signature
             n_params = len([x for x in str(signature(self.__call__)).split(',') if '=' not in x and x.strip() != ''])
             phys_params = [torch.ones(2, device=self.device)]*n_params
@@ -483,7 +481,6 @@ class Forward(BaseForward):
         self.times = torch.cat([self.times, other.times])
 
         return self
-
 
 class Forward2(Forward):
     geomz = None
