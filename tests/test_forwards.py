@@ -105,8 +105,8 @@ def check_halfspace_circle_center(ForwardMaker, rtol=3e-2):
     from anemone.physics import hzdt_halfspace_center_circle_loop
     from anemone import constants as c
     name = ForwardMaker.__name__
-    radius = 15
-    lp = Loop.circle(radius, n=64)
+    radius = 10
+    lp = Loop.circle(radius, n=32)
     # lp = Loop.square((c.pi*radius*radius)**(1/2))
     rx = Receiver()
     times = torch.logspace(-6, 0, 101, dtype=torch.double)
@@ -114,10 +114,10 @@ def check_halfspace_circle_center(ForwardMaker, rtol=3e-2):
     rho = torch.logspace(3, 0, 5, dtype=torch.double)[None, :]*torch.ones(3, dtype=torch.double)[:, None]
     thick = torch.ones(2, dtype=torch.double)*20
 
-    fwr = ForwardMaker(lp, rx, times)
+    fwr = ForwardMaker(lp, rx, times, tolerance=5e-1)
     # dbdt = fwr(rho, thick)
     dbdt = fwr(rho, thick).real.T
-
+    print(fwr.t2t.shape)
     dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius).real*c.mu0
     
     if __name__ == '__main__':
@@ -142,22 +142,22 @@ def check_halfspace_circle_center(ForwardMaker, rtol=3e-2):
     assert torch.allclose(dbdt_analytic[times<5e-2,1:], dbdt[times<5e-2,1:], rtol), f"{name} (radius = {radius} m) and analytic before 50ms do not match within {rtol*100} percent"
 
 def test_halfspace_circle_center_forward():
-    from anemone.forwards import Forward
-    check_halfspace_circle_center(Forward)
+    from anemone.forwards import ForwardFlow
+    check_halfspace_circle_center(ForwardFlow)  
 
 def test_halfspace_circle_center():
     from anemone.experiment import Loop, Receiver
     from anemone.physics import hzdt_halfspace_center_circle_loop
     from anemone.forwards import ForwardCentralCircle
     from anemone import constants as c
-    radius = 5.
+    radius = 20.
 
     name = 'Central Circular Loop (radius={radius} m)'.format(radius=radius)
     rtol = 2e-2
     
     
     
-    times = torch.logspace(-6, 0, 51, dtype=torch.double)
+    times = torch.logspace(-9, 0, 51, dtype=torch.double)
 
     rho = torch.tensor([[1, 10, 100, 1000], [1, 10, 100, 1000]])
     thick = torch.ones(4, dtype=torch.double)*20
@@ -713,7 +713,7 @@ def test_multireceiver_frequency_domain():
 
 if __name__ == '__main__':
     
-    test_halfspace_circle_center()
+    # test_halfspace_circle_center()
     test_halfspace_circle_center_forward()
     # test_40x40_aarhusInv_piecewise_waveform()
 

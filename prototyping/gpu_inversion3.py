@@ -49,9 +49,6 @@ def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=0.01):
     print('n omegas: ', omega_i.max()-omega_i.min())
     print('n lambdas: ', lamda_i.max()-lamda_i.min())
 
-    # full_mask[:,:] = False
-    # full_mask[int(omega_i.min()):int(omega_i.max()), int(lamda_i.min()):int(lamda_i.max())] = True
-
     H2t = np.zeros(t2t.shape[:1]+(full_mask.sum(),), dtype=complex)
 
     for i in range(t2t.shape[0]):
@@ -72,10 +69,10 @@ class ForwardFlow(Forward):
     geomz = None
     t2t   = None
 
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_gatewidth=None, tolerance=1e-7):
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=1e-7):
         device = times.device
 
-        super().__init__(source, receiver, times.cpu(), waveform, filterfunc, t_gatewidth, tolerance, precalc=False)
+        super().__init__(source, receiver, times.cpu(), waveform, filterfunc, t_end, tolerance, precalc=False)
         self.t2t = None
         self.setup()
         self.device=device
@@ -98,7 +95,7 @@ class ForwardFlow(Forward):
                 self.sfield_rte = torch.exp(-self.lmb*self.sfield_dz)*self.lmb / c.fourpi
                 intg = rte(self.sigma, self.thick, self.omega, self.lmb)*self.sfield_rte
                 return intg.squeeze()
-            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device)
+            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10)
             def geomz_r(r):
                 return self.source.geomz(self.receiver, r).to(torch.double).to(self.device)
             Hr, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
@@ -108,9 +105,9 @@ class ForwardFlow(Forward):
             return Hr.squeeze()
         
         if self.t2t is None:
-            self.cbft=invFourier(frq_integrand, device=self.device)
+            self.cbft=invFourier(frq_integrand, device=self.device, smp_per_decade=16)
             def t2t_func(t_in):
-                if self.t_gatewidth is not None:
+                if self.t_end is not None:
                     waveform_matrix = wv_to_t(t_in, t_in, waveform=self.waveform)
                     gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
                     return gate_matrix @ waveform_matrix
@@ -118,10 +115,7 @@ class ForwardFlow(Forward):
                     return wv_to_t(self.times, t_in, waveform=self.waveform)
 
             
-            Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax*100.)
-            scalar = self.times**(5/2)
-            self.scalar = scalar/scalar.min()
-            # self.t2t *= self.scalar[:, None]
+            Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
 
             if self.filterfunc is not None:
                 self.t2t *= self.filterfunc.omega_filter(self.omega1.squeeze())
@@ -136,9 +130,7 @@ class ForwardFlow(Forward):
         self.H2t      /= torch.sqrt(self.omega)
         self.H2t      /= c.sqrt_twopi
         self.omega    *= c.sqrt_twopi
-        self.H2tjac    = self.H2t[:, None, :].to(self.device)                                   #[:, :3*len(self.omega)//6]
-        # self.omegajac  = self.omega                                  #[:3*len(self.omega)//6]
-        # self.lmbjac    = self.lmb                                    #[:3*len(self.omega)//6]
+        self.H2tjac    = self.H2t[:, None, :].to(self.device)
     
     def forward(self):
         with torch.no_grad():
@@ -243,10 +235,11 @@ class specialLCI2(LCI):
     n_sites = None
     _GtG = None
     _r_data = None
-    target_step = [0.05]
-    damp = []
+    target_step = [0.3]
+    dampf = [1./5000.]
     increase_count = 0
-    data_misfits = []
+    data_misfits = [np.inf]
+    actual_step = []
 
     def mforward(self, mvec):
         if self.n_sites is None: self.n_sites = len(self.inv_list)
@@ -309,35 +302,53 @@ class specialLCI2(LCI):
                 shape=self._GtG.shape,
             )
             self.CtC = sp.sparse.bsr_matrix(self.CtC.cpu().numpy())
-            self.damp.append(self._GtG.diagonal().max()/2500.)
+            
         else:
-            self._GtG.data[...] = GtG_np  # no flattening
-
+            self._GtG.data[...] = GtG_np*1.  # no flattening
         self._r_data = r_data.cpu().numpy().flatten()
         self.cmvec = self.mvec.cpu().numpy()*1.
 
     def calc_dm(self):
-        cdamp = self.damp[-1]
-
-        Aown = self._GtG + self.CtC
+        
+        cdamp = self.dampf[-1]*1.
+      #  if self.iteration==0:
+        gtgmax = self._GtG.diagonal().max()
+        cdamp *= gtgmax
+        cdamp = max(cdamp, 1.)
+        if self.iteration>2:
+            Aown = self._GtG*self.data_misfits[-1] + self.CtC*self.misfits[-1]
+        else:
+            Aown = self._GtG + self.CtC
         cImod = self.Imod.copy()
-        cImod.data[self._GtG.data==0.] = 0.
-        dm = sp.sparse.linalg.cg(Aown+cImod*cdamp, self._r_data)[0]
+        # cImod.data[:] = 1.
+        # cImod.data[self._GtG.data<1e-6] = 0.
+        # dm = sp.sparse.linalg.spsolve(Aown+cImod*cdamp, self._r_data)[0]
+        dm = sp.sparse.linalg.cg(Aown+cImod*cdamp, self._r_data, maxiter=500)[0]
         dm_rep = np.max(np.abs(dm))
+        
         attempts=1
-        while np.abs(dm_rep-self.target_step[-1])/dm_rep>1. and attempts<20:
-            cdamp *= np.abs(dm_rep-self.target_step[-1])/dm_rep
-            dm = sp.sparse.linalg.cg(Aown+cImod*cdamp, self._r_data)[0]
-            dm_rep = np.abs(dm).max()
+        measure = [dm_rep]
+        
+        while attempts<25 and self.iteration<5:
+            if dm_rep<self.target_step[-1]*0.5:
+                cdamp /= (1.1)**attempts
+            elif dm_rep>self.target_step[-1]*2:
+                cdamp *= (1.1)**attempts
+            else:
+                break
+            # dm = sp.sparse.linalg.spsolve(Aown+cImod*cdamp, self._r_data)[0]
+            dm = sp.sparse.linalg.cg(Aown+cImod*cdamp, self._r_data, maxiter=500)[0]
+            dm_rep = np.max(np.abs(dm))
+            measure.append(dm_rep)
             attempts+=1
-        self.damp.append(max(cdamp, 1e-5))
-        print('attempts to reach target step: ', attempts)
+        self.actual_step.append(dm_rep)
+        print(attempts, ' attempts ', measure)
+        self.dampf.append(cdamp/gtgmax)
         return torch.nan_to_num(torch.tensor(dm, device=self.mvec.device, dtype=self.mvec.dtype))
 
     @property
     def damp_matrix(self):
-        # damp = self.GtG.diagonal().max()/self.damp_value
-        return self.damp[-1] * self.Imod
+        return self.dampf[-1] *self.GtG.diagonal().max() * self.Imod
 
     
     def run_iteration(self):
@@ -350,18 +361,30 @@ class specialLCI2(LCI):
         
         dMisfit = (new_misfit-self.misfits[-1])/self.misfits[-1]
         d_misfit = self.data_misfit().mean().item()
-        self.data_misfits.append(d_misfit)
+        
         print('dMisfit: ', dMisfit)
-        if dMisfit>0:
-            self.damp[-1] = self.damp[-2]*10.
+        dDatMisfit = (d_misfit - self.data_misfits[-1])/self.data_misfits[-1]
+
+        if dMisfit>0. or dDatMisfit>0:
+            self.dampf.append(self.dampf[-1]*2.)
             self.mvec -= dM
-            self.target_step.append(self.target_step[-1]*0.5)
+            self.target_step[-1] *= 0.7
             self.increase_count +=1
-            
+            self.actual_step.pop(-1)
+        # elif dMisfit>0.1:
+        #     self.dampf.append(self.dampf[-1]*1.1)
+        #     self.target_step.append(max(self.target_step[-1]/2., self.target_step[-1]*-0.1))
+        #     self.misfits.append(new_misfit)
+        #     self.data_misfits.append(d_misfit)
+        #     self.increase_count += 1
         else:
             self.misfits.append(new_misfit)
-            self.target_step.append(max(0.02, d_misfit/10))
+            if self.misfits[-1]<1.2:
+                self.target_step.append(0.2)
+            else:
+                self.target_step.append(self.target_step[-1]+0.1)
             self.increase_count = 0
+            self.data_misfits.append(d_misfit)
 
         self.log("{:03d}\tmisfit:\t{:2.2f}".format(self.iteration, self.misfits[-1]))
         print('data misfit: ', d_misfit)
@@ -371,6 +394,9 @@ class specialLCI2(LCI):
         if super().stop_inversion:
             return True
         if self.increase_count>=2:
+            return True
+        if self.target_step[-1]<0.01:
+            print('stop for too small target step')
             return True
         return False    # @property
     # def damp_matrix(self):
@@ -406,14 +432,14 @@ class specialLCI2(LCI):
     #     return self.damp.cpu().numpy()*self.Imod
         
  
-gpu = torch.device('cuda')
+gpu = torch.device('cpu')
 print('number of threads: ', torch.get_num_threads())
 logForward = logify_forward(ForwardFlow)
-t = torch.logspace(-5.5, -3, 31, device=gpu, dtype=torch.float)
-fwr = logForward.example(times=t, tolerance=1e-5)
+t = torch.logspace(-5, -3, 31, device=gpu, dtype=torch.float)
+fwr = logForward.example(times=t, tolerance=1e-6)
 fastJac = fastjacobian(Inversion)
 
-z = torch.cumsum(torch.logspace(0, np.log10(50.), 20), 0)
+z = torch.cumsum(torch.logspace(0, np.log10(50.), 30), 0)
 z /= z.max()
 
 z *= 150
@@ -422,9 +448,9 @@ rho_true = torch.tensor([75., 10., 60.], device=gpu, dtype=torch.double)
 thk_true = torch.tensor([50, 30], device=gpu, dtype=torch.double)
 
 
-res_start = LogResistivity.smooth(torch.ones(len(z)+1)*50., z, device=gpu)
+res_start = LogResistivity.smooth(torch.ones(len(z)+1)*40., z, device=gpu)
 res_start.set_device(gpu)
-thick1 = torch.linspace(0, 20, 250).to(torch.float)
+thick1 = torch.linspace(0, 20, 15).to(torch.float)
 inv_list0 = []
 inv_list1 = []
 m_trues=[]
@@ -441,7 +467,7 @@ for i,dthick in enumerate(thick1):
     m_trues.append(m_true)
     
     dbdt = this_fwr(crho, thk).exp()
-    d_err = compute_relstd(fwr.times, dbdt.cpu(), current=25.).to(gpu)
+    d_err = compute_relstd(fwr.times, dbdt.cpu(), current=10.).to(gpu)
     d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log().to(gpu)
     tmp_inv = fastJac(d_obs, (1. + d_err).log(), res_start.copy(), this_fwr)
 
@@ -512,8 +538,9 @@ if __name__ == '__main__':
 
     plt.figure()
     plt.semilogy(lci.misfits, label='misfits')
-    plt.semilogy(lci.damp, label='damp_fs')
+    plt.semilogy(lci.dampf, label='damp_fs')
     plt.semilogy(lci.target_step, label='target_step')
+    plt.semilogy(lci.actual_step, label='actual_step')
     plt.semilogy(lci.data_misfits, label='data_misfits')
     plt.legend()    
     plt.show()
