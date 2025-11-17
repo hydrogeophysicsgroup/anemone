@@ -6,6 +6,7 @@ pi = np.pi
 
 def christensen1990_calculate_smoothing(omega_0, sc):
     """calculate the parameter a.
+    from equation 32 in Christensen 1990
 
     Args:
         omega_0 (float): angle opening angle in radians
