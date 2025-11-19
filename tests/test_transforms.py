@@ -35,7 +35,7 @@ def test_frequency_response():
 
     if running_as_main:
         import matplotlib.pyplot as plt
-        plt.plot(frqs, hz_analytical*7., 'k-')
+        plt.plot(frqs, hz_analytical, 'k-')
         plt.plot(frqs, hz, 'r--')
         plt.xlabel('r (m)')
         plt.ylabel('H(r)')
@@ -197,7 +197,7 @@ def test_invfourier_earlytimes():
 
     ift = invFourier(F1, smp_per_decade=21)
     ift._recenter_function((torch.ones(1)*1e12, torch.ones(1)*1e13))
-    t,y2 = ift.range(1e-6,1e3)
+    t,y2 = ift.range(1e-6,1e1)
 
     y1 = f1(t)
 
@@ -357,10 +357,11 @@ def test_hankel_simple_hankel_pair_order0():
     def fr(r):
         return 1/r 
 
-    axs = check_hankel_pairs(Fk, fr, order=0, smp_per_decade=6)
-    check_hankel_pairs(Fk, fr, axs=axs, order=0, smp_per_decade=12)
-    check_hankel_pairs(Fk, fr, axs=axs, order=0, smp_per_decade=24)
-    check_hankel_pairs(Fk, fr, axs=axs, order=0, smp_per_decade=36)
+    # axs = check_hankel_pairs(Fk, fr, order=0, smp_per_decade=6)
+    axs=None
+    axs=check_hankel_pairs(Fk, fr, axs=axs, order=0, smp_per_decade=12)
+    axs=check_hankel_pairs(Fk, fr, axs=axs, order=0, smp_per_decade=24)
+    axs=check_hankel_pairs(Fk, fr, axs=axs, order=0, smp_per_decade=36)
     if running_as_main:
         import matplotlib.pyplot as plt
         axs[0].legend(title='smp/decade')
@@ -373,25 +374,29 @@ def test_hankel_simple_hankel_pair_order1():
     def fr(r):
         return 1/r 
 
-    axs = check_hankel_pairs(Fk, fr, order=1, smp_per_decade=6)
-    check_hankel_pairs(Fk, fr, axs=axs, order=1, smp_per_decade=12)
-    check_hankel_pairs(Fk, fr, axs=axs, order=1, smp_per_decade=24)
-    check_hankel_pairs(Fk, fr, axs=axs, order=1, smp_per_decade=36)
+    # axs = check_hankel_pairs(Fk, fr, order=1, smp_per_decade=6)
+    axs=None
+    axs=check_hankel_pairs(Fk, fr, axs=axs, order=1, smp_per_decade=12)
+    axs=check_hankel_pairs(Fk, fr, axs=axs, order=1, smp_per_decade=24)
+    axs=check_hankel_pairs(Fk, fr, axs=axs, order=1, smp_per_decade=36)
     if running_as_main:
         import matplotlib.pyplot as plt
         axs[0].legend(title='smp/decade')
         plt.show()
 
 if __name__ == '__main__':
-    test_frequency_response()
+    
     # test_spline()
-    test_transforms_varying_samples_per_decades()
+    
+    # test_frequency_response()
+    # test_transforms_varying_samples_per_decades()
     # test_fourier()
     # test_spline_integration()
     # test_invlaplace()
     # test_fourier_lowerfrequencies()
-    # test_invfourier_earlytimes()
+    test_invfourier_earlytimes()
     # test_invlaplace_Hz_center_of_circular_loop_halfspace()
     # test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
     # test_invlaplace_Hz_center_of_circular_loop_halfspace()
+    # test_hankel_simple_hankel_pair_order0()
     # test_hankel_simple_hankel_pair_order1()
