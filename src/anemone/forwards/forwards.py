@@ -53,7 +53,7 @@ def logify_forward(cls):
     class LogFwr(cls):
         def __call__(self, *args, **kwargs):
             if not kwargs.get('jac', False):
-                return torch.abs(super().__call__(*args, **kwargs)).log10()
+                return torch.abs(super().__call__(*args, **kwargs)).log()
             else:
                 return super().__call__(*args, **kwargs)
     return LogFwr
@@ -133,10 +133,9 @@ class BaseForward:
                 """ Hz from horizontal electric dipole. """
                 self.lamda = wave_length[None, None, :]
                 
-                #tmp_u0 = u0(self.omega, self.lamda)
-                intg   = rte(self.sigma, self.thick, self.omega, self.lamda)*torch.exp(-self.lamda*self.sfield_dz)
-                intg += torch.exp(-self.lamda*self.pfield_dz)
-                intg  *= self.lamda#**2 / tmp_u0                
+                tmp_u0 = u0(self.omega, self.lamda)
+                intg   = rte(self.sigma, self.thick, self.omega, self.lamda)*torch.exp(-tmp_u0*self.sfield_dz)
+                intg  *= self.lamda
 
                 return intg/c.fourpi
             
@@ -178,10 +177,10 @@ class BaseForward:
     def __call__(self, rho, thickness):
         if not isinstance(rho, torch.Tensor):       rho       = torch.tensor(rho)
         if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)
-        self.rho = ((rho+0j)[..., None, None])#.to(self.device)
+        self.rho = ((rho+0j)[..., None, None]).to(self.device)
         if rho.ndim > thickness.ndim:
             thickness = thickness[:, None, ...]
-        self.thick = ((thickness+0j)[..., None, None])#.to(self.device)
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
         return self.forward().squeeze().real*c.mu0
 
     @classmethod
@@ -289,7 +288,7 @@ class ForwardCentralCircle(BaseForward):
                 self.rte=rte(self.sigma, self.thick, self.omega, self.lmb)
                 intg = self.rte*self.lmb
                 return intg
-            hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, device=self.device)
+            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device)
             hkl1._recenter_function(self.tx_radius)
             return ((hkl1.func(hkl1.lamda))@(hkl1.fc+0j))/2.
 
@@ -358,11 +357,9 @@ class Forward(BaseForward):
     t2t   = None
 
     def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None, precalc=True):
-        print('are we really using this?')
         super().__init__(source, receiver, times, waveform, filterfunc, t_end, tolerance)
         self.t2t = None
         if precalc:
-            print('preparing forward model...')
             from inspect import signature
             n_params = len([x for x in str(signature(self.__call__)).split(',') if '=' not in x and x.strip() != ''])
             phys_params = [torch.ones(5)]*n_params
@@ -374,10 +371,10 @@ class Forward(BaseForward):
             def wvlngth_integrand(wave_length):
                 """ Hz from horizontal electric dipole. """
                 self.lmb = wave_length[None, None, :]          
-#                self.tmp_u0 = u0(self.omega, self.lmb)
+                # self.tmp_u0 = u0(self.omega, self.lmb)
                 self.sfield_rte = torch.exp(-self.lmb*self.sfield_dz)*self.lmb / c.fourpi
                 self.pfield = torch.exp(-self.lmb*self.pfield_dz)*self.lmb / c.fourpi
-                intg = rte(self.sigma, self.thick, self.omega, self.lmb)*self.sfield_rte
+                intg = self.pfield + rte(self.sigma, self.thick, self.omega, self.lmb)*self.sfield_rte
                 return intg.squeeze()
             if self.geomz is None:
                 hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, tolerance=self.tolerance)
@@ -444,6 +441,10 @@ class Forward(BaseForward):
             return G*c.mu0 / rho[:, None]**2
         else:            
             return self.forward()*c.mu0
+    
+    def copy(self):
+        from copy import deepcopy
+        return deepcopy(self)
         
     def __add__(self, other):
         assert other.kind       == self.kind,       "Forwards must be the same type"
@@ -481,7 +482,6 @@ class Forward(BaseForward):
         self.times = torch.cat([self.times, other.times])
 
         return self
-
 
 class Forward2(Forward):
     geomz = None
@@ -654,7 +654,8 @@ class ForwardFD(BaseForward):
             return H*self.waveform.fourier_d2wdt2(self.freqs)
         else:
             return H.T
-        
+
+from anemone.physics import rte_nbc_laplace     
 class ForwardLaplace6(ForwardLaplace):
     geomz = None
     t2t   = None
@@ -670,9 +671,9 @@ class ForwardLaplace6(ForwardLaplace):
                 """ Hz from horizontal electric dipole. """
                 self.omega = -1j*s[None, None, :]
                 
-                self.tmp_u0 = u0(self.omega, self.lmb)
-                self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)#*self.lmb**2 / 
-                intg = rte(self.sigma, self.thick, self.omega, self.lmb)*self.sfield_rte
+                # self.tmp_u0 = u0(self.omega, self.lmb)
+                self.sfield_rte = torch.exp(-self.lmb*self.sfield_dz)#*self.lmb**2 / 
+                intg = 1.+rte_nbc_laplace(self.sigma, self.thick, s[None, None, :], self.lmb)*self.sfield_rte
 
                 if self.filterfunc is not None:
                     intg *= self.filterfunc.omega_filter(self.omega)
@@ -756,14 +757,14 @@ def waveform_matrix_with_primary(t_in, t_out, waveform):
 
     for t_wv,k_wv in zip(waveform.time, waveform.d2wdt2):
         c_t_eval = t_out - t_wv
-        positive_time = c_t_eval >= 0.
-        t2t[~positive_time , 0]  += k_wv
+        positive_time = c_t_eval > 0.
+        t2t[~positive_time , 0] -= k_wv
         t2t[ positive_time, 1:] += k_wv*lamontagne((torch.log(c_t_eval[positive_time])[:,None]-logT[None,:])/dT[None,:])
         
         # t_negative = -1.*c_t_eval
         # positive_time = t_negative >= 0.
-        # t2t[positive_time, 1:] += k_wv*torch.nan_to_num(lamontagne((torch.log(t_negative[positive_time])[:,None]-logT[None,:])/dT[None,:]))
-        # t2t[~positive_time, 0] += k_wv
+        # t2t[positive_time, 1:] -= k_wv*torch.nan_to_num(lamontagne((torch.log(t_negative[positive_time])[:,None]-logT[None,:])/dT[None,:]))
+        # t2t[~positive_time, 0] -= k_wv
     return t2t
 
 class BstepLaplace(ForwardLaplace):
@@ -802,10 +803,10 @@ class BstepLaplace(ForwardLaplace):
             res[None, ...] *= self.lmb / c.fourpi
             return res.swapaxes(-2,-1)
         if self.geomz is None:
-            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=16)
+            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=16, tolerance=self.tolerance)
             def geomz_r(r):
                 return self.source.geomz(self.receiver, r).to(torch.double).to(self.device)
-            Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax, tolerance=self.tolerance)
+            Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
             self.sfield_rte = None
         else:
             Hstep = torch.einsum('...i,i->...', wvlngth_integrand(self.lmb.squeeze()), self.geomz)
@@ -849,10 +850,10 @@ class BstepHankel(BaseForward):
                 return intg
             
             if self.geomz is None:
-                hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10)
+                hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10, tolerance=self.tolerance)
                 def geomz_r(r):
                     return self.source.geomz(self.receiver, r).to(torch.double).to(self.device)
-                Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax, tolerance=self.tolerance)
+                Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
                 self.sfield_rte = None
             else:
                 Hstep = (wvlngth_integrand(self.lmb.squeeze())@self.geomz).squeeze()
@@ -957,7 +958,7 @@ class OnTimeForward:
         if self.t2t is None:
             self.t_in = torch.concat([self.t_laplace, t])
             self.t2t = waveform_matrix_with_primary(self.t_in, self.times, self.waveform)
-            # self.t2t[:,:2] = 0.
+            self.t2t[:,1] = 0.
         self.bstep = torch.concat([self.pfield, bstep_laplace, bstep_hankel]).real
         return self.t2t @ self.bstep
 
@@ -1051,6 +1052,7 @@ class VMDForward(Forward):
     def __init__(self, source_height, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None):
         tx = Loop.square(1., z=source_height)
         self.rx_dist = torch.sqrt(receiver.x**2 + receiver.y**2)
+        if self.rx_dist==0.: self.rx_dist = torch.tensor([1e-2])
         self.t2t = None
         super().__init__(tx, receiver, times, waveform, filterfunc, t_end, tolerance)
         
@@ -1136,8 +1138,9 @@ class ForwardFlow(BaseForward):
 
             
             Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
+            self.t2t *= self.omega1[None, :]
         else:
-            Ht = torch.einsum('ij,...j->...i', self.t2t, self.cbft.f1(self.omega1.squeeze())*self.omega1.squeeze())
+            Ht = torch.einsum('ij,...j->...i', self.t2t, self.cbft.f1(self.omega1.squeeze()))
         self.dpred = Ht.real
         return self.dpred
     

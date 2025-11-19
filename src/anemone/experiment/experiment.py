@@ -8,7 +8,7 @@ def compute_relstd(t_gates, data_val, noise_slope_exponent=-0.5, noise_level_at_
     b = noise_level_at_1ms/(1e-3**noise_slope_exponent)
     abs_noise = b*(t_gates**noise_slope_exponent)
     y = data_val*current
-    std_rel = abs_noise/y
+    std_rel = abs_noise/y.T
     relstd_tot = torch.sqrt(std_rel**2 + relative_noise**2)
-    return relstd_tot.to(data_val.device)
+    return relstd_tot.to(data_val.device).T
 

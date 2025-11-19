@@ -31,11 +31,11 @@ def test_frequency_response():
 
     r,resp = Hkl_rte1.range(90, 110)
     cbResp = transforms.CubicSpline(r, resp)
-    hz = (cbResp(rho)/(c.twopi))
+    hz = cbResp(rho)/c.twopi
 
     if running_as_main:
         import matplotlib.pyplot as plt
-        plt.plot(frqs, hz_analytical, 'k-')
+        plt.plot(frqs, hz_analytical*7., 'k-')
         plt.plot(frqs, hz, 'r--')
         plt.xlabel('r (m)')
         plt.ylabel('H(r)')
@@ -319,16 +319,70 @@ def test_invlaplace_dHzdt_center_of_circular_loop_halfspace():
         plt.legend()
         plt.show()
 
+def check_hankel_pairs(Fk, Fr, axs=None, order=0, smp_per_decade=12):
+    Fk_num = transforms.Hankel(Fr, order=order, lambda_included=False, smp_per_decade=smp_per_decade)
+    r = torch.logspace(-15, 15, 100)    
+    fr_num_vals = Fk_num(r).numpy()
+    fr_ana_vals = Fk(r).numpy()
+    r = r.numpy()
+    
+    import matplotlib.pyplot as plt
+    if axs is None:
+        fig,axs = plt.subplots(2,1, sharex=True)
+        axs[0].loglog(r, fr_ana_vals, 'k-', label='analytic')
+    else:
+        fig = axs[0].figure
+
+    axs[0].loglog(r, fr_num_vals, '.', label=f'{smp_per_decade}')
+    axs[1].loglog(r, 100*(np.abs(fr_num_vals - fr_ana_vals)/fr_ana_vals))
+    axs[1].set_ylabel('Relative Error (%)')
+    axs[1].set_ylim(None, 3.)
+    axs[1].set_xlabel('r')
+    assert np.allclose(fr_num_vals, fr_ana_vals, rtol=1e-2), "Hankel transform did not match analytic solution within tolerance."
+    return axs
+
+def test_hankel_simple_hankel_pair_order0():
+    def Fk(k):
+        return k**-1
+
+    def fr(r):
+        return 1/r 
+
+    axs = check_hankel_pairs(Fk, fr, order=0, smp_per_decade=6)
+    check_hankel_pairs(Fk, fr, axs=axs, order=0, smp_per_decade=12)
+    check_hankel_pairs(Fk, fr, axs=axs, order=0, smp_per_decade=24)
+    check_hankel_pairs(Fk, fr, axs=axs, order=0, smp_per_decade=36)
+    if running_as_main:
+        import matplotlib.pyplot as plt
+        axs[0].legend(title='smp/decade')
+        plt.show()
+
+def test_hankel_simple_hankel_pair_order1():
+    def Fk(k):
+        return k**-1
+
+    def fr(r):
+        return 1/r 
+
+    axs = check_hankel_pairs(Fk, fr, order=1, smp_per_decade=6)
+    check_hankel_pairs(Fk, fr, axs=axs, order=1, smp_per_decade=12)
+    check_hankel_pairs(Fk, fr, axs=axs, order=1, smp_per_decade=24)
+    check_hankel_pairs(Fk, fr, axs=axs, order=1, smp_per_decade=36)
+    if running_as_main:
+        import matplotlib.pyplot as plt
+        axs[0].legend(title='smp/decade')
+        plt.show()
 
 if __name__ == '__main__':
-    # test_frequency_response()
+    test_frequency_response()
     # test_spline()
     # test_transforms_varying_samples_per_decades()
     # test_fourier()
     # test_spline_integration()
     # test_invlaplace()
     # test_fourier_lowerfrequencies()
-    test_invfourier_earlytimes()
+    # test_invfourier_earlytimes()
     # test_invlaplace_Hz_center_of_circular_loop_halfspace()
     # test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
     # test_invlaplace_Hz_center_of_circular_loop_halfspace()
+    test_hankel_simple_hankel_pair_order1()
