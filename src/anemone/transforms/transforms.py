@@ -144,7 +144,7 @@ def christensen1990_eq41(v, delta, Delta1, a, sc, nu=0, smp_per_decade=10, term_
     return partial_sum-leftside_removal-rightside_removal
 
 
-def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=10,  term_max=50, convergence_threshold=1e-12):
+def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=10,  term_max=100, convergence_threshold=1e-16):
     """
     Calculate the optimized coefficients using the Christensen (1990) method.
 
@@ -159,6 +159,7 @@ def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=1
     Returns:
     array-like: Optimized coefficients calculated using the Christensen (1990) method.
     """
+    print(smp_per_decade)
     delta = np.log(10)/smp_per_decade
     sc = 1./(2*delta)
 
@@ -167,8 +168,9 @@ def optimized_coefficients_christensen1990(v, omega_0=0., nu=0, smp_per_decade=1
     #    error integral < 10^-16
 
     Delta1 = 1./(v_plus-v_minus)# from Christensen 1990
-
+    print('Do I really use this?')
     a = christensen1990_calculate_smoothing(omega_0, sc)
+    a = 0.145
 
     Hnustar = np.zeros_like(v, dtype=np.complex128)
     Hnustar[:] = np.nan

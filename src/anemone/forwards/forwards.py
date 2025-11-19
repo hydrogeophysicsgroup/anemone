@@ -83,8 +83,8 @@ class BaseForward:
             self.tmin = self.times.min()
             self.tmax = self.times.max()
 
-        self.rmin = self.source.min_horizontal_distance(self.receiver).to(times.device)
-        self.rmax = self.source.max_horizontal_distance(self.receiver).to(times.device)
+        self.rmin = self.source.min_horizontal_distance(self.receiver).to(times.device)/2.
+        self.rmax = self.source.max_horizontal_distance(self.receiver).to(times.device)*2.
         self.srcz = torch.tensor([source.z[0]], dtype=torch.float64)
         if receiver.z.numel()>1:
             self.rz = receiver.z.flatten()[0]
@@ -112,7 +112,7 @@ class BaseForward:
 
         self.tolerance=tolerance
         
-        self.tmin /= 1.1
+        self.tmin /= 2.
         self.tmax *= 1.1
 
         if self.device is not None:
@@ -133,8 +133,9 @@ class BaseForward:
                 """ Hz from horizontal electric dipole. """
                 self.lamda = wave_length[None, None, :]
                 
-                tmp_u0 = u0(self.omega, self.lamda)
-                intg   = rte(self.sigma, self.thick, self.omega, self.lamda)*torch.exp(-tmp_u0*self.sfield_dz)
+                #tmp_u0 = u0(self.omega, self.lamda)
+                intg   = rte(self.sigma, self.thick, self.omega, self.lamda)*torch.exp(-self.lamda*self.sfield_dz)
+                intg += torch.exp(-self.lamda*self.pfield_dz)
                 intg  *= self.lamda#**2 / tmp_u0                
 
                 return intg/c.fourpi
@@ -364,7 +365,7 @@ class Forward(BaseForward):
             print('preparing forward model...')
             from inspect import signature
             n_params = len([x for x in str(signature(self.__call__)).split(',') if '=' not in x and x.strip() != ''])
-            phys_params = [torch.ones(2)]*n_params
+            phys_params = [torch.ones(5)]*n_params
             _ = self(*phys_params)        
 
     def forward(self):
@@ -373,8 +374,9 @@ class Forward(BaseForward):
             def wvlngth_integrand(wave_length):
                 """ Hz from horizontal electric dipole. """
                 self.lmb = wave_length[None, None, :]          
-                self.tmp_u0 = u0(self.omega, self.lmb)
-                self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)*self.lmb / c.fourpi
+#                self.tmp_u0 = u0(self.omega, self.lmb)
+                self.sfield_rte = torch.exp(-self.lmb*self.sfield_dz)*self.lmb / c.fourpi
+                self.pfield = torch.exp(-self.lmb*self.pfield_dz)*self.lmb / c.fourpi
                 intg = rte(self.sigma, self.thick, self.omega, self.lmb)*self.sfield_rte
                 return intg.squeeze()
             if self.geomz is None:
