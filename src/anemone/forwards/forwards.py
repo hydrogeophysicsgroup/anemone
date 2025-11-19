@@ -1108,8 +1108,7 @@ class ForwardFlow(BaseForward):
             def wvlngth_integrand(wave_length):
                 """ Hz from horizontal electric dipole. """
                 self.lmb = wave_length[None, None, :]          
-                self.tmp_u0 = u0(self.omega, self.lmb)
-                self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)*self.lmb / c.fourpi
+                self.sfield_rte = torch.exp(-self.lmb*self.sfield_dz)*self.lmb / c.fourpi
                 intg = rte(self.sigma, self.thick, self.omega, self.lmb)*self.sfield_rte
                 return intg.squeeze()
             if self.geomz is None:

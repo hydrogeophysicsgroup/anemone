@@ -103,7 +103,7 @@ def christensen1990_eq17(v, sc, nu, a, term_max, convergence_threshold):
     return H_nu.astype(complex)
 
 
-def christensen1990_eq41(v, delta, Delta1, a, sc, nu=0, smp_per_decade=10, term_max=100, convergence_threshold=1e-12):
+def christensen1990_eq41(v, delta, Delta1, a, sc, nu, term_max=100, convergence_threshold=1e-12):
     n=0
     partial_sum = delta*christensen1990_p_hat(n*delta*Delta1, a)*johansen1979_Hhat_nu(n*Delta1, nu)*np.exp(1j*2*pi*n*v*Delta1)
 

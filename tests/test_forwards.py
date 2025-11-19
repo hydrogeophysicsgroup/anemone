@@ -105,16 +105,16 @@ def check_halfspace_circle_center(ForwardMaker, rtol=3e-2):
     from anemone.physics import hzdt_halfspace_center_circle_loop
     from anemone import constants as c
     name = ForwardMaker.__name__
-    radius = 10
-    lp = Loop.circle(radius, n=32)
-    # lp = Loop.square((c.pi*radius*radius)**(1/2))
+    radius = 1.
+    #lp = Loop.circle(radius, n=32)
+    lp = Loop.square((c.pi*radius*radius)**(1/2))
     rx = Receiver()
     times = torch.logspace(-6, 0, 101, dtype=torch.double)
 
     rho = torch.logspace(3, 0, 5, dtype=torch.double)[None, :]*torch.ones(3, dtype=torch.double)[:, None]
     thick = torch.ones(2, dtype=torch.double)*20
 
-    fwr = ForwardMaker(lp, rx, times, tolerance=5e-1)
+    fwr = ForwardMaker(lp, rx, times, tolerance=1e-6)
     # dbdt = fwr(rho, thick)
     dbdt = fwr(rho, thick).real.T
     print(fwr.t2t.shape)
@@ -351,8 +351,8 @@ def test_40x40_aarhusInv_stepoff():
 
 
 def test_40x40_aarhusInv_piecewise_waveform():
-    from anemone.forwards import Forward
-    aarhusInv_piecewise_comparison(Forward)
+    from anemone.forwards import ForwardFlow
+    aarhusInv_piecewise_comparison(ForwardFlow) 
 
 
 def test_Laplace_40x40_aarhusInv_piecewise_waveform():

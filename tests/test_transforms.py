@@ -65,6 +65,15 @@ def test_transforms_varying_samples_per_decades():
     cbResp = transforms.CubicSpline(r, resp)
     hz2 = (cbResp(rho)/(c.twopi))
 
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        plt.plot(frqs, hz1.real, 'k-', label='smp/decade=10')
+        plt.plot(frqs, hz2.real, 'r--', label='smp/decade=20')
+        plt.xlabel('Frequency (Hz)')
+        plt.ylabel('H(r)')
+        plt.legend()
+        plt.show()
+
 
     assert np.allclose(hz1.real, hz2.real), "changing the number of decades is changing the results of the transform"
     assert np.allclose(hz1.imag, hz2.imag), "changing the number of decades is changing the results of the transform"
@@ -376,7 +385,7 @@ def test_hankel_simple_hankel_pair_order1():
 if __name__ == '__main__':
     test_frequency_response()
     # test_spline()
-    # test_transforms_varying_samples_per_decades()
+    test_transforms_varying_samples_per_decades()
     # test_fourier()
     # test_spline_integration()
     # test_invlaplace()
@@ -385,4 +394,4 @@ if __name__ == '__main__':
     # test_invlaplace_Hz_center_of_circular_loop_halfspace()
     # test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
     # test_invlaplace_Hz_center_of_circular_loop_halfspace()
-    test_hankel_simple_hankel_pair_order1()
+    # test_hankel_simple_hankel_pair_order1()
