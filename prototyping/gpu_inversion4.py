@@ -359,7 +359,7 @@ thk_true = torch.tensor([50, 30], device=gpu, dtype=torch.double)
 
 res_start = LogResistivity.smooth(torch.ones(len(z)+1)*40., z, device=gpu)
 res_start.set_device(gpu)
-thick1 = torch.linspace(0, 40, 40).to(torch.float)
+thick1 = torch.linspace(0, 40, 80).to(torch.float)
 inv_list0 = []
 inv_list1 = []
 m_trues=[]

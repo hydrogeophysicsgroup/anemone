@@ -31,11 +31,11 @@ def test_frequency_response():
 
     r,resp = Hkl_rte1.range(90, 110)
     cbResp = transforms.CubicSpline(r, resp)
-    hz = (cbResp(rho)/(c.twopi))
+    hz = cbResp(rho)/c.twopi
 
     if running_as_main:
         import matplotlib.pyplot as plt
-        plt.plot(frqs, hz_analytical, 'k-')
+        plt.plot(frqs, hz_analytical*7., 'k-')
         plt.plot(frqs, hz, 'r--')
         plt.xlabel('r (m)')
         plt.ylabel('H(r)')
@@ -374,7 +374,7 @@ def test_hankel_simple_hankel_pair_order1():
         plt.show()
 
 if __name__ == '__main__':
-    # test_frequency_response()
+    test_frequency_response()
     # test_spline()
     # test_transforms_varying_samples_per_decades()
     # test_fourier()
