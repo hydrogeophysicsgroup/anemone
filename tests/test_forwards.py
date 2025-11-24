@@ -102,23 +102,22 @@ def aarhusInv_piecewise_comparison(ForwardMaker, **kwargs):
 
 def check_halfspace_circle_center(ForwardMaker, rtol=3e-2):
     from anemone.experiment import Loop, Receiver
-    from anemone.physics import hzdt_halfspace_center_circle_loop
+    from anemone.physics import hzdt_halfspace_center_circle_loop, dbdt_center_of_circular_loop_halfspace
     from anemone import constants as c
     name = ForwardMaker.__name__
     radius = 1.
-    #lp = Loop.circle(radius, n=32)
-    lp = Loop.square((c.pi*radius*radius)**(1/2))
+    lp = Loop.circle(radius, n=32)
+    # lp = Loop.square((c.pi*radius*radius)**(1/2))
     rx = Receiver()
-    times = torch.logspace(-6, 0, 101, dtype=torch.double)
+    times = torch.logspace(-8, 0, 101, dtype=torch.double)
 
-    rho = torch.logspace(3, 0, 5, dtype=torch.double)[None, :]*torch.ones(3, dtype=torch.double)[:, None]
-    thick = torch.ones(2, dtype=torch.double)*20
+    rho = torch.logspace(0,3, 101, dtype=torch.double)[None, :]*torch.ones(2, dtype=torch.double)[:, None]
+    thick = torch.ones(1, dtype=torch.double)*20
 
     fwr = ForwardMaker(lp, rx, times, tolerance=1e-6)
     # dbdt = fwr(rho, thick)
     dbdt = fwr(rho, thick).real.T
-    print(fwr.t2t.shape)
-    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius).real*c.mu0
+    dbdt_analytic = dbdt_center_of_circular_loop_halfspace(times[:, None], rho[None, 0, :], radius).real
     
     if __name__ == '__main__':
         
@@ -129,13 +128,13 @@ def check_halfspace_circle_center(ForwardMaker, rtol=3e-2):
         ax[0].set_ylabel('dB/dt')
         ax[0].set_aspect('equal')
 
-        ax[1].loglog(times, 100*torch.abs(dbdt-dbdt_analytic)/torch.abs(dbdt_analytic))
+        ax[1].loglog(times, 100*torch.abs((dbdt-dbdt_analytic)/dbdt_analytic))
         ax[1].set_ylabel('relative difference [%]')
         # ax[1].set_ylim(None, 1e3)
         for ax_ in ax:
             ax_.set_xlabel('time [s]')
 
-        fig.suptitle('Test against AarhusInv with Piecewise Waveform')
+        fig.suptitle('check halfspace circle center:'+f'\n{name} vs analytic response (radius = {radius} m)')
         plt.show()
     
     assert torch.allclose(dbdt_analytic[:,1:], dbdt[:,1:], 0.1), f"{name} (radius = {radius} m) and analytic do not match within {rtol*100} percent"
@@ -147,10 +146,10 @@ def test_halfspace_circle_center_forward():
 
 def test_halfspace_circle_center():
     from anemone.experiment import Loop, Receiver
-    from anemone.physics import hzdt_halfspace_center_circle_loop
-    from anemone.forwards import ForwardCentralCircle
+    from anemone.physics import hzdt_halfspace_center_circle_loop, dbdt_center_of_circular_loop_halfspace
+    from anemone.forwards import ForwardFlow
     from anemone import constants as c
-    radius = 20.
+    radius = 1.
 
     name = 'Central Circular Loop (radius={radius} m)'.format(radius=radius)
     rtol = 2e-2
@@ -162,11 +161,14 @@ def test_halfspace_circle_center():
     rho = torch.tensor([[1, 10, 100, 1000], [1, 10, 100, 1000]])
     thick = torch.ones(4, dtype=torch.double)*20
 
-    fwr = ForwardCentralCircle(radius, times)
+    #fwr = ForwardCentralCircle(radius, times)
+    lp = Loop.circle(radius, n=32)
+    rx = Receiver()
+    fwr = ForwardFlow(lp, rx, times, tolerance=1e-6)
     dbdt = fwr(rho, thick).real
     
 
-    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius).real*c.mu0
+    dbdt_analytic = dbdt_center_of_circular_loop_halfspace(times[:, None], rho[None, 0, :], radius).real
 
     
 
@@ -194,7 +196,7 @@ def test_halfspace_circle_center():
         for ax_ in ax:
             ax_.set_xlabel('time [s]')
 
-        fig.suptitle('anEMone center of circular loop vs analytic response')
+        fig.suptitle('1: '+name)
         plt.subplots_adjust(
             top=0.88,
             bottom=0.11,
@@ -206,7 +208,7 @@ def test_halfspace_circle_center():
         plt.show()
 
     dbdt = fwr(torch.tensor([100., 100.]), torch.tensor([20.])).squeeze().real
-    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], torch.tensor([100.]), radius).squeeze().real*c.mu0
+    dbdt_analytic = dbdt_center_of_circular_loop_halfspace(times[:, None], torch.tensor([100.]), radius).squeeze().real
     
     if __name__ == '__main__':
         relerr = torch.nan_to_num(100*torch.abs(dbdt.T-dbdt_analytic)/torch.abs(dbdt_analytic))    
@@ -228,7 +230,7 @@ def test_halfspace_circle_center():
         for ax_ in ax:
             ax_.set_xlabel('time [s]')
 
-        fig.suptitle('anEMone center of circular loop vs analytic response')
+        fig.suptitle('2: '+name)
         plt.subplots_adjust(
             top=0.88,
             bottom=0.11,

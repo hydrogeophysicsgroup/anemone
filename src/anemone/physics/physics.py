@@ -22,7 +22,8 @@ def calc_wavenumber(sigma, omega, mu=c.mu0, epsilon=c.epsilon0, sqrt=True):
     """ get the intrinsic complex wavenumber 'k' 
         see equation 4.30 in Ward and Hohmann (pg 207)
     """
-    k = mu*omega*(epsilon*omega - 1j*sigma)
+    # k = mu*omega*(epsilon*omega - 1j*sigma)
+    k = -1j*sigma*mu*omega
     if sqrt: k = torch.sqrt(k)
     return k
 
@@ -658,7 +659,14 @@ def rte_halfspace(sigma, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     if isinstance(epsilon, float):
         epsilon = torch.ones_like(sigma, dtype=torch.complex128, device=sigma.device)*epsilon
     
-    k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
-    u = torch.sqrt(wave_length**2 - k2)
-    rte = (wave_length - u) / (wave_length+u)
+    u = torch.sqrt(1. + 1j*sigma*mu*omega/wave_length**2)
+    rte = (1 - u) / (1 + u)
     return torch.nan_to_num(rte)
+
+def dbdt_center_of_circular_loop_halfspace(time, rho, r):
+    sigma = 1./rho
+    tau = r*torch.sqrt(0.25*sigma*c.mu0/time)
+    term1 = 3.0*torch.erf(tau)
+    term2 = (2.0/c.sqrt_pi)*tau*(3.0 + 2.0*tau**2)*torch.exp(-tau**2)
+    dbdt = (term1 - term2)/(sigma*r**3)
+    return dbdt

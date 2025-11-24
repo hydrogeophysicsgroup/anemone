@@ -67,13 +67,15 @@ class Loop:
 
     @classmethod
     def circle(cls, radius, n=40, **kwargs):
+        r = radius
+        
         t = torch.linspace(0, 2*torch.pi, n)
-        x = radius*torch.cos(t)
-        y = radius*torch.sin(t)
+        x = r*torch.cos(t)
+        y = r*torch.sin(t)
         z = torch.ones_like(x)*kwargs.get('z', 0.)
         lp = cls(x, y, z)
         lp.area = torch.pi*radius**2
-        lp.radius = radius
+        lp.radius = r
         return lp
 
     @classmethod
@@ -137,6 +139,8 @@ class Loop:
         return self.x.numel()
     
     def geomz(self, rx, R):
+        if hasattr(self, 'radius') and rx.xyz.numel()==3 and rx.x==0. and rx.y==0.:
+            return self._geomz_circle(rx, R)
         logR = torch.log(R).cpu()
         dR = logR[1]-logR[0]
 
@@ -160,7 +164,7 @@ class Loop:
             tmpx = torch.linspace(-1, 1, ix)
             x_samp = tmpx
             x_samp += 1.
-            length = torch.abs(x2-x1)/2
+            length = torch.abs(x2-x1)/2.
 
 
             x_ = (x1[:,None] + length[:,None]*x_samp[None, :])
@@ -177,6 +181,18 @@ class Loop:
             phi = lamontagne((torch.log(cr)-logR)/dR)
             cs =  -y1 * phi * dx / cr
             geomz += cs.sum(axis=1, keepdims=False)
+        return geomz.to(R.device)
+
+    def _geomz_circle(self, rx, R):
+        if not isinstance(self.radius, torch.Tensor):
+            radius = torch.ones(1, dtype=R.dtype)*self.radius
+        else:
+            radius = self.radius
+        logR = torch.log(R).cpu()
+        dR = logR[1]-logR[0]
+
+        phi = lamontagne((torch.log(radius)-logR)/dR)
+        geomz = 2*torch.pi*phi*radius
         return geomz.to(R.device)
      
 def perp_distance_to_line(x,y, line_points):

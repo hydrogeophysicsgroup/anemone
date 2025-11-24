@@ -112,8 +112,8 @@ class BaseForward:
 
         self.tolerance=tolerance
         
-        self.tmin /= 1.1
-        self.tmax *= 1.1
+        self.tmin /= 2.
+        self.tmax *= 2.
 
         if self.device is not None:
             for attr_name in self.__dict__:
@@ -253,49 +253,6 @@ class BaseForward:
                 return self.forward()*c.mu0
 
         return CPA(source, receiver, times, **kwargs)
-
-from anemone.experiment import Loop, Receiver
-
-class ForwardCentralCircle(BaseForward):
-    def __init__(self, radius, times, waveform=None, filterfunc=None, t_end=None, tolerance=None):
-        tx,rx = Loop.circle(radius), Receiver()
-        super().__init__(tx, rx, times, waveform, filterfunc, t_end, tolerance)
-        self.tx_radius = torch.tensor(radius, dtype=torch.double)
-        self.device = times.device
-        self.rte = []
-    #     self.primary = torch.nan_to_num(self.calc_primary())
-
-    # def calc_primary(self):
-    #     def f_integrand(f):
-    #         self.omega = 2.*torch.pi*f[None, :, None]
-    #         def wvlngth_integrand(wave_length):
-    #             self.lmb = wave_length[None, None, :]
-    #             intg = (1.+0j)*self.lmb
-    #             return intg
-    #         hkl1 = Hankel(wvlngth_integrand, 1, smp_per_decade=10, device=self.device)
-    #         hkl1._recenter_function(self.tx_radius)
-    #         return ((hkl1.func(hkl1.lamda))@(hkl1.fc+0j))/2.
-    #     ift = invFourier(f_integrand, smp_per_decade = 16, range=(self.tmin, self.tmax), device=self.device)
-    #     self.tc = ift.rc        
-    #     primary = ift(self.times)
-    #     return primary
-
-    def forward(self):
-        def f_integrand(f):
-            self.omega = 2.*torch.pi*f[None, :, None]
-            def wvlngth_integrand(wave_length):
-                self.lmb = wave_length[None, None, :]
-                self.rte=rte(self.sigma, self.thick, self.omega, self.lmb)
-                intg = self.rte*self.lmb
-                return intg
-            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device)
-            hkl1._recenter_function(self.tx_radius)
-            return ((hkl1.func(hkl1.lamda))@(hkl1.fc+0j))/2.
-
-        ift = invFourier(f_integrand, smp_per_decade = 16, device=self.device)
-        self.tc = ift.rc        
-        dbdts = ift(self.times)
-        return dbdts
                     
 class ForwardLaplace(BaseForward):
     """ Essentially the same as the BaseForward, but uses invserse Laplace transforms instead of inverse Fourier transforms."""
@@ -1109,6 +1066,7 @@ class ForwardFlow(BaseForward):
                 """ Hz from horizontal electric dipole. """
                 self.lmb = wave_length[None, None, :]          
                 self.sfield_rte = torch.exp(-self.lmb*self.sfield_dz)*self.lmb / c.fourpi
+                # self.pfield = torch.exp(-self.lmb*self.pfield_dz)*self.lmb / c.fourpi
                 intg = rte(self.sigma, self.thick, self.omega, self.lmb)*self.sfield_rte
                 return intg.squeeze()
             if self.geomz is None:
@@ -1130,7 +1088,7 @@ class ForwardFlow(BaseForward):
             def t2t_func(t_in):
                 if self.t_end is not None:
                     waveform_matrix = wv_to_t(t_in, t_in, waveform=self.waveform)
-                    gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
+                    gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=100)
                     return gate_matrix @ waveform_matrix
                 else:
                     return wv_to_t(self.times, t_in, waveform=self.waveform)
