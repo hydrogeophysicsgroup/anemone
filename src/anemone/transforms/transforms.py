@@ -2,9 +2,8 @@ from functools import lru_cache
 from .hankel_coefficients import hankel_coefficients, coefficient_bounds
 import torch
 import numpy as np
-twopi = torch.pi*2.
-twopi_sqrt = twopi**(1/2)
-from anemone import constants as c
+
+from anemone import constants as c, rdtype, cdtype
 
 def factorial(s):
     x = s*1
@@ -39,7 +38,7 @@ def gaver_stehfest_coefficients(N):
             denominator *= factorial(2*k-i)
             tmpv += numerator/denominator
         v.append((-1)**(i + N/2.)*tmpv)
-    return torch.tensor(v, dtype=torch.float64)
+    return torch.tensor(v, dtype=rdtype)
 
 class invLaplace:
     """ Inverse laplace transform using Gaver-Stehfest method.
@@ -57,7 +56,7 @@ class invLaplace:
             self.v = self.v.to(device)
         else:
             self.device = self.v.device
-        self.i = (torch.arange(n_coefficients, device=self.device)+1).to(torch.float64)
+        self.i = (torch.arange(n_coefficients, device=self.device)+1).to(rdtype)
         self.n_coefficients = n_coefficients
         
 
@@ -183,8 +182,8 @@ class Hankel:
 
         self.func_results = None       
 
-        self.lamda = torch.clone(hkl[0]).to(torch.double)
-        self.fc = torch.clone(hkl[1]).to(torch.double)
+        self.lamda = torch.clone(hkl[0])#.to(rdtype)
+        self.fc = torch.clone(hkl[1])#.to(rdtype)
 
         if device is not None:
             self.fc=self.fc.to(device)
@@ -202,7 +201,7 @@ class Hankel:
     def _recenter_function(self, r_center):
         assert self.rcidx == 0, "recentering is only allowed once"
         if isinstance(r_center, tuple): r_center = torch.sqrt(r_center[0]*r_center[1]).to(self.device)
-        self.rc = r_center#.to(torch.double)
+        self.rc = r_center#.to(rdtype)
         self.lamda = self.lamda/self.rc
         self.rcidx = self.smp_per_decade*torch.log10(self.rc)
         self.func_results = None
@@ -331,7 +330,7 @@ class Hankel:
         else:
             idx_slice = slice(None, None)
 
-        return torch.einsum('...i,i->...', self.func_results, FC), FC[idx_slice], self.lamda[..., idx_slice]
+        return torch.einsum('...i,i->...', self.func_results, FC), FC[idx_slice].to(FC.dtype), self.lamda[..., idx_slice]
 
 class Fourier(Hankel):
     """ A fourier transform for logarithmically sampled data. The implementation uses hankel transforms at the base.
@@ -389,7 +388,7 @@ class Fourier(Hankel):
 
     def preintegrate(self, timeOperator, tmin, tmax):
         i_offsets, rout, tout = self.calc_tvals(tmin, tmax)
-        Wmat = timeOperator(tout).to(torch.complex128)
+        Wmat = timeOperator(tout).to(cdtype)
 
         if self.func_results is None:
             self.func_results = self.func(self.lamda)
@@ -404,7 +403,7 @@ class Fourier(Hankel):
         if self.fc.dtype != self.func_results.dtype:
             self.fc = self.fc.to(self.func_results.dtype)   
 
-        FC = torch.zeros(Wmat.shape[:-1]+self.fc.shape, dtype=torch.complex128, device=self.device)
+        FC = torch.zeros(Wmat.shape[:-1]+self.fc.shape, dtype=cdtype, device=self.device)
         sqRout = torch.sqrt(rout)
         
         for i, i_offset in enumerate(i_offsets):

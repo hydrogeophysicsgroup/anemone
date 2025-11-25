@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from .. import constants as c
+from .. import constants as c, rdtype, cdtype
 
 S1 = lambda x: 1 - (9/4)*x**2 * ( 1 - 2./9*x*(1 + 5/2*x*(1 - 2/5 * x)))
 S2 = lambda x: -1/2*x*(1 - 11/6*x*(1 - 2/11*x*(1 + 5/2*x*(1-2/5*x))))
@@ -21,9 +21,9 @@ def lamontagne(x):
 
 class Receiver:
     def __init__(self, x=0., y=0., z=0., grid=True) -> None:
-        self.x = torch.tensor(x, dtype=torch.float64)
-        self.y = torch.tensor(y, dtype=torch.float64)
-        self.z = torch.tensor(z, dtype=torch.float64)
+        self.x = torch.tensor(x, dtype=rdtype)
+        self.y = torch.tensor(y, dtype=rdtype)
+        self.z = torch.tensor(z, dtype=rdtype)
         
         if grid:
             self.grid()
@@ -56,9 +56,9 @@ class Receiver:
 class Loop:
     def __init__(self, x, y, z):
         if not isinstance(x, torch.Tensor):
-            self.x = torch.tensor(x, dtype=torch.float64)
-            self.y = torch.tensor(y, dtype=torch.float64)
-            self.z = torch.tensor(z, dtype=torch.float64)
+            self.x = torch.tensor(x, dtype=rdtype)
+            self.y = torch.tensor(y, dtype=rdtype)
+            self.z = torch.tensor(z, dtype=rdtype)
         else:
             self.x = x
             self.y = y
@@ -147,7 +147,7 @@ class Loop:
         rx_xyz = rx.xyz
         n_rec  = len(rx)
 
-        geomz      = torch.zeros((n_rec, )+R.shape, dtype=torch.float64)
+        geomz      = torch.zeros((n_rec, )+R.shape, dtype=rdtype)
 
         R      = R [None, None, :]
         
@@ -224,7 +224,7 @@ def getRz(P,Q):
     cos_theta = QP[..., 0] / mQP
     sin_theta = QP[..., 1] / mQP
 
-    Rz = torch.zeros(QP.shape+(3,), dtype=torch.float64, device=P.device)
+    Rz = torch.zeros(QP.shape+(3,), dtype=rdtype, device=P.device)
 
     Rz[..., 0,0] = cos_theta
     Rz[..., 1,1] = cos_theta
@@ -247,7 +247,7 @@ def integrate_around_loop(lp, rx, hr):
         
         if rx.xyz.numel()==3:
             lp_xyz = lp.xyz - rx.xyz
-            hr_example = hr(0.)
+            hr_example = hr(0.1)
             HR = torch.zeros_like(hr_example).reshape((1,)+hr_example.shape)
         else:
             lp_xyz = lp.xyz[:, None, :]-rx.xyz[None,:,:]
@@ -274,14 +274,14 @@ def integrate_around_loop(lp, rx, hr):
             while torch.any(cdist < tdist):
                 still_to_go = cdist < tdist
                 cR = norm(cp[still_to_go])
-                ds = cR/15
+                ds = cR/15.
                 if torch.any(cdist[still_to_go]+ds > tdist[still_to_go]):
                     go_back = cdist[still_to_go]+ds > tdist[still_to_go]
                     ds[go_back] = (tdist-cdist)[still_to_go][go_back]
                 cdist[still_to_go]       += ds
                 wire_length[still_to_go] += ds
                 resp                      = hr(cR)
-                HR[..., still_to_go]     += -1*ds*cp[still_to_go, 1]*resp/cR
+                HR[..., still_to_go]     += -1.*ds*cp[still_to_go, 1]*resp/cR
                 cp[still_to_go]          += (ds[:, None]*p12[still_to_go])
                 n_dipoles                += 1
         return HR.T.squeeze()
@@ -299,7 +299,7 @@ class Waveform:
         self.d2wdt2[1:-1] = torch.diff(slope)
         self.d2wdt2[0]    = slope[0]
         self.d2wdt2[-1]   = -slope[-1]
-        self.d2wdt2 = self.d2wdt2.type(torch.DoubleTensor)
+        # self.d2wdt2 = self.d2wdt2.to(rdtype)
 
     def fourier_d2wdt2(self, f):
         FT = torch.exp(2j*torch.pi*f[..., :, None]*self.time[..., None, :])*self.d2wdt2[..., None, :]
@@ -307,8 +307,8 @@ class Waveform:
 
     @classmethod
     def example(cls):
-        t = torch.tensor([-1.0526e-03, -9.2963e-04,  0.0000e+00,  2.5000e-06], dtype=torch.double)
-        wv = torch.tensor([0, 1, 1, 0], dtype=torch.double)
+        t = torch.tensor([-1.0526e-03, -9.2963e-04,  0.0000e+00,  2.5000e-06], dtype=rdtype)
+        wv = torch.tensor([0, 1, 1, 0], dtype=rdtype)
         return cls(t, wv)
 
 class ButterworthFilter:

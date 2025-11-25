@@ -1,6 +1,6 @@
 from anemone import transforms
 from anemone import physics
-from anemone import constants as c
+from anemone import constants as c, rdtype, cdtype
 import numpy as np
 import torch
 
@@ -11,13 +11,13 @@ def calc_rte_halfspace(sigma, omega, wave_length):
     K1_sqrd     = physics.calc_wavenumber(sigma, omega)**2
     u1          = torch.sqrt(lambda_sqrd-K1_sqrd)
     rte         = 1./(wave_length+u1)
-    return rte
+    return torch.nan_to_num(rte)
 
 
 def test_frequency_response():
     rho = 100.                   # meters
     sigma = 1./100.            # 1/ohm-m
-    frqs = torch.logspace(-6, 5, 501, dtype=torch.complex128)  # Hz
+    frqs = torch.logspace(-6, 5, 501, dtype=cdtype)  # Hz
     omega = c.twopi*frqs
     
     hz_analytical = physics.halfspace_vmd(1./sigma, omega, rho)
@@ -35,8 +35,8 @@ def test_frequency_response():
 
     if running_as_main:
         import matplotlib.pyplot as plt
-        plt.plot(frqs, hz_analytical, 'k-')
-        plt.plot(frqs, hz, 'r--')
+        plt.semilogx(frqs, hz_analytical, 'k-')
+        plt.semilogx(frqs, hz, 'r--')
         plt.xlabel('r (m)')
         plt.ylabel('H(r)')
         plt.show()
@@ -248,7 +248,7 @@ def test_invlaplace():
         axs[1].set_xlabel('time [s]')
         axs[1].set_ylabel('relative error [%]')
         plt.tight_layout()
-        plt.savefig('../docs/images/invlaplace_example.png', dpi=300)
+        # plt.savefig('../docs/images/invlaplace_example.png', dpi=300)
         plt.show()
         # return t.numpy(), y1.numpy(), y2.numpy()
     assert torch.allclose(y1.real, y2.real), "inverse Laplace transform is performing poorly on 1/sqrt(s)<->1./sqrt(t*pi) analytical example"
@@ -388,15 +388,15 @@ if __name__ == '__main__':
     
     # test_spline()
     
-    # test_frequency_response()
-    # test_transforms_varying_samples_per_decades()
-    # test_fourier()
-    # test_spline_integration()
-    # test_invlaplace()
-    # test_fourier_lowerfrequencies()
+    test_frequency_response()
+    test_transforms_varying_samples_per_decades()
+    test_fourier()
+    test_spline_integration()
+    test_invlaplace()
+    test_fourier_lowerfrequencies()
     test_invfourier_earlytimes()
-    # test_invlaplace_Hz_center_of_circular_loop_halfspace()
-    # test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
-    # test_invlaplace_Hz_center_of_circular_loop_halfspace()
-    # test_hankel_simple_hankel_pair_order0()
-    # test_hankel_simple_hankel_pair_order1()
+    test_invlaplace_Hz_center_of_circular_loop_halfspace()
+    test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
+    test_invlaplace_Hz_center_of_circular_loop_halfspace()
+    test_hankel_simple_hankel_pair_order0()
+    test_hankel_simple_hankel_pair_order1()
