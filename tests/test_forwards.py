@@ -141,13 +141,13 @@ def check_halfspace_circle_center(ForwardMaker, rtol=3e-2):
     assert torch.allclose(dbdt_analytic[times<5e-2,1:], dbdt[times<5e-2,1:], rtol), f"{name} (radius = {radius} m) and analytic before 50ms do not match within {rtol*100} percent"
 
 def test_halfspace_circle_center_forward():
-    from anemone.forwards import ForwardFlow
-    check_halfspace_circle_center(ForwardFlow)  
+    from anemone.forwards import Forward
+    check_halfspace_circle_center(Forward)  
 
 def test_halfspace_circle_center():
     from anemone.experiment import Loop, Receiver
     from anemone.physics import hzdt_halfspace_center_circle_loop, dbdt_center_of_circular_loop_halfspace
-    from anemone.forwards import ForwardFlow2
+    from anemone.forwards import Forward
     from anemone import constants as c
     radius = 1.
 
@@ -164,7 +164,7 @@ def test_halfspace_circle_center():
     #fwr = ForwardCentralCircle(radius, times)
     lp = Loop.circle(radius, n=32)
     rx = Receiver()
-    fwr = ForwardFlow2(lp, rx, times, tolerance=1e-6)
+    fwr = Forward(lp, rx, times, tolerance=1e-6)
     dbdt = fwr(rho, thick).real
     
 
@@ -353,8 +353,8 @@ def test_40x40_aarhusInv_stepoff():
 
 
 def test_40x40_aarhusInv_piecewise_waveform():
-    from anemone.forwards import ForwardFlow2
-    aarhusInv_piecewise_comparison(ForwardFlow2) 
+    from anemone.forwards import Forward
+    aarhusInv_piecewise_comparison(Forward) 
 
 
 def test_Laplace_40x40_aarhusInv_piecewise_waveform():
@@ -717,9 +717,11 @@ if __name__ == '__main__':
     
     # test_halfspace_circle_center_forward()
     # test_halfspace_circle_center()
-    test_Laplace_40x40_aarhusInv_piecewise_waveform()
+    # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_piecewise_waveform()
     # test_forward_parallel_models()
+    # test_colecole_forwardTD()
+    test_mpaforwardTD()
 
     #test_multirx_forward_shape_check()
     # test_multireceiver_frequency_domain()
