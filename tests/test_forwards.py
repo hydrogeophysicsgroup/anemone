@@ -1,6 +1,6 @@
 import torch
 from anemone.experiment import *
-
+from anemone import rdtype, cdtype
 
 from pytest_config import skip_multi_rx
 
@@ -18,7 +18,7 @@ def aarhusInv_stepoff_comparison(ForwardMaker, **kwargs):
         3.650625e-05, 2.059544e-05, 1.194428e-05, 7.079678e-06,
         3.957627e-06, 2.293402e-06, 1.403765e-06, 8.236817e-07,
         4.389777e-07, 2.446409e-07, 1.422868e-07, 7.752075e-08,
-        4.302391e-08, 2.479088e-08, 1.362022e-08, 7.621867e-09], dtype=torch.complex128)
+        4.302391e-08, 2.479088e-08, 1.362022e-08, 7.621867e-09]).to(rdtype)
 
     times = torch.tensor([9.350e-06, 1.145e-05, 1.458e-05, 1.822e-05, 2.255e-05, 2.867e-05,
         3.595e-05, 4.460e-05, 5.660e-05, 7.070e-05, 8.630e-05, 1.071e-04,
@@ -59,14 +59,14 @@ def aarhusInv_piecewise_comparison(ForwardMaker, **kwargs):
         4.196206e-05, 2.297534e-05, 1.302996e-05, 7.591422e-06,
         4.179841e-06, 2.394241e-06, 1.452859e-06, 8.455657e-07,
         4.466630e-07, 2.468966e-07, 1.423754e-07, 7.665493e-08,
-        4.189503e-08, 2.367454e-08, 1.263738e-08, 6.809730e-09], dtype=torch.float64)
+        4.189503e-08, 2.367454e-08, 1.263738e-08, 6.809730e-09]).to(rdtype)
 
     times = torch.tensor([9.350e-06, 1.145e-05, 1.458e-05, 1.822e-05, 2.255e-05, 2.867e-05, 3.595e-05, 4.460e-05, 5.660e-05, 7.070e-05, 8.630e-05, 1.071e-04,
         1.381e-04, 1.748e-04, 2.174e-04, 2.775e-04, 3.515e-04, 4.385e-04,
         5.575e-04, 7.035e-04])
 
-    t = torch.tensor([-1.0526e-03, -9.2963e-04,  0.0000e+00,  2.5000e-06])
-    wv = torch.tensor([0, 1, 1, 0])
+    t = torch.tensor([-1.0526e-03, -9.2963e-04,  0.0000e+00,  2.5000e-06]).to(rdtype)
+    wv = torch.tensor([0, 1, 1, 0]).to(rdtype)
     waveform = Waveform(t, wv)
 
 
@@ -102,23 +102,22 @@ def aarhusInv_piecewise_comparison(ForwardMaker, **kwargs):
 
 def check_halfspace_circle_center(ForwardMaker, rtol=3e-2):
     from anemone.experiment import Loop, Receiver
-    from anemone.physics import hzdt_halfspace_center_circle_loop
+    from anemone.physics import hzdt_halfspace_center_circle_loop, dbdt_center_of_circular_loop_halfspace
     from anemone import constants as c
     name = ForwardMaker.__name__
-    radius = 10
+    radius = 1.
     lp = Loop.circle(radius, n=32)
     # lp = Loop.square((c.pi*radius*radius)**(1/2))
     rx = Receiver()
-    times = torch.logspace(-6, 0, 101, dtype=torch.double)
+    times = torch.logspace(-8, 0, 101, dtype=rdtype)
 
-    rho = torch.logspace(3, 0, 5, dtype=torch.double)[None, :]*torch.ones(3, dtype=torch.double)[:, None]
-    thick = torch.ones(2, dtype=torch.double)*20
+    rho = torch.logspace(0,3, 101, dtype=rdtype)[None, :]*torch.ones(2, dtype=rdtype)[:, None]
+    thick = torch.ones(1, dtype=rdtype)*20
 
-    fwr = ForwardMaker(lp, rx, times, tolerance=5e-1)
+    fwr = ForwardMaker(lp, rx, times, tolerance=1e-6)
     # dbdt = fwr(rho, thick)
     dbdt = fwr(rho, thick).real.T
-    print(fwr.t2t.shape)
-    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius).real*c.mu0
+    dbdt_analytic = dbdt_center_of_circular_loop_halfspace(times[:, None].to(torch.double), rho[None, 0, :].to(torch.double), radius).real.to(rdtype)
     
     if __name__ == '__main__':
         
@@ -129,13 +128,13 @@ def check_halfspace_circle_center(ForwardMaker, rtol=3e-2):
         ax[0].set_ylabel('dB/dt')
         ax[0].set_aspect('equal')
 
-        ax[1].loglog(times, 100*torch.abs(dbdt-dbdt_analytic)/torch.abs(dbdt_analytic))
+        ax[1].loglog(times, 100*torch.abs((dbdt-dbdt_analytic)/dbdt_analytic))
         ax[1].set_ylabel('relative difference [%]')
         # ax[1].set_ylim(None, 1e3)
         for ax_ in ax:
             ax_.set_xlabel('time [s]')
 
-        fig.suptitle('Test against AarhusInv with Piecewise Waveform')
+        fig.suptitle('check halfspace circle center:'+f'\n{name} vs analytic response (radius = {radius} m)')
         plt.show()
     
     assert torch.allclose(dbdt_analytic[:,1:], dbdt[:,1:], 0.1), f"{name} (radius = {radius} m) and analytic do not match within {rtol*100} percent"
@@ -147,26 +146,29 @@ def test_halfspace_circle_center_forward():
 
 def test_halfspace_circle_center():
     from anemone.experiment import Loop, Receiver
-    from anemone.physics import hzdt_halfspace_center_circle_loop
-    from anemone.forwards import ForwardCentralCircle
+    from anemone.physics import hzdt_halfspace_center_circle_loop, dbdt_center_of_circular_loop_halfspace
+    from anemone.forwards import ForwardFlow2
     from anemone import constants as c
-    radius = 20.
+    radius = 1.
 
     name = 'Central Circular Loop (radius={radius} m)'.format(radius=radius)
     rtol = 2e-2
     
     
     
-    times = torch.logspace(-9, 0, 51, dtype=torch.double)
+    times = torch.logspace(-9, 0, 51, dtype=rdtype)
 
     rho = torch.tensor([[1, 10, 100, 1000], [1, 10, 100, 1000]])
-    thick = torch.ones(4, dtype=torch.double)*20
+    thick = torch.ones(4, dtype=rdtype)*20
 
-    fwr = ForwardCentralCircle(radius, times)
+    #fwr = ForwardCentralCircle(radius, times)
+    lp = Loop.circle(radius, n=32)
+    rx = Receiver()
+    fwr = ForwardFlow2(lp, rx, times, tolerance=1e-6)
     dbdt = fwr(rho, thick).real
     
 
-    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], rho[None, 0, :], radius).real*c.mu0
+    dbdt_analytic = dbdt_center_of_circular_loop_halfspace(times[:, None].to(torch.double), rho[None, 0, :].to(torch.double), radius).to(rdtype).real
 
     
 
@@ -194,7 +196,7 @@ def test_halfspace_circle_center():
         for ax_ in ax:
             ax_.set_xlabel('time [s]')
 
-        fig.suptitle('anEMone center of circular loop vs analytic response')
+        fig.suptitle('1: '+name)
         plt.subplots_adjust(
             top=0.88,
             bottom=0.11,
@@ -206,7 +208,7 @@ def test_halfspace_circle_center():
         plt.show()
 
     dbdt = fwr(torch.tensor([100., 100.]), torch.tensor([20.])).squeeze().real
-    dbdt_analytic = hzdt_halfspace_center_circle_loop(times[:, None], torch.tensor([100.]), radius).squeeze().real*c.mu0
+    dbdt_analytic = dbdt_center_of_circular_loop_halfspace(times[:, None].to(torch.double), torch.tensor([100.]).to(torch.double), radius).to(rdtype).squeeze().real
     
     if __name__ == '__main__':
         relerr = torch.nan_to_num(100*torch.abs(dbdt.T-dbdt_analytic)/torch.abs(dbdt_analytic))    
@@ -228,7 +230,7 @@ def test_halfspace_circle_center():
         for ax_ in ax:
             ax_.set_xlabel('time [s]')
 
-        fig.suptitle('anEMone center of circular loop vs analytic response')
+        fig.suptitle('2: '+name)
         plt.subplots_adjust(
             top=0.88,
             bottom=0.11,
@@ -251,16 +253,16 @@ def compare_two_Forwards(Forward1, Forward2, rtol=1e-2):
 
     lp = Loop.square(40)
     rx = Receiver()
-    times = torch.logspace(-7, 0, 101, dtype=torch.double)
+    times = torch.logspace(-7, 0, 101, dtype=rdtype)
     fwr1 = Forward1(lp, rx, times)
 
 
-    rho = torch.logspace(0, 3, 5, dtype=torch.double)[None, :]*torch.ones(2, dtype=torch.double)[:, None]
-    thick = torch.ones(1, dtype=torch.double)*20
+    rho = torch.logspace(0, 3, 5, dtype=rdtype)[None, :]*torch.ones(2, dtype=rdtype)[:, None]
+    thick = torch.ones(1, dtype=rdtype)*20
 
     lp = Loop.square(40)
     rx = Receiver()
-    times = torch.logspace(-7, 0, 101, dtype=torch.double)
+    times = torch.logspace(-7, 0, 101, dtype=rdtype)
     fwr2 = Forward2(lp, rx, times)
 
 
@@ -292,7 +294,7 @@ def check_parallel_models(ForwardMaker):
     lp = Loop.square(40)
     rx = Receiver()
     waveform = Waveform.example()
-    times = torch.logspace(-5, -3, 31, dtype=torch.double)
+    times = torch.logspace(-5, -3, 31, dtype=rdtype)
 
     rho = torch.ones(3)*40.
     rho_change = torch.linspace(-30, 260, 94)
@@ -351,8 +353,8 @@ def test_40x40_aarhusInv_stepoff():
 
 
 def test_40x40_aarhusInv_piecewise_waveform():
-    from anemone.forwards import Forward
-    aarhusInv_piecewise_comparison(Forward)
+    from anemone.forwards import ForwardFlow2
+    aarhusInv_piecewise_comparison(ForwardFlow2) 
 
 
 def test_Laplace_40x40_aarhusInv_piecewise_waveform():
@@ -369,24 +371,24 @@ def check_colecoleforwardTD(ForwardMaker):
         ButterworthFilter(6.2e5, 1),
         ButterworthFilter(4.5e5, 2)
     ])
-    t0 = torch.logspace(-5, -3, 31, dtype=torch.double)
+    t0 = torch.logspace(-5, -3, 31, dtype=rdtype)
     pyfwr = ForwardMaker.colecole(sq, rx, t0, waveform=waveform, filterfunc=recfilter)
 
     res  = torch.tensor([4.000e+02, 4.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 8.000e+02, 
                         8.000e+02, 8.000e+02, 8.000e+02, 8.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 5.000e+02, 
-                        5.000e+02, 3.000e+02, 3.000e+02, 3.000e+02], dtype=torch.double)
+                        5.000e+02, 3.000e+02, 3.000e+02, 3.000e+02], dtype=rdtype)
     m0   = torch.tensor([2.000e+02, 2.000e+02, 2.000e+02, 2.000e+02, 4.000e+02, 4.000e+02, 4.000e+02, 5.000e+02, 
                         5.000e+02, 5.000e+02, 5.000e+02, 9.000e+02, 9.000e+02, 9.000e+02, 9.000e+02, 9.000e+02, 
-                        9.000e+02, 9.000e+02, 9.000e+02, 9.000e+02], dtype=torch.double)*1e-3
+                        9.000e+02, 9.000e+02, 9.000e+02, 9.000e+02], dtype=rdtype)*1e-3
     tau  = torch.tensor([1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 2.000e-04, 2.000e-04, 
                         2.000e-04, 3.000e-04, 3.000e-04, 3.000e-04, 3.000e-04, 1.000e-04, 1.000e-04, 1.000e-04, 
-                        1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04], dtype=torch.double)
+                        1.000e-04, 1.000e-04, 1.000e-04, 1.000e-04], dtype=rdtype)
     C  = torch.tensor([6.000e-01, 6.000e-01, 5.000e-01, 5.000e-01, 5.000e-01, 5.000e-01, 6.000e-01, 6.000e-01,
                          6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 6.000e-01, 9.000e-01, 
-                         9.000e-01, 9.000e-01, 9.000e-01, 9.000e-01], dtype=torch.double)
+                         9.000e-01, 9.000e-01, 9.000e-01, 9.000e-01], dtype=rdtype)
     thick=torch.tensor([1.000e+00, 1.177e+00, 1.386e+00, 1.632e+00, 1.922e+00, 2.263e+00, 2.665e+00, 3.138e+00, 
                         3.695e+00, 4.351e+00, 5.124e+00, 6.034e+00, 7.105e+00, 8.366e+00, 9.851e+00, 1.160e+01, 
-                        1.365e+01, 1.608e+01, 1.893e+01], dtype=torch.double)
+                        1.365e+01, 1.608e+01, 1.893e+01], dtype=rdtype)
 
     ainv_dbdt = torch.tensor([ 4.163592e-05,  2.674770e-05,  1.696241e-05,  1.037700e-05,
         6.115854e-06,  3.470203e-06,  1.870507e-06,  9.252422e-07,
@@ -395,7 +397,7 @@ def check_colecoleforwardTD(ForwardMaker):
        -1.046215e-07, -7.896327e-08, -5.621327e-08, -3.828716e-08,
        -2.530188e-08, -1.641016e-08, -1.056120e-08, -6.790221e-09,
        -4.377552e-09, -2.834261e-09, -1.834226e-09, -1.188674e-09,
-       -7.686370e-10, -4.945201e-10, -3.173105e-10], dtype=torch.double)
+       -7.686370e-10, -4.945201e-10, -3.173105e-10], dtype=rdtype)
     
     dbdt = pyfwr(res,  m0, tau, C, thick)
     if __name__ == '__main__':
@@ -520,14 +522,14 @@ def check_colecole_parallel_models(ForwardMaker):
         ButterworthFilter(6.2e5, 1),
         ButterworthFilter(4.5e5, 2)
     ])
-    t0 = torch.logspace(-5, -3, 31, dtype=torch.double)
+    t0 = torch.logspace(-5, -3, 31, dtype=rdtype)
     pyfwr = ForwardMaker.colecole(sq, rx, t0, waveform=waveform, filterfunc=recfilter)
 
-    rho  = torch.tensor([4.0e+02, 4.0e+02, 5.0e+02], dtype=torch.double)
-    m0   = torch.tensor([2.0e+02, 9.0e+02, 5.0e+02], dtype=torch.double)*1e-3
-    tau  = torch.tensor([1.0e-04, 2.0e-04, 3.0e-04], dtype=torch.double)
-    chg  = torch.tensor([6.0e-01, 5.0e-01, 9.0e-01], dtype=torch.double)
-    thick=torch.tensor([20, 30], dtype=torch.double)
+    rho  = torch.tensor([4.0e+02, 4.0e+02, 5.0e+02], dtype=rdtype)
+    m0   = torch.tensor([2.0e+02, 9.0e+02, 5.0e+02], dtype=rdtype)*1e-3
+    tau  = torch.tensor([1.0e-04, 2.0e-04, 3.0e-04], dtype=rdtype)
+    chg  = torch.tensor([6.0e-01, 5.0e-01, 9.0e-01], dtype=rdtype)
+    thick=torch.tensor([20, 30], dtype=rdtype)
 
     sweep = torch.linspace(0.9, 1.1, 94)
     fixed = torch.ones(94)[None, :]
@@ -573,7 +575,7 @@ def test_forward_timing():
         ButterworthFilter(6.2e5, 1),
         ButterworthFilter(4.5e5, 2)
     ])
-    t0 = torch.logspace(-5, -3, 31, dtype=torch.double)
+    t0 = torch.logspace(-5, -3, 31, dtype=rdtype)
     fwr = Forward(sq, rx, t0, waveform=waveform, filterfunc=recfilter, tolerance=1e-6)    
 
     res  = torch.tensor([40, 200, 180])
@@ -606,7 +608,7 @@ def multi_rx_forward_shape_check(ForwardMaker):
     lp = Loop.square(50)
     rx = Receiver(x=torch.linspace(-20, 20, 5)*0.9)
     waveform = Waveform.example()
-    times = torch.logspace(-5, -3, 31, dtype=torch.double)
+    times = torch.logspace(-5, -3, 31, dtype=rdtype)
 
     rho = torch.tensor([40, 40])
     thick = torch.tensor([10])
@@ -687,7 +689,7 @@ def test_multireceiver_frequency_domain():
 
     lp = Loop.square(50)
     rx = Receiver(x=torch.linspace(-200, 200, 202), y=torch.linspace(-200, 200, 202))
-    freqs = torch.tensor([2000], dtype=torch.double)
+    freqs = torch.tensor([2000], dtype=rdtype)
 
     rho = torch.ones(2)*40
     thick = torch.tensor([10])
@@ -713,9 +715,11 @@ def test_multireceiver_frequency_domain():
 
 if __name__ == '__main__':
     
+    # test_halfspace_circle_center_forward()
     # test_halfspace_circle_center()
-    test_halfspace_circle_center_forward()
+    test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_piecewise_waveform()
+    # test_forward_parallel_models()
 
     #test_multirx_forward_shape_check()
     # test_multireceiver_frequency_domain()

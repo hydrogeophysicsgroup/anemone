@@ -1,12 +1,12 @@
 from anemone.inversion import *
-from anemone.forwards import Forward, Forward2, logify_forward
+from anemone.forwards import Forward, ForwardFlow2, logify_forward
 from anemone.system import Loop, Receiver, Waveform, FilterChain, ButterworthFilter
 from anemone.experiment import compute_relstd
 
 def test_tikhonov_few_layer():
-    logForward = logify_forward(Forward)
+    logForward = logify_forward(ForwardFlow2)
 
-    times = torch.logspace(-5,-2, 32)
+    times = torch.logspace(-5,-3, 32)
     fwrTD = logForward.example(times=times, tolerance=1e-7)
 
     rho = torch.tensor([20, 80, 40])
@@ -14,19 +14,19 @@ def test_tikhonov_few_layer():
     mod_true = LogResistivity.few_layers(rho, thk)
 
 
-    dbdt_true = 10**fwrTD(rho, thk)
-    d_relerr = compute_relstd(fwrTD.times, dbdt_true, current=10.)
-    d_err = torch.log10(1. + d_relerr)
+    dbdt_true = fwrTD(rho, thk).exp()
+    d_relerr = compute_relstd(fwrTD.times, dbdt_true, current=1.)
+    d_err = torch.log1p(d_relerr)
     d_obs = dbdt_true + dbdt_true * torch.randn_like(dbdt_true) * d_relerr
 
-    # if __name__ == '__main__':
-    #     import matplotlib.pyplot as plt
-    #     plt.figure()
-    #     plt.loglog(fwrTD.times, dbdt_true, '-', label='Observed')
-    #     plt.loglog(fwrTD.times, d_obs, 'o', label='Observed')
-    #     plt.show()
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        plt.figure()
+        plt.loglog(fwrTD.times, dbdt_true, '-', label='Observed')
+        plt.loglog(fwrTD.times, d_obs, 'o', label='Observed')
+        plt.show()
 
-    d_obs = torch.abs(d_obs).log10()
+    d_obs = torch.abs(d_obs).log()
 
     res_start = LogResistivity.few_layers([2*torch.tensor([20,21,20], dtype=torch.double)], torch.tensor([30,30]))
     inv = BaseInversion(d_obs, d_err, res_start, fwrTD)
@@ -43,12 +43,12 @@ def test_tikhonov_few_layer():
         mod_true.plot(axs=axs[:1], color='red', label='True model')
 
         d_pred = fwrTD(*res_mod.mod)
-        axs[1].loglog(fwrTD.times, 10**d_obs, 'o', label='Observed')
-        axs[1].loglog(fwrTD.times, 10**d_pred, '-', label='Predicted')
+        axs[1].loglog(fwrTD.times, d_obs.exp(), 'o', label='Observed')
+        axs[1].loglog(fwrTD.times, d_pred.exp(), '-', label='Predicted')
         plt.show()
 
 def test_tikhonov_smooth():
-    logForward = logify_forward(Forward)
+    logForward = logify_forward(ForwardFlow2)
 
     times = torch.logspace(-5,-2, 32)
     fwrTD = logForward.example(times=times, tolerance=1e-5)
@@ -58,12 +58,12 @@ def test_tikhonov_smooth():
     mod_true = LogResistivity.few_layers(rho, thk)
 
 
-    dbdt_true = 10**fwrTD(rho, thk)
+    dbdt_true = fwrTD(rho, thk).exp()
     d_relerr = compute_relstd(fwrTD.times, dbdt_true, current=10.)
-    d_err = torch.log10(1. + d_relerr)
+    d_err = torch.log1p(d_relerr)
     d_obs = dbdt_true + dbdt_true * torch.randn_like(dbdt_true) * d_relerr
 
-    d_obs = torch.abs(d_obs).log10()
+    d_obs = torch.abs(d_obs).log()
 
     res_start = LogResistivity.smooth(torch.ones(31, dtype=torch.double)*50, torch.cumsum(torch.logspace(0,1.5,30), 0))
 
@@ -81,12 +81,12 @@ def test_tikhonov_smooth():
         mod_true.plot(axs=axs[:1], color='red', label='True model')
 
         d_pred = fwrTD(*res_mod.mod)
-        axs[1].loglog(fwrTD.times, 10**d_obs, 'o', label='Observed')
-        axs[1].loglog(fwrTD.times, 10**d_pred, '-', label='Predicted')
+        axs[1].loglog(fwrTD.times, d_obs.exp(), 'o', label='Observed')
+        axs[1].loglog(fwrTD.times, d_pred.exp(), '-', label='Predicted')
         plt.show()
 
 def test_fastjacobian():
-    logForward = logify_forward(Forward)
+    logForward = logify_forward(ForwardFlow2)
 
     times = torch.logspace(-5,-2, 32)
     fwrTD = logForward.example(times=times, tolerance=1e-4)
@@ -96,12 +96,12 @@ def test_fastjacobian():
     mod_true = LogResistivity.few_layers(rho, thk)
 
 
-    dbdt_true = 10**fwrTD(rho, thk)
+    dbdt_true = fwrTD(rho, thk).exp()
     d_relerr = compute_relstd(fwrTD.times, dbdt_true, current=10.)
-    d_err = torch.log10(1. + d_relerr)
+    d_err = torch.log1p(d_relerr)
     d_obs = dbdt_true + dbdt_true * torch.randn_like(dbdt_true) * d_relerr
 
-    d_obs = torch.abs(d_obs).log10()
+    d_obs = torch.abs(d_obs).log()
 
     res_start = LogResistivity.smooth(torch.ones(31, dtype=torch.double)*50, torch.cumsum(torch.logspace(0,1.5,30), 0))
 
@@ -121,12 +121,12 @@ def test_fastjacobian():
         mod_true.plot(axs=axs[:1], color='red', label='True model')
 
         d_pred = fwrTD(*res_mod.mod)
-        axs[1].loglog(fwrTD.times, 10**d_obs, 'o', label='Observed')
-        axs[1].loglog(fwrTD.times, 10**d_pred, '-', label='Predicted')
+        axs[1].loglog(fwrTD.times, d_obs.exp(), 'o', label='Observed')
+        axs[1].loglog(fwrTD.times, d_pred.exp(), '-', label='Predicted')
         plt.show()
 
 def test_lci():
-    gpu = torch.device('cuda')
+    gpu = torch.device('cpu')
     print('number of threads: ', torch.get_num_threads())
     logForward = logify_forward(Forward)
     t = torch.logspace(-5.5, -2, 51, device=gpu, dtype=torch.double)
@@ -186,26 +186,26 @@ def test_lci():
         import matplotlib.pyplot as plt
         from plog import Log, Section, PieceWiseLine
 
-    fig,ax = plt.subplots(2,1)
-    result = []
-    actual = []
-    _,thick = res_mods[0].mod
-    z = torch.cumsum(thick, 0)
-    for i, (mtrue, res_mod) in enumerate(zip(m_trues, res_mods)):
-        result.append(Log.standard(res_mod.values[0].cpu().log10(), z, 'rho', xy=(i,0)))
-        cres,thick = mtrue.mod
-        actual.append(Log.standard(cres.cpu().log10(), np.cumsum(thick.cpu()), 'rho', xy=(i,0)))
-    result = Section(result, proj_pnts=[(-1, 0), (i/2, 0), (i+1, 0)])
-    actual = Section(actual, proj_pnts=[(-1, 0), (i/2, 0), (i+1, 0)])
-    result.plot(axs=ax[0], cmap='turbo', vmin=0, vmax=2)
-    actual.plot(axs=ax[1], cmap='turbo', vmin=0, vmax=2)
-    plt.show()
+        fig,ax = plt.subplots(2,1)
+        result = []
+        actual = []
+        _,thick = res_mods[0].mod
+        z = torch.cumsum(thick, 0)
+        for i, (mtrue, res_mod) in enumerate(zip(m_trues, res_mods)):
+            result.append(Log.standard(res_mod.values[0].cpu().log10(), z, 'rho', xy=(i,0)))
+            cres,thick = mtrue.mod
+            actual.append(Log.standard(cres.cpu().log10(), np.cumsum(thick.cpu()), 'rho', xy=(i,0)))
+        result = Section(result, proj_pnts=[(-1, 0), (i/2, 0), (i+1, 0)])
+        actual = Section(actual, proj_pnts=[(-1, 0), (i/2, 0), (i+1, 0)])
+        result.plot(axs=ax[0], cmap='turbo', vmin=0, vmax=2)
+        actual.plot(axs=ax[1], cmap='turbo', vmin=0, vmax=2)
+        plt.show()
 
 
 
 if __name__ == '__main__':
-    # test_tikhonov_few_layer()
+    test_tikhonov_few_layer()
     # test_tikhonov_smooth()
     # test_fastjacobian()
-    test_lci()
+    # test_lci()
     pass
