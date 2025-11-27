@@ -1,10 +1,10 @@
 from anemone.inversion import *
-from anemone.forwards import Forward, ForwardFlow2, logify_forward
+from anemone.forwards import Forward, logify_forward
 from anemone.system import Loop, Receiver, Waveform, FilterChain, ButterworthFilter
 from anemone.experiment import compute_relstd
 
 def test_tikhonov_few_layer():
-    logForward = logify_forward(ForwardFlow2)
+    logForward = logify_forward(Forward)
 
     times = torch.logspace(-5,-3, 32)
     fwrTD = logForward.example(times=times, tolerance=1e-7)
@@ -48,7 +48,7 @@ def test_tikhonov_few_layer():
         plt.show()
 
 def test_tikhonov_smooth():
-    logForward = logify_forward(ForwardFlow2)
+    logForward = logify_forward(Forward)
 
     times = torch.logspace(-5,-2, 32)
     fwrTD = logForward.example(times=times, tolerance=1e-5)
@@ -86,7 +86,7 @@ def test_tikhonov_smooth():
         plt.show()
 
 def test_fastjacobian():
-    logForward = logify_forward(ForwardFlow2)
+    logForward = logify_forward(Forward)
 
     times = torch.logspace(-5,-2, 32)
     fwrTD = logForward.example(times=times, tolerance=1e-4)
@@ -129,21 +129,31 @@ def test_lci():
     gpu = torch.device('cpu')
     print('number of threads: ', torch.get_num_threads())
     logForward = logify_forward(Forward)
-    t = torch.logspace(-5.5, -2, 51, device=gpu, dtype=torch.double)
-    fwr = logForward.example(times=t, tolerance=1e-6)
-    fastJac = fastjacobian(Inversion)
+
+    t1 = torch.logspace(-6, -4, 15)
+    t2 = torch.logspace(-5, -3, 31)
+    tx = Loop.square(3)
+    rx = Receiver(x=10.)
+    wv1 = Waveform(torch.tensor([-0.5e-3, -0.9e-3, 0., 0.5e-6]), torch.tensor([0, 1, 1, 0]))
+    wv2 = Waveform(torch.tensor([-1e-3, -1.5e-3, 0., 0.5e-5]), torch.tensor([0, 1, 1, 0]))
+
+    fwr1 = logForward(tx, rx, t1, waveform=wv1, tolerance=1e-6)
+    fwr2 = logForward(tx, rx, t2, waveform=wv2, tolerance=1e-6)
+
+    fwr = fwr1 + fwr2
+
 
     z = torch.cumsum(torch.logspace(0, np.log10(50.), 20), 0)
     z /= z.max()
 
-    z *= 150
+    z *= 80.
 
-    rho_true = torch.tensor([75., 10., 60.], device=gpu, dtype=torch.double)
-    thk_true = torch.tensor([50, 30], device=gpu, dtype=torch.double)
+    rho_true = torch.tensor([75., 5., 60.], device=gpu, dtype=rdtype)
+    thk_true = torch.tensor([20, 30], device=gpu, dtype=rdtype)
 
 
     res_start = LogResistivity.smooth(torch.ones(len(z)+1)*50., z, device=gpu)
-    thick1 = torch.linspace(0, 20, 15).to(torch.double)#[:3]
+    thick1 = torch.linspace(0, 20, 25).to(rdtype)#[:3]
     inv_list = []
     m_trues=[]
 
@@ -157,10 +167,10 @@ def test_lci():
         m_true = LogResistivity.few_layers(torch.clamp(crho, 5), thk)
         m_trues.append(m_true)
         
-        dbdt = 10**this_fwr(crho, thk)#.exp()
-        d_err = compute_relstd(fwr.times, dbdt, current=25.)
-        d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log10()
-        tmp_inv = fastJac(d_obs, (1. + d_err).log10(), res_start.copy(), this_fwr)
+        dbdt = this_fwr(crho, thk).exp()
+        d_err = compute_relstd(fwr.times, dbdt, current=10.)
+        d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log()
+        tmp_inv = fastJac(d_obs, torch.log1p(d_err), res_start.copy(), this_fwr)
 
         # tmp_inv.setup_matrices()
         inv_list.append(tmp_inv)    
@@ -168,6 +178,8 @@ def test_lci():
     from time import time as timer
     bt = timer()
     lci = LCI(inv_list)
+    lci.horizontal_smoothness=1.
+
     # lci.smoothness_vert = 1e3
     # lci.smoothness_horiz = 1e2
     from time import time as timer
@@ -204,8 +216,8 @@ def test_lci():
 
 
 if __name__ == '__main__':
-    test_tikhonov_few_layer()
+    # test_tikhonov_few_layer()
     # test_tikhonov_smooth()
     # test_fastjacobian()
-    # test_lci()
+    test_lci()
     pass

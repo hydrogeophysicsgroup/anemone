@@ -6,167 +6,167 @@ import torch
 import scipy as sp
 
 # %%
-from physics import rte_raiche1999 as rte
-from physics import rte_halfspace, drte_dsigma
+from anemone.physics import rte_raiche1999 as rte
+from anemone.physics import rte_halfspace, drte_dsigma
 
 # %%
-# def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=0.01):
-#     # if t_indices is None:
-#     t_indices = np.arange(t2t.shape[0])
+def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=0.01):
+    # if t_indices is None:
+    t_indices = np.arange(t2t.shape[0])
 
-#     t1 = (t2t[0, :, None]*geomz.real[None, :]).numpy()
-#     full_mask = np.zeros_like(t1, dtype=bool)
+    t1 = (t2t[0, :, None]*geomz.real[None, :]).numpy()
+    full_mask = np.zeros_like(t1, dtype=bool)
 
-#     rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:,None], lmb[None,:]).squeeze().cpu().numpy()
+    rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:,None], lmb[None,:]).squeeze().cpu().numpy()
 
-#     for i in t_indices:
-#         t1 = (t2t[i, :, None]*geomz.real[None, :]).numpy()*rte_ref
-#         t1_shape = t1.shape
-#         t1sort = np.abs(t1).flatten()
-#         # indices = np.arange(len(t1sort))
+    for i in t_indices:
+        t1 = (t2t[i, :, None]*geomz.real[None, :]).numpy()*rte_ref
+        t1_shape = t1.shape
+        t1sort = np.abs(t1).flatten()
+        # indices = np.arange(len(t1sort))
 
-#         sort_idx = np.argsort(t1sort)
-#         t1sort = t1sort[sort_idx]
-#         t1cumsum = np.cumsum(t1sort)
-#         t1cumsum /= t1cumsum[-1]
-#         idx = np.searchsorted(t1cumsum, tolerance)#-1
+        sort_idx = np.argsort(t1sort)
+        t1sort = t1sort[sort_idx]
+        t1cumsum = np.cumsum(t1sort)
+        t1cumsum /= t1cumsum[-1]
+        idx = np.searchsorted(t1cumsum, tolerance)#-1
 
-#         mask = np.zeros_like(t1sort, dtype=bool)
-#         mask[idx:] = True
+        mask = np.zeros_like(t1sort, dtype=bool)
+        mask[idx:] = True
 
 
-#         inv_sort = np.argsort(sort_idx)
-#         mask = mask[inv_sort].reshape(t1_shape)
-#         full_mask += mask
+        inv_sort = np.argsort(sort_idx)
+        mask = mask[inv_sort].reshape(t1_shape)
+        full_mask += mask
     
-#     omega_i = np.arange(omega.squeeze().shape[0])
-#     lamda_i = np.arange(lmb.squeeze().shape[0])
-#     omega_i, lamda_i = np.meshgrid(omega_i, lamda_i, indexing='ij')
+    omega_i = np.arange(omega.squeeze().shape[0])
+    lamda_i = np.arange(lmb.squeeze().shape[0])
+    omega_i, lamda_i = np.meshgrid(omega_i, lamda_i, indexing='ij')
 
-#     omega_i = omega_i[full_mask]
-#     lamda_i = lamda_i[full_mask]
-#     # print(omega_i.min(), omega_i.max(), lamda_i.min(), lamda_i.max())
-#     print('n omegas: ', omega_i.max()-omega_i.min())
-#     print('n lambdas: ', lamda_i.max()-lamda_i.min())
+    omega_i = omega_i[full_mask]
+    lamda_i = lamda_i[full_mask]
+    # print(omega_i.min(), omega_i.max(), lamda_i.min(), lamda_i.max())
+    print('n omegas: ', omega_i.max()-omega_i.min())
+    print('n lambdas: ', lamda_i.max()-lamda_i.min())
 
-#     H2t = np.zeros(t2t.shape[:1]+(full_mask.sum(),), dtype=complex)
+    H2t = np.zeros(t2t.shape[:1]+(full_mask.sum(),), dtype=complex)
 
-#     for i in range(t2t.shape[0]):
-#         t1 = (t2t[i, :, None]*geomz.real[None, :]).numpy()
-#         H2t[i] = t1[full_mask].flatten()
+    for i in range(t2t.shape[0]):
+        t1 = (t2t[i, :, None]*geomz.real[None, :]).numpy()
+        H2t[i] = t1[full_mask].flatten()
 
-#     H2tweight = np.abs(H2t).sum(0)#.numpy()
+    H2tweight = np.abs(H2t).sum(0)#.numpy()
 
-#     idx_H2t = np.argsort(H2tweight)[::-1]
-#     H2t = H2t[:, idx_H2t]
+    idx_H2t = np.argsort(H2tweight)[::-1]
+    H2t = H2t[:, idx_H2t]
 
-#     Omega,Lambda = np.meshgrid(omega.squeeze().cpu().numpy(), lmb.squeeze().cpu().numpy(), indexing='ij')
-#     Omega = Omega[full_mask]
-#     Lambda = Lambda[full_mask]
-#     return torch.tensor(H2t), torch.tensor(Omega[idx_H2t])+0j, torch.tensor(Lambda[idx_H2t])+0j
+    Omega,Lambda = np.meshgrid(omega.squeeze().cpu().numpy(), lmb.squeeze().cpu().numpy(), indexing='ij')
+    Omega = Omega[full_mask]
+    Lambda = Lambda[full_mask]
+    return torch.tensor(H2t), torch.tensor(Omega[idx_H2t])+0j, torch.tensor(Lambda[idx_H2t])+0j
 
-# class ForwardFlow(Forward):
-#     geomz = None
-#     t2t   = None
+class ForwardFlow(BaseForward):
+    geomz = None
+    t2t   = None
 
-#     def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=1e-7):
-#         device = times.device
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=1e-7):
+        device = times.device
 
-#         super().__init__(source, receiver, times.cpu(), waveform, filterfunc, t_end, tolerance, precalc=False)
-#         self.t2t = None
-#         self.setup()
-#         self.device=device
-#         self.H2t = self.H2t.to(self.device).to(torch.complex64)
-#         self.omega = self.omega.to(self.device).to(torch.complex64)
-#         self.lmb = self.lmb.to(self.device).to(torch.complex64)
-#         self.H2tjac = self.H2t.to(self.device).to(torch.complex64)
+        super().__init__(source, receiver, times.cpu(), waveform, filterfunc, t_end, tolerance)
+        self.t2t = None
+        self.setup()
+        self.device=device
+        self.H2t = self.H2t.to(self.device).to(torch.complex64)
+        self.omega = self.omega.to(self.device).to(torch.complex64)
+        self.lmb = self.lmb.to(self.device).to(torch.complex64)
+        self.H2tjac = self.H2t.to(self.device).to(torch.complex64)
 
 
-#     def setup(self):
-#         self.rho   = 40*torch.ones(2)[:, None, None] + 0j
-#         self.thick = 20*torch.ones(1)[:, None, None] + 0j
+    def setup(self):
+        self.rho   = 40*torch.ones(2)[:, None, None] + 0j
+        self.thick = 20*torch.ones(1)[:, None, None] + 0j
 
-#         def frq_integrand(f):
-#             self.omega = c.twopi*f[None,:,None]
-#             def wvlngth_integrand(wave_length):
-#                 """ Hz from horizontal electric dipole. """
-#                 self.lmb = wave_length[None, None, :]          
-#                 #self.tmp_u0 = u0(self.omega, self.lmb)
-#                 self.sfield_rte = torch.exp(-self.lmb*self.sfield_dz)*self.lmb / c.fourpi
-#                 intg = rte(self.sigma, self.thick, self.omega, self.lmb)*self.sfield_rte
-#                 return intg.squeeze()
-#             hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10)
-#             def geomz_r(r):
-#                 return self.source.geomz(self.receiver, r).to(torch.double).to(self.device)
-#             Hr, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
+        def frq_integrand(f):
+            self.omega = c.twopi*f[None,:,None]
+            def wvlngth_integrand(wave_length):
+                """ Hz from horizontal electric dipole. """
+                self.lmb = wave_length[None, None, :]          
+                #self.tmp_u0 = u0(self.omega, self.lmb)
+                self.sfield_rte = torch.exp(-self.lmb*self.sfield_dz)*self.lmb / c.fourpi
+                intg = rte(self.sigma, self.thick, self.omega, self.lmb)*self.sfield_rte
+                return intg.squeeze()
+            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10)
+            def geomz_r(r):
+                return self.source.geomz(self.receiver, r).to(torch.double).to(self.device)
+            Hr, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
             
-#             self.geomz *= torch.exp(-self.lmb*self.sfield_dz)*self.lmb / c.fourpi
+            self.geomz *= torch.exp(-self.lmb*self.sfield_dz)*self.lmb / c.fourpi
 
-#             return Hr.squeeze()
+            return Hr.squeeze()
         
-#         if self.t2t is None:
-#             self.cbft=invFourier(frq_integrand, device=self.device, smp_per_decade=16)
-#             def t2t_func(t_in):
-#                 if self.t_end is not None:
-#                     waveform_matrix = wv_to_t(t_in, t_in, waveform=self.waveform)
-#                     gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
-#                     return gate_matrix @ waveform_matrix
-#                 else:
-#                     return wv_to_t(self.times, t_in, waveform=self.waveform)
+        if self.t2t is None:
+            self.cbft=invFourier(frq_integrand, device=self.device, smp_per_decade=16)
+            def t2t_func(t_in):
+                if self.t_end is not None:
+                    waveform_matrix = wv_to_t(t_in, t_in, waveform=self.waveform)
+                    gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
+                    return gate_matrix @ waveform_matrix
+                else:
+                    return wv_to_t(self.times, t_in, waveform=self.waveform)
 
             
-#             Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
+            Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
 
-#             if self.filterfunc is not None:
-#                 self.t2t *= self.filterfunc.omega_filter(self.omega1.squeeze())
-#             if self.waveform is not None:
-#                 self.t2t /= -1j#*self.omega1.squeeze()
-#             else:
-#                 self.t2t *= self.omega1.squeeze()
+            if self.filterfunc is not None:
+                self.t2t *= self.filterfunc.omega_filter(self.omega1.squeeze())
+            if self.waveform is not None:
+                self.t2t /= -1j#*self.omega1.squeeze()
+            else:
+                self.t2t *= self.omega1.squeeze()
 
-#         self.H2t, self.omega, self.lmb = make_H2t(self.t2t, self.geomz, self.omega1, self.lmb, tolerance=self.tolerance)
+        self.H2t, self.omega, self.lmb = make_H2t(self.t2t, self.geomz, self.omega1, self.lmb, tolerance=self.tolerance)
 
-#         self.H2t       = self.H2t.to(self.device).to(torch.complex64)
-#         self.H2t      /= torch.sqrt(self.omega)
-#         self.H2t      /= c.sqrt_twopi
-#         self.omega    *= c.sqrt_twopi
-#         self.H2tjac    = self.H2t[:, None, :].to(self.device)
+        self.H2t       = self.H2t.to(self.device).to(torch.complex64)
+        self.H2t      /= torch.sqrt(self.omega)
+        self.H2t      /= c.sqrt_twopi
+        self.omega    *= c.sqrt_twopi
+        self.H2tjac    = self.H2t[:, None, :].to(self.device)
     
-#     def forward(self):
-#         with torch.no_grad():
-#             cRTE = rte(self.sigma, self.thick, self.omega, self.lmb).squeeze()
-#             return torch.einsum('ik,...k->i...', self.H2t, cRTE).real
+    def forward(self):
+        with torch.no_grad():
+            cRTE = rte(self.sigma, self.thick, self.omega, self.lmb).squeeze()
+            return torch.einsum('ik,...k->i...', self.H2t, cRTE).real
 
-#     def jacobian(self):
-#         dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lmb).squeeze()
+    def jacobian(self):
+        dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lmb).squeeze()
         
-#         if len(dRTE.shape)>2:
-#             Gr = torch.einsum('ijk,lk->jil', dRTE, self.H2tjac).real
-#             # print(Gr.shape)
-#             # print(self.rho.squeeze().shape)
-#             Gr /= (self.rho.real.squeeze().T**2)[:,:,None]
-#         else:
-#             Gr = torch.einsum('ik,...k->i...', dRTE.real, self.H2t.real) - torch.einsum('ik,jk->ij', dRTE.imag, self.H2t.imag)
-#             Gr /= (self.rho.real.squeeze()**2)[:,None]
-#         return Gr
+        if len(dRTE.shape)>2:
+            Gr = torch.einsum('ijk,lk->jil', dRTE, self.H2tjac).real
+            # print(Gr.shape)
+            # print(self.rho.squeeze().shape)
+            Gr /= (self.rho.real.squeeze().T**2)[:,:,None]
+        else:
+            Gr = torch.einsum('ik,...k->i...', dRTE.real, self.H2t.real) - torch.einsum('ik,jk->ij', dRTE.imag, self.H2t.imag)
+            Gr /= (self.rho.real.squeeze()**2)[:,None]
+        return Gr
     
-#     def __call__(self, rho, thickness, jac=False):
-#         with torch.no_grad():
-#             if not isinstance(rho, torch.Tensor):       rho       = torch.tensor(rho)
-#             if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)        
-#             self.rho = ((rho+0j)[..., None, None]).to(torch.complex64)#.to(self.device)
-#             if rho.ndim > thickness.ndim:
-#                 thickness = thickness[:, None, ...]
-#             self.thick = ((thickness+0j)[..., None, None]).to(torch.complex64)
-#             if jac:
-#                 G = self.jacobian()
-#                 return G*c.mu0
-#             else:            
-#                 return self.forward()*c.mu0     
+    def __call__(self, rho, thickness, jac=False):
+        with torch.no_grad():
+            if not isinstance(rho, torch.Tensor):       rho       = torch.tensor(rho)
+            if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)        
+            self.rho = ((rho+0j)[..., None, None]).to(torch.complex64)#.to(self.device)
+            if rho.ndim > thickness.ndim:
+                thickness = thickness[:, None, ...]
+            self.thick = ((thickness+0j)[..., None, None]).to(torch.complex64)
+            if jac:
+                G = self.jacobian()
+                return G*c.mu0
+            else:            
+                return self.forward()*c.mu0     
 
-#     def copy(self):
-#         from copy import deepcopy
-#         return deepcopy(self)   
+    def copy(self):
+        from copy import deepcopy
+        return deepcopy(self)   
 
 
 
@@ -346,7 +346,7 @@ print('number of threads: ', torch.get_num_threads())
 logForward = logify_forward(ForwardFlow)
 t = torch.logspace(-5, -2, 41, device=gpu, dtype=torch.float)
 fwr = logForward.example(times=t, tolerance=0.5e-4)
-fastJac = fastjacobian(Inversion)
+fastJac = fastjacobian(dolphinv.Inversion)
 
 z = torch.cumsum(torch.logspace(0, np.log10(50.), 29), 0)
 z /= z.max()

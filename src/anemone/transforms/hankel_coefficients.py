@@ -2,6 +2,8 @@ from scipy.special import gamma
 import numpy as np
 import torch
 
+from anemone import rdtype
+
 pi = np.pi
 
 def christensen1990_calculate_smoothing(omega_0, sc):
@@ -207,4 +209,4 @@ def hankel_coefficients(order, log10min, log10max, smp_per_decade, omega_0, a=No
     lamda = 10**(np.arange(log10min*smp_per_decade, log10max*smp_per_decade+1).astype(np.float64)/smp_per_decade)
     v = np.log(lamda)
     fc = optimized_coefficients_christensen1990(v, omega_0=omega_0, nu=order, smp_per_decade=smp_per_decade, a=a)
-    return torch.from_numpy(lamda), torch.from_numpy(fc)
+    return torch.from_numpy(lamda).to(rdtype), torch.from_numpy(fc)#.to(rdtype)

@@ -712,6 +712,32 @@ def test_multireceiver_frequency_domain():
     assert (rx.x[:, None]+freqs[None, :]).shape == tuple(B.shape), f"dbdt shape is not correct: {B.shape} != {(rx.X[..., None]+freqs[None, :]).shape}"
 
 
+def test_save():
+    from anemone.experiment import Loop, Receiver, Waveform
+    from anemone.forwards import Forward
+    import torch
+    import tempfile
+    import os
+
+    lp = Loop.square(40)
+    rx = Receiver()
+    times = torch.logspace(-5, -3, 31, dtype=rdtype)
+    waveform = Waveform.example()
+    fwr = Forward(lp, rx, times, waveform=waveform)
+
+    rho = torch.tensor([40, 80])
+    thick = torch.tensor([10])
+
+    dbdt1 = fwr(rho, thick)
+
+    tmpdir = tempfile.TemporaryDirectory()
+    filepath = os.path.join(tmpdir.name, 'forward_test.em1')
+    fwr.save(filepath)
+    fwr2 = Forward.load(filepath)
+    dbdt2 = fwr2(rho, thick)
+
+    assert torch.allclose(dbdt1, dbdt2), "saved and loaded forward do not give same result"
+
 
 if __name__ == '__main__':
     
@@ -721,7 +747,8 @@ if __name__ == '__main__':
     # test_40x40_aarhusInv_piecewise_waveform()
     # test_forward_parallel_models()
     # test_colecole_forwardTD()
-    test_mpaforwardTD()
+    #test_mpaforwardTD()
+    test_save()
 
     #test_multirx_forward_shape_check()
     # test_multireceiver_frequency_domain()

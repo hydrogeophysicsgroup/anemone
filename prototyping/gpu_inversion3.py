@@ -344,10 +344,10 @@ class specialLCI2(LCI):
  
 gpu = torch.device('cpu')
 print('number of threads: ', torch.get_num_threads())
-logForward = logify_forward(ForwardFlow2)
+logForward = logify_forward(Forward)
 t = torch.logspace(-5, -3, 31, device=gpu, dtype=rdtype)
-fwr = logForward.example(times=t, tolerance=1e-5)
-fastJac = fastjacobian(Inversion)
+fwr = logForward.example(times=t, tolerance=1e-6)
+fastJac = fastjacobian(dolphinv.Inversion)
 
 z = torch.cumsum(torch.logspace(0, np.log10(50.), 20), 0)
 z /= z.max()

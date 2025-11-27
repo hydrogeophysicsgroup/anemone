@@ -81,9 +81,9 @@ class Loop:
     @classmethod
     def square(cls, side, **kwargs):
         half = side / 2.
-        x = torch.tensor([-half,  half, half, -half, -half])
-        y = torch.tensor([-half, -half, half,  half, -half])
-        z = torch.ones_like(x)*kwargs.get('z', 0.)
+        x = torch.tensor([-half,  half, half, -half, -half], dtype=rdtype)
+        y = torch.tensor([-half, -half, half,  half, -half], dtype=rdtype)
+        z = torch.ones_like(x, dtype=rdtype)*kwargs.get('z', 0.)
         lp = cls(x, y, z)
         lp.area = side*side
         return lp

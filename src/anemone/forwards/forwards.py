@@ -664,34 +664,37 @@ class VMDForward(BaseForward):
 
 def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=0.01):
     import numpy as np
-    # if t_indices is None:
-    t_indices = np.arange(t2t.shape[0])
 
+    t_indices = np.arange(t2t.shape[0])
     t1 = (t2t[0, :, None]*geomz.real[None, :]).numpy()
-    full_mask = np.zeros_like(t1, dtype=bool)
+    
     from anemone.physics import rte_halfspace
     rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:,None], lmb[None,:]).squeeze().cpu().numpy()
 
-    for i in t_indices:
-        t1 = (t2t[i, :, None]*geomz.real[None, :]).numpy()*rte_ref
-        t1_shape = t1.shape
-        t1sort = np.abs(t1).flatten()
-        # indices = np.arange(len(t1sort))
+    if tolerance is not None:
+        full_mask = np.zeros_like(t1, dtype=bool)
+        for i in t_indices:
+            t1 = (t2t[i, :, None]*geomz.real[None, :]).numpy()*rte_ref
+            t1_shape = t1.shape
+            t1sort = np.abs(t1).flatten()
+            # indices = np.arange(len(t1sort))
 
-        sort_idx = np.argsort(t1sort)
-        t1sort = t1sort[sort_idx]
-        t1cumsum = np.cumsum(t1sort)
-        t1cumsum /= t1cumsum[-1]
-        idx = np.searchsorted(t1cumsum, tolerance)#-1
+            sort_idx = np.argsort(t1sort)
+            t1sort = t1sort[sort_idx]
+            t1cumsum = np.cumsum(t1sort)
+            t1cumsum /= t1cumsum[-1]
+            idx = np.searchsorted(t1cumsum, tolerance)#-1
 
-        mask = np.zeros_like(t1sort, dtype=bool)
-        mask[idx:] = True
+            mask = np.zeros_like(t1sort, dtype=bool)
+            mask[idx:] = True
 
 
-        inv_sort = np.argsort(sort_idx)
-        mask = mask[inv_sort].reshape(t1_shape)
-        full_mask += mask
-    
+            inv_sort = np.argsort(sort_idx)
+            mask = mask[inv_sort].reshape(t1_shape)
+            full_mask += mask
+    else:
+        full_mask = np.ones_like(t1, dtype=bool)
+
     omega_i = np.arange(omega.squeeze().shape[0])
     lamda_i = np.arange(lmb.squeeze().shape[0])
     omega_i, lamda_i = np.meshgrid(omega_i, lamda_i, indexing='ij')
@@ -721,20 +724,21 @@ class Forward(BaseForward):
     geomz = None
     t2t   = None
 
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=1e-7):
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=1e-7, do_setup=True):
         device = times.device
 
-        super().__init__(source, receiver, times.cpu(), waveform, filterfunc, t_end, tolerance)
+        super().__init__(source, receiver, times, waveform, filterfunc, t_end, tolerance)
         self.t2t = None
-        self.setup()
-        self.device=device
-        self.H2t = self.H2t.to(self.device).to(cdtype)
-        self.omega = self.omega.to(self.device).to(cdtype)
-        self.lmb = self.lmb.to(self.device).to(cdtype)
+        if do_setup: 
+            self.setup()
+            self.device=device
+            self.H2t = self.H2t.to(self.device).to(cdtype)
+            self.omega = self.omega.to(self.device).to(cdtype)
+            self.lmb = self.lmb.to(self.device).to(cdtype)
 
     def setup(self):
-        self.rho   = 40*torch.ones(2)[:, None, None] + 0j
-        self.thick = 20*torch.ones(1)[:, None, None] + 0j
+        self.rho   = 40*torch.ones(2, dtype=cdtype)[:, None, None]
+        self.thick = 20*torch.ones(1, dtype=cdtype)[:, None, None]
 
         def frq_integrand(f):
             self.omega = c.twopi*f[None,:,None]
@@ -747,54 +751,57 @@ class Forward(BaseForward):
             hkl1 = Hankel(wvlngth_integrand, 1, device=self.device)
             def geomz_r(r):
                 return self.source.geomz(self.receiver, r).to(rdtype).to(self.device)
-            Hr, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
+            Hr, self.geomz, self.lmb1 = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
             
-            self.geomz *= torch.exp(-self.lmb*self.sfield_dz)*self.lmb / c.fourpi
-
+            self.geomz *= torch.exp(-self.lmb1*self.sfield_dz)*self.lmb1 / c.fourpi
             return Hr.squeeze()
         
-        if self.t2t is None:
-            self.cbft=invFourier(frq_integrand, device=self.device)
-            def t2t_func(t_in):
-                if self.t_end is not None:
-                    waveform_matrix = wv_to_t(t_in, t_in, waveform=self.waveform)
-                    gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
-                    return gate_matrix @ waveform_matrix
-                else:
-                    return wv_to_t(self.times, t_in, waveform=self.waveform)
 
-            
-            Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
-
-            if self.filterfunc is not None:
-                self.t2t *= self.filterfunc.omega_filter(self.omega1*c.sqrt_twopi)#.squeeze()
-            if self.waveform is not None:
-                self.t2t /= -1j*c.sqrt_twopi
+        self.cbft=invFourier(frq_integrand, device=self.device)
+        def t2t_func(t_in):
+            if self.t_end is not None:
+                waveform_matrix = wv_to_t(t_in, t_in, waveform=self.waveform)
+                gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
+                return gate_matrix @ waveform_matrix
             else:
-                self.t2t *= self.omega1.squeeze()
+                return wv_to_t(self.times, t_in, waveform=self.waveform)
 
-        self.H2t, self.omega, self.lmb = make_H2t(self.t2t, self.geomz, self.omega1, self.lmb, tolerance=self.tolerance)
+        
+        Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
 
-        self.H2t       = self.H2t.to(self.device).to(cdtype)
-        self.H2t      /= torch.sqrt(self.omega)
-        self.omega    *= c.sqrt_twopi
-        self.rho = None
-        self.thick = None
+        if self.filterfunc is not None:
+            self.t2t *= self.filterfunc.omega_filter(self.omega1*c.sqrt_twopi)#.squeeze()
+        if self.waveform is not None:
+            self.t2t /= -1j*c.sqrt_twopi
+        else:
+            self.t2t *= self.omega1.squeeze()
+
+        self.H2t, self.omega, self.lmb = make_H2t(self.t2t, self.geomz, self.omega1, self.lmb1, tolerance=self.tolerance)
+
+        self.H2t    = self.H2t.to(self.device).to(cdtype)
+        self.H2t   /= torch.sqrt(self.omega)
+        self.omega *= c.sqrt_twopi
+        self.rho    = None
+        self.thick  = None
+        self.H2tjac = self.H2t.to(torch.complex64)
+        self.omegajac = self.omega.to(torch.complex64)
+        self.lmbjac = self.lmb.to(torch.complex64)
 
 
     def forward(self):
+        if self.H2t is None: self.setup()
         with torch.no_grad():
             cRTE = rte(self.sigma, self.thick, self.omega, self.lmb).squeeze()
-            return torch.einsum('ik,...k->i...', self.H2t, cRTE).real.T
+            return torch.einsum('ik,...k->i...', self.H2t, cRTE).real
 
     def jacobian(self):
-        dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lmb).squeeze()
+        dRTE = drte_dsigma(self.sigma.to(torch.complex64), self.thick.to(torch.complex64), self.omegajac, self.lmbjac).squeeze()
         
         if len(dRTE.shape)>2:
             Gr = torch.einsum('ijk,lk->jil', dRTE, self.H2tjac).real
             Gr /= (self.rho.real.squeeze().T**2)[:,:,None]
         else:
-            Gr = torch.einsum('ik,...k->i...', dRTE.real, self.H2t.real) - torch.einsum('ik,jk->ij', dRTE.imag, self.H2t.imag)
+            Gr = torch.einsum('ik,...k->i...', dRTE.real, self.H2tjac.real) - torch.einsum('ik,jk->ij', dRTE.imag, self.H2tjac.imag)
             Gr /= (self.rho.real.squeeze()**2)[:,None]
         return Gr
     
@@ -813,38 +820,58 @@ class Forward(BaseForward):
                 return self.forward()*c.mu0      
         
     def __add__(self, other):
+        newfwr = self.copy()
+        tmpother = other.copy()
         assert other.kind       == self.kind,       "Forwards must be the same type"
         assert other.source     == self.source,     "Current implementation requires that Forwards have the same source"
         assert other.receiver   == self.receiver,   "Current implementation requires that Forwards have the same receiver"
         assert other.filterfunc == self.filterfunc, "Current implementation requires that Forwards have the same filters"
 
-        self.tmin     , other.tmin      = [min(self.tmin, other.tmin)]*2
-        self.tmax     , other.tmax      = [max(self.tmax, other.tmax)]*2
+        newfwr.tmin     , tmpother.tmin      = [min(newfwr.tmin, other.tmin)]*2
+        newfwr.tmax     , tmpother.tmax      = [max(newfwr.tmax, other.tmax)]*2
         
         
-        tol =  min(filter(None, [self.tolerance, other.tolerance]), default=None)
-        self.tolerance, other.tolerance = [tol]*2
-
-        from inspect import signature
+        tol =  min(filter(None, [newfwr.tolerance, tmpother.tolerance]), default=None)
+        newfwr.tolerance, tmpother.tolerance = [tol]*2
         
-        n_params = len([x for x in str(signature(self.__call__)).split(',') if '=' not in x and x.strip() != ''])
-        phys_params = [torch.ones(5)]*n_params
-        _ = self(*phys_params)
-        _ = other(*phys_params)
-        self.t2t, other.t2t = None, None
+        newfwr.tolerance, tmpother.tolerance = None, None
+        newfwr.lmb,       tmpother.lmb       = None, None
+        newfwr.omega,     tmpother.omega     = None, None
 
-        self.tolerance,other.tolerance = None, None
-        _ = self(*phys_params)
-        _ = other(*phys_params)
+        newfwr.setup()
+        tmp_lmb = newfwr.lmb1.squeeze().clone()
+        tmp_omega = newfwr.omega1.squeeze().clone()
+        tmpother.setup()
+        t2t = torch.vstack([newfwr.t2t, tmpother.t2t])
+        newfwr.H2t, newfwr.omega, newfwr.lmb = make_H2t(t2t, newfwr.geomz, tmp_omega, tmp_lmb, tolerance=tol)
+
+        newfwr.H2t       = newfwr.H2t.to(newfwr.device).to(cdtype)
+        newfwr.H2t      /= torch.sqrt(newfwr.omega)
+        newfwr.omega    *= c.sqrt_twopi
+        newfwr.rho       = None
+        newfwr.thick     = None
+        newfwr.H2tjac    = newfwr.H2t#[:, :newfwr.H2t.shape[1]//2]
+        newfwr.omegajac  = newfwr.omega#[:newfwr.omega.shape[0]//2]
+        newfwr.lmbjac    = newfwr.lmb#[:newfwr.lmb.shape[0]//2]
+
+        newfwr.t1slc = slice(None, len(newfwr.times))
+        newfwr.t2slc = slice(len(newfwr.times), None)
+        newfwr.times = torch.cat([newfwr.times, other.times])
+
+        return newfwr
+    
+    def save(self, filename):
+        if not filename.endswith('.em1'):
+            filename = filename+'.em1'
+        torch.save({'H2t': self.H2t.cpu(),
+                    'omega': self.omega.cpu(),
+                    'lmb': self.lmb.cpu()}, filename)
         
-        self.t2t = torch.vstack([self.t2t, other.t2t])
-        if tol is not None:
-            imin,imax = coefficient_bounds(torch.abs(self.t2t).mean(dim=0).numpy(), tol)
-            self.t2t = self.t2t[:, imin:imax]
-            self.omega1 = self.omega1.squeeze()[imin:imax]
-
-        self.t1slc = slice(None, len(self.times))
-        self.t2slc = slice(len(self.times), None)
-        self.times = torch.cat([self.times, other.times])
-
-        return self
+    @classmethod
+    def load(cls, filename):
+        data = torch.load(filename)
+        fwr = cls.example(do_setup=False)
+        fwr.H2t = data['H2t'].to(cdtype)
+        fwr.omega = data['omega'].to(cdtype)
+        fwr.lmb = data['lmb'].to(cdtype)
+        return fwr

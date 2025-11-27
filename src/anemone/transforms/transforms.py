@@ -310,8 +310,7 @@ class Hankel:
             rout = rout.to(self.device)
             geomz = geomz.to(self.device)
             i_offsets = i_offsets.to(self.device)
-        if self.fc.dtype != self.func_results.dtype:
-            self.fc = self.fc.to(self.func_results.dtype)   
+
 
         FC = torch.zeros_like(self.fc, device=self.device)
         
@@ -329,8 +328,9 @@ class Hankel:
             idx_slice = slice(idxmin, idxmax)
         else:
             idx_slice = slice(None, None)
-
-        return torch.einsum('...i,i->...', self.func_results, FC), FC[idx_slice].to(FC.dtype), self.lamda[..., idx_slice]
+        if FC.dtype != self.func_results.dtype:
+            FC = FC.to(self.func_results.dtype)   
+        return torch.einsum('...i,i->...', self.func_results, FC), FC[idx_slice], self.lamda[..., idx_slice]
 
 class Fourier(Hankel):
     """ A fourier transform for logarithmically sampled data. The implementation uses hankel transforms at the base.
@@ -415,7 +415,9 @@ class Fourier(Hankel):
                 i_offset *= -1
                 FC[..., i_offset:] += Wmat[..., i, None]*self.fc[:-i_offset]*sqRout[i]/rout[i]
         
-        
+        if FC.dtype != self.func_results.dtype:
+            FC = FC.to(self.func_results.dtype)   
+                    
         if self.tolerance is not None:
             idxmin, idxmax = FC.shape[-1]-1, 0
             for i in range(len(FC)):

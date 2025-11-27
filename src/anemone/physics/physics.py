@@ -601,9 +601,14 @@ def calc_dpropmat(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsi
     answer = torch.roll(answer, -1, dims=1)
     answer[0,-1:] = 1.
     answer[1,-1:] = 0.
+
+    # rho = 1./sigma
+    # drho = (0.02*rho.log()).exp()
+    # dsig = 1./drho
+    # # print(dsig)
         
     dsigma = sigma.clone()
-    sigma_pert = sigma*0.02
+    sigma_pert = 0.05*dsigma
     dsigma[::2] -= sigma_pert[::2]
     dpropmat = calc_prop_matrix(dsigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)
     dpropmat = torch.roll(dpropmat, -pad//2, dims=2)
@@ -647,9 +652,9 @@ def rte_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon
 
 def drte_dsigma(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     if isinstance(mu, float):
-        mu = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*mu
+        mu = torch.ones_like(sigma)*mu
     if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*epsilon
+        epsilon = torch.ones_like(sigma)*epsilon
     dsigma,_ = calc_dpropmat(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
     return torch.nan_to_num(dsigma)
 
