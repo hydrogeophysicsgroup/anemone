@@ -304,7 +304,7 @@ def check_parallel_models(ForwardMaker):
 
     thick = np.ones_like(rho)[:-1, :]*20
 
-    fwr = ForwardMaker(lp, rx, times, waveform=waveform)
+    fwr = ForwardMaker(lp, rx, times)
     dbdt = fwr(rho, thick)
     
     if __name__ == '__main__':

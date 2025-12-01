@@ -632,8 +632,7 @@ class VMDForward(BaseForward):
             def wvlngth_integrand(wave_length):
                 """ Hz from horizontal electric dipole. """
                 self.lmb = wave_length[None, None, :]          
-                self.tmp_u0 = u0(self.omega, self.lmb)
-                self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)*self.lmb**2 / c.fourpi
+                self.sfield_rte = torch.exp(-self.lmb*self.sfield_dz)*self.lmb**2 / c.fourpi
                 intg = rte(self.sigma, self.thick, self.omega, self.lmb)*self.sfield_rte
                 return intg.squeeze()
             hkl1 = Hankel(wvlngth_integrand, 0, smp_per_decade=10, device=self.device)
@@ -654,7 +653,6 @@ class VMDForward(BaseForward):
                     return gate_matrix @ waveform_matrix
                 else:
                     return wv_to_t(self.times, t_in, waveform=self.waveform)
-
             
             Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
         else:
@@ -662,7 +660,7 @@ class VMDForward(BaseForward):
         self.dpred = Ht.real
         return self.dpred
 
-def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=0.1):
+def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=0.01):
     import numpy as np
 
     t_indices = np.arange(t2t.shape[0])
@@ -792,7 +790,7 @@ class Forward(BaseForward):
         if self.H2t is None: self.setup()
         with torch.no_grad():
             cRTE = rte(self.sigma, self.thick, self.omega, self.lmb).squeeze()
-            return torch.einsum('ik,...k->i...', self.H2t, cRTE).real
+            return torch.einsum('ik,...k->i...', self.H2t, cRTE).real.T
 
     def jacobian(self):
         # dRTE = drte_dsigma(self.sigma.to(torch.complex64), self.thick.to(torch.complex64), self.omegajac, self.lmbjac).squeeze()

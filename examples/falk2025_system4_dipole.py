@@ -40,7 +40,7 @@ thick0 = np.array(thicknesses)
 resist = torch.tensor(resist0,dtype=torch.double)  # resistivity in ohm.m
 thick = torch.tensor(thick0, dtype=torch.double)
 
-fwr = VMDForward(0.3, rx, times)
+fwr = VMDForward(0.3, rx, times*0.95, tolerance=1e-6, t_end=times*1.05)
 b = tictoc()
 dbdt = fwr(resist, thick)
 c = tictoc()
