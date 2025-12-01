@@ -189,9 +189,23 @@ def fastjacobian(cls):
             return deepcopy(self)               
     return FastJacobian
 
-fastJac = fastjacobian(Tikhonov)
+class Inversion(BaseInversion):
+    vertical_smoothness = 0.4
 
-from .dolphinv import LCI as dolphinv_LCI
+    def setup_matrices(self):
+        super().setup_matrices()
+        self.HtH = self.model.H().T @ (self.model.H() / np.log1p(self.vertical_smoothness)**2)
+        self.HtH = self.HtH.to(self.mvec.dtype)
+
+    def calc_dm(self):
+        r_data  = self.G.T @ self.Cdi @ (self.data_observed-self.data_predicted)
+        r_data -= self.HtH @ self.mvec
+        Aown = self.GtG + self.damp_matrix + self.HtH
+        return solve(Aown, r_data)
+    
+fastJac = fastjacobian(Inversion)
+
+from .dolphinv import LCI as dolphinv_LCI, Inversion as dInversion
 class LCI(dolphinv_LCI):
     one_over_error = None
     n_sites = None

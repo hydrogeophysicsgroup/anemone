@@ -662,7 +662,7 @@ class VMDForward(BaseForward):
         self.dpred = Ht.real
         return self.dpred
 
-def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=0.01):
+def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=0.1):
     import numpy as np
 
     t_indices = np.arange(t2t.shape[0])
@@ -783,9 +783,9 @@ class Forward(BaseForward):
         self.omega *= c.sqrt_twopi
         self.rho    = None
         self.thick  = None
-        self.H2tjac = self.H2t.to(torch.complex64)
-        self.omegajac = self.omega.to(torch.complex64)
-        self.lmbjac = self.lmb.to(torch.complex64)
+        self.H2tjac = self.H2t#.to(torch.complex64)
+        self.omegajac = self.omega#.to(torch.complex64)
+        self.lmbjac = self.lmb#.to(torch.complex64)
 
 
     def forward(self):
@@ -795,7 +795,8 @@ class Forward(BaseForward):
             return torch.einsum('ik,...k->i...', self.H2t, cRTE).real
 
     def jacobian(self):
-        dRTE = drte_dsigma(self.sigma.to(torch.complex64), self.thick.to(torch.complex64), self.omegajac, self.lmbjac).squeeze()
+        # dRTE = drte_dsigma(self.sigma.to(torch.complex64), self.thick.to(torch.complex64), self.omegajac, self.lmbjac).squeeze()
+        dRTE = drte_dsigma(self.sigma, self.thick, self.omegajac, self.lmbjac).squeeze()
         
         if len(dRTE.shape)>2:
             Gr = torch.einsum('ijk,lk->jil', dRTE, self.H2tjac).real
