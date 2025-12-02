@@ -102,7 +102,7 @@ class BaseInversion:
     def setup_matrices(self):
         self.mvec = self.m*1.
         self._current_mvec = self.mvec*1.1 if torch.all(self.mvec!=0) else torch.ones_like(self.mvec)# make sure the jacobian is calculated at least once
-        self.Cdi = torch.diag(self.recip_error_squared)
+        self.Cdi = torch.diag(self.recip_error_squared).to(rdtype)
         self.Imod = torch.eye(len(self.mvec), device=self.mvec.device)
         self._current_mvec = self.mvec*1.1 if torch.all(self.mvec!=0) else torch.ones_like(self.mvec)# make sure the jacobian is calculated at least once
         self._G = None
@@ -189,7 +189,7 @@ def fastjacobian(cls):
             return deepcopy(self)               
     return FastJacobian
 
-class Inversion(BaseInversion):
+class Inversion(Tikhonov):
     vertical_smoothness = 0.4
 
     def setup_matrices(self):
