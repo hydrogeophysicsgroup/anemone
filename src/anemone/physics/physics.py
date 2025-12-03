@@ -515,27 +515,25 @@ def rte_nbc_laplace(sigma, thickness, s, wave_length):
 def rte_raiche1999(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     """ raiche 1999 eq 7 and 8
     """
-    if isinstance(mu, float):
-        mu = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*mu
-    if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*epsilon
+#    if isinstance(mu, float):
+#        mu = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*mu
+#    if isinstance(epsilon, float):
+#        epsilon = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*epsilon
 
     n_layers=len(sigma)
 
     lambda2 = wave_length**2
-
-
     
     Fj = 0.
-    sj1 = torch.sqrt(lambda2 + 1j*omega*mu[-1]*sigma[-1])
+    sj1 = wave_length*(1 + 1j*omega*c.mu0*sigma[-1]/lambda2)**0.5
 
     for i in range(n_layers-2, -1, -1):
-        sj = torch.sqrt(lambda2 +  1j*omega*mu[i]*sigma[i])
-        RTEj = 1j*omega*mu[i]*(sigma[i] - sigma[i+1])/(sj + sj1)**2
+        sj = wave_length*(1 +  1j*omega*c.mu0*sigma[i]/lambda2)**0.5
+        RTEj = 1j*omega*c.mu0*(sigma[i] - sigma[i+1])/(sj + sj1)**2
         exp2uh = torch.exp(-2.*sj*thickness[i])
         Fj = exp2uh * (Fj + RTEj) / (1. + Fj * RTEj)
         sj1 = sj*1.
-    RTEj = 1j*omega*mu[0]*(-sigma[0])/(sj + wave_length)**2
+    RTEj = 1j*omega*c.mu0*(-sigma[0])/(sj + wave_length)**2
     rte = (RTEj+Fj) / (1.+RTEj*Fj)
     return torch.nan_to_num(rte)
 
