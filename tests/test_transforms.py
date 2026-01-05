@@ -1,6 +1,6 @@
 from anemone import transforms
 from anemone import physics
-from anemone import constants as c
+from anemone import constants as c, rdtype, cdtype
 import numpy as np
 import torch
 
@@ -11,13 +11,13 @@ def calc_rte_halfspace(sigma, omega, wave_length):
     K1_sqrd     = physics.calc_wavenumber(sigma, omega)**2
     u1          = torch.sqrt(lambda_sqrd-K1_sqrd)
     rte         = 1./(wave_length+u1)
-    return rte
+    return torch.nan_to_num(rte)
 
 
 def test_frequency_response():
     rho = 100.                   # meters
     sigma = 1./100.            # 1/ohm-m
-    frqs = torch.logspace(-6, 5, 501, dtype=torch.complex128)  # Hz
+    frqs = torch.logspace(-6, 5, 501, dtype=cdtype)  # Hz
     omega = c.twopi*frqs
     
     hz_analytical = physics.halfspace_vmd(1./sigma, omega, rho)
@@ -31,12 +31,12 @@ def test_frequency_response():
 
     r,resp = Hkl_rte1.range(90, 110)
     cbResp = transforms.CubicSpline(r, resp)
-    hz = (cbResp(rho)/(c.twopi))
+    hz = cbResp(rho)/c.twopi
 
     if running_as_main:
         import matplotlib.pyplot as plt
-        plt.plot(frqs, hz_analytical, 'k-')
-        plt.plot(frqs, hz, 'r--')
+        plt.semilogx(frqs, hz_analytical, 'k-')
+        plt.semilogx(frqs, hz, 'r--')
         plt.xlabel('r (m)')
         plt.ylabel('H(r)')
         plt.show()
@@ -64,6 +64,15 @@ def test_transforms_varying_samples_per_decades():
     r,resp = Hkl_rte2.range(90, 110)
     cbResp = transforms.CubicSpline(r, resp)
     hz2 = (cbResp(rho)/(c.twopi))
+
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        plt.plot(frqs, hz1.real, 'k-', label='smp/decade=10')
+        plt.plot(frqs, hz2.real, 'r--', label='smp/decade=20')
+        plt.xlabel('Frequency (Hz)')
+        plt.ylabel('H(r)')
+        plt.legend()
+        plt.show()
 
 
     assert np.allclose(hz1.real, hz2.real), "changing the number of decades is changing the results of the transform"
@@ -188,7 +197,7 @@ def test_invfourier_earlytimes():
 
     ift = invFourier(F1, smp_per_decade=21)
     ift._recenter_function((torch.ones(1)*1e12, torch.ones(1)*1e13))
-    t,y2 = ift.range(1e-6,1e3)
+    t,y2 = ift.range(1e-6,1e1)
 
     y1 = f1(t)
 
@@ -239,7 +248,7 @@ def test_invlaplace():
         axs[1].set_xlabel('time [s]')
         axs[1].set_ylabel('relative error [%]')
         plt.tight_layout()
-        plt.savefig('../docs/images/invlaplace_example.png', dpi=300)
+        # plt.savefig('../docs/images/invlaplace_example.png', dpi=300)
         plt.show()
         # return t.numpy(), y1.numpy(), y2.numpy()
     assert torch.allclose(y1.real, y2.real), "inverse Laplace transform is performing poorly on 1/sqrt(s)<->1./sqrt(t*pi) analytical example"
@@ -319,16 +328,75 @@ def test_invlaplace_dHzdt_center_of_circular_loop_halfspace():
         plt.legend()
         plt.show()
 
+def check_hankel_pairs(Fk, Fr, axs=None, order=0, smp_per_decade=12):
+    Fk_num = transforms.Hankel(Fr, order=order, lambda_included=False, smp_per_decade=smp_per_decade)
+    r = torch.logspace(-15, 15, 100)    
+    fr_num_vals = Fk_num(r).numpy()
+    fr_ana_vals = Fk(r).numpy()
+    r = r.numpy()
+    
+    import matplotlib.pyplot as plt
+    if axs is None:
+        fig,axs = plt.subplots(2,1, sharex=True)
+        axs[0].loglog(r, fr_ana_vals, 'k-', label='analytic')
+    else:
+        fig = axs[0].figure
+
+    axs[0].loglog(r, fr_num_vals, '.', label=f'{smp_per_decade}')
+    axs[1].loglog(r, 100*(np.abs(fr_num_vals - fr_ana_vals)/fr_ana_vals))
+    axs[1].set_ylabel('Relative Error (%)')
+    axs[1].set_ylim(None, 3.)
+    axs[1].set_xlabel('r')
+    assert np.allclose(fr_num_vals, fr_ana_vals, rtol=1e-2), "Hankel transform did not match analytic solution within tolerance."
+    return axs
+
+def test_hankel_simple_hankel_pair_order0():
+    def Fk(k):
+        return k**-1
+
+    def fr(r):
+        return 1/r 
+
+    # axs = check_hankel_pairs(Fk, fr, order=0, smp_per_decade=6)
+    axs=None
+    axs=check_hankel_pairs(Fk, fr, axs=axs, order=0, smp_per_decade=12)
+    axs=check_hankel_pairs(Fk, fr, axs=axs, order=0, smp_per_decade=24)
+    axs=check_hankel_pairs(Fk, fr, axs=axs, order=0, smp_per_decade=36)
+    if running_as_main:
+        import matplotlib.pyplot as plt
+        axs[0].legend(title='smp/decade')
+        plt.show()
+
+def test_hankel_simple_hankel_pair_order1():
+    def Fk(k):
+        return k**-1
+
+    def fr(r):
+        return 1/r 
+
+    # axs = check_hankel_pairs(Fk, fr, order=1, smp_per_decade=6)
+    axs=None
+    axs=check_hankel_pairs(Fk, fr, axs=axs, order=1, smp_per_decade=12)
+    axs=check_hankel_pairs(Fk, fr, axs=axs, order=1, smp_per_decade=24)
+    axs=check_hankel_pairs(Fk, fr, axs=axs, order=1, smp_per_decade=36)
+    if running_as_main:
+        import matplotlib.pyplot as plt
+        axs[0].legend(title='smp/decade')
+        plt.show()
 
 if __name__ == '__main__':
-    # test_frequency_response()
+    
     # test_spline()
-    # test_transforms_varying_samples_per_decades()
-    # test_fourier()
-    # test_spline_integration()
-    # test_invlaplace()
-    # test_fourier_lowerfrequencies()
+    
+    test_frequency_response()
+    test_transforms_varying_samples_per_decades()
+    test_fourier()
+    test_spline_integration()
+    test_invlaplace()
+    test_fourier_lowerfrequencies()
     test_invfourier_earlytimes()
-    # test_invlaplace_Hz_center_of_circular_loop_halfspace()
-    # test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
-    # test_invlaplace_Hz_center_of_circular_loop_halfspace()
+    test_invlaplace_Hz_center_of_circular_loop_halfspace()
+    test_invlaplace_dHzdt_center_of_circular_loop_halfspace()
+    test_invlaplace_Hz_center_of_circular_loop_halfspace()
+    test_hankel_simple_hankel_pair_order0()
+    test_hankel_simple_hankel_pair_order1()
