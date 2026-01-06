@@ -875,4 +875,7 @@ class Forward(BaseForward):
         fwr.H2t = data['H2t'].to(cdtype)
         fwr.omega = data['omega'].to(cdtype)
         fwr.lmb = data['lmb'].to(cdtype)
+        fwr.omegajac = fwr.omega
+        fwr.lmbjac = fwr.lmb
+        fwr.H2tjac = fwr.H2t
         return fwr

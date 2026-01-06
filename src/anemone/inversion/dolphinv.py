@@ -2,6 +2,8 @@ from .inversion import BaseInversion
 import torch
 import numpy as np
 from anemone import rdtype
+from torch.linalg import solve
+
 class Inversion(BaseInversion):
     vertical_smoothness = 0.1
     max_step_init                    = torch.log(torch.tensor(3.0))
@@ -23,9 +25,6 @@ class Inversion(BaseInversion):
         if (abs(self.misfits[-2]-self.misfits[-1]) / self.misfits[-1]) < self.data_misfit_minimum_change and self.misfits[-1]>self.misfits[-2]:
             self.log(f'misfit change is less than {self.data_misfit_minimum_change}')
             return True
-        # if self.misfits[-1]<self.data_misfit_acceptance_threshold:
-        #     self.log(f'misfit is below {self.data_misfit_acceptance_threshold}, stopping inversion')
-        #     return True
         if torch.any(torch.abs(1 - self.max_step / self.min_step) <= 0.001):
             self.log(f'Maxstep is equal to minstep with no decrease in misfit, stopping inversion')
             return True
@@ -199,9 +198,9 @@ class Inversion(BaseInversion):
         return mres    
 
     def calc_dm(self):
-        self.Cdi = torch.tensor(self.Cdi,dtype=torch.float32)
+        # self.Cdi = torch.tensor(self.Cdi,dtype=torch.float32)
         r_data = self.G.T @ self.Cdi @ (self.data_observed-self.data_predicted)
-        r_data += self.Rp.T @ self.C_rp @ ( -1.*self.Rp @ torch.tensor(self.mvec,dtype=torch.float32) ) 
+        r_data += self.Rp.T @ self.C_rp @ ( -1.*self.Rp @ self.mvec)#torch.tensor(self.mvec,dtype=torch.float32) ) 
         Aown = self.GtG + self.damp_matrix + self.HtH
         r_data  = self.G.T @ self.Cdi @ (self.data_observed-self.data_predicted)
         r_data += self.Rp.T @ self.C_rp @ ( -1.*self.Rp @ self.mvec ) 
