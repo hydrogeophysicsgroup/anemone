@@ -30,17 +30,17 @@ thick = torch.tensor([10])
 
 fwr = Forward(lp, rx, times, waveform=waveform)
 dbdt = fwr(rho, thick);
-
-fig,ax = plt.subplots(1,2, sharex=True)
-ax[0].loglog(fwr.times, dbdt.real, label='mforward')
-ax[0].loglog(times,      ainv_dbdt, '--', label='AarhusInv')
-ax[0].legend()
-ax[0].set_aspect('equal')
-
-ax[1].semilogx(times, 100*torch.abs(dbdt.real-ainv_dbdt)/torch.abs(ainv_dbdt))
-ax[1].set_ylabel('relative difference [%]')
-
-fig.suptitle('Comparison with AarhusInv with Piecewise Waveform')
-
 if __name__ == "__main__":
+    fig,ax = plt.subplots(1,2, sharex=True)
+    ax[0].loglog(fwr.times, dbdt.real, label='mforward')
+    ax[0].loglog(times,      ainv_dbdt, '--', label='AarhusInv')
+    ax[0].legend()
+    ax[0].set_aspect('equal')
+
+    ax[1].semilogx(times, 100*torch.abs(dbdt.real-ainv_dbdt)/torch.abs(ainv_dbdt))
+    ax[1].set_ylabel('relative difference [%]')
+
+    fig.suptitle('Comparison with AarhusInv with Piecewise Waveform')
+
+
     plt.show()

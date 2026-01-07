@@ -125,6 +125,6 @@ def test_rtm_convergence():
     assert np.allclose(rtm_halfspace.numpy(), c_rte.numpy()), 'rtm did not converge as expected'
 
 if __name__ == '__main__':
-    # test_frequency_response()
-    test_rte_convergence()
+    test_frequency_response()
+    # test_rte_convergence()
     # test_rte_convergence_nbc_laplace()
