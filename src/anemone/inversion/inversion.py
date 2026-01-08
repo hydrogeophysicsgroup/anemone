@@ -222,7 +222,7 @@ class LCI(dolphinv_LCI):
         if self.n_sites is None: self.n_sites = len(self.inv_list)
         mvecs = mvec.reshape(self.n_sites, -1).T
         rhos = mvecs.exp()
-        self._dpredgrid = self.inv_list[0].forward(rhos, self.inv_list[0].model.thickness).T
+        self._dpredgrid = self.inv_list[0].forward(rhos, self.inv_list[0].model.thickness)
         return self._dpredgrid.flatten()
     
     def _model_update(self, mvec):

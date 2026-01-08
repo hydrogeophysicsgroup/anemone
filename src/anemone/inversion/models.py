@@ -169,6 +169,8 @@ class Resistivity(BaseModel):
     def __init__(self, values, **kwargs):
         res_bnds = kwargs.pop('res_bnds', (1e-1, 2e4))
         thk_bnds = kwargs.pop('thk_bnds', (1, 100))
+        max_step = kwargs.pop('max_step', torch.log(torch.tensor([3, 1.6])))
+        min_step = kwargs.pop('min_step', torch.log(torch.tensor([1.1, 1.03])))
         
         if not isinstance(values, list):
             values = [values]
@@ -183,6 +185,8 @@ class Resistivity(BaseModel):
         kwargs.setdefault('lower_bounds', lower_bounds)
         kwargs.setdefault('upper_bounds', upper_bounds)
         super().__init__(values, **kwargs)
+        self.max_step = max_step
+        self.min_step = min_step
 
 
 class MPA(BaseModel):
@@ -192,6 +196,8 @@ class MPA(BaseModel):
         tau_bnds = kwargs.pop('tau_bnds', (1e-3, 1e2))
         c_bnds   = kwargs.pop('c_bnds',   (1e-3, 1e4))
         thk_bnds = kwargs.pop('thk_bnds', (1,    100))
+        max_step = kwargs.pop('max_step', torch.log(torch.tensor([3,3,1.6,1.6,1.6])))
+        min_step = kwargs.pop('min_step', torch.log(torch.tensor([1.1, 1.1, 1.03, 1.03, 1.03])))
 
         upper_bounds = [torch.ones_like(val)*bnds[1] for val,bnds in zip(values, [res_bnds, phi_bnds, tau_bnds, c_bnds])]
         lower_bounds = [torch.ones_like(val)*bnds[0] for val,bnds in zip(values, [res_bnds, phi_bnds, tau_bnds, c_bnds])]
@@ -206,14 +212,18 @@ class MPA(BaseModel):
         kwargs.setdefault('lower_bounds', lower_bounds)
         kwargs.setdefault('upper_bounds', upper_bounds)
         super().__init__(values, **kwargs)
+        self.max_step = max_step
+        self.min_step = min_step
 
 class ColeCole(BaseModel):
     def __init__(self, values, **kwargs):
         res_bnds = kwargs.pop('res_bnds', (1,    1e3))
-        m_bnds   = kwargs.pop('m_bnds',   (1e-5, 1e-1))
+        m_bnds = kwargs.pop('m_bnds', (1e-5, 1e-1))
         tau_bnds = kwargs.pop('tau_bnds', (1e-3, 1e2))
         c_bnds   = kwargs.pop('c_bnds',   (1e-3, 1e4))
         thk_bnds = kwargs.pop('thk_bnds', (1,    100))
+        max_step = kwargs.pop('max_step', torch.log(torch.tensor([3,3,1.6,1.6,1.6])))
+        min_step = kwargs.pop('min_step', torch.log(torch.tensor([1.1, 1.1, 1.03, 1.03, 1.03])))
 
         upper_bounds = [torch.ones_like(val)*bnds[1] for val,bnds in zip(values, [res_bnds, m_bnds, tau_bnds, c_bnds])]
         lower_bounds = [torch.ones_like(val)*bnds[0] for val,bnds in zip(values, [res_bnds, m_bnds, tau_bnds, c_bnds])]
@@ -227,7 +237,9 @@ class ColeCole(BaseModel):
         kwargs['names'] = names
         kwargs.setdefault('lower_bounds', lower_bounds)
         kwargs.setdefault('upper_bounds', upper_bounds)
-        super().__init__(values, **kwargs)    
+        super().__init__(values, **kwargs)
+        self.max_step = max_step
+        self.min_step = min_step    
 
 LogResistivity = logify(Resistivity)
 LogMPA = logify(MPA)
