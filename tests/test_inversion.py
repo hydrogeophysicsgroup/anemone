@@ -65,7 +65,7 @@ def test_tikhonov_smooth():
 
     d_obs = torch.abs(d_obs).log()
 
-    res_start = LogResistivity.smooth(torch.ones(31, dtype=torch.double)*50, torch.cumsum(torch.logspace(0,1.5,30), 0))
+    res_start = LogResistivity.smooth(np.ones(31)*50, np.cumsum(np.logspace(0,1.5,30)))
 
     inv = Tikhonov(d_obs, d_err, res_start, fwrTD)
     inv.data_misfit_acceptance_threshold = 0.9
@@ -89,7 +89,7 @@ def test_fastjacobian():
     logForward = logify_forward(Forward)
 
     times = torch.logspace(-5,-2, 32)
-    fwrTD = logForward.example(times=times, tolerance=1e-4)
+    fwrTD = logForward.example(times=times, tolerance=1e-6)
 
     rho = torch.tensor([20, 80, 40])
     thk = torch.tensor([30,40.])
@@ -103,7 +103,6 @@ def test_fastjacobian():
 
     d_obs = torch.abs(d_obs).log()
 
-    res_start = LogResistivity.smooth(torch.ones(31, dtype=torch.double)*50, torch.cumsum(torch.logspace(0,1.5,30), 0))
 
     fastJac = fastjacobian(Tikhonov)
 
@@ -202,7 +201,7 @@ def test_lci():
         result = []
         actual = []
         _,thick = res_mods[0].mod
-        z = torch.cumsum(thick, 0)
+        z = np.cumsum(thick)
         for i, (mtrue, res_mod) in enumerate(zip(m_trues, res_mods)):
             result.append(Log.standard(res_mod.values[0].cpu().log10(), z, 'rho', xy=(i,0)))
             cres,thick = mtrue.mod

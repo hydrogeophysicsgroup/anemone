@@ -11,10 +11,10 @@ class BaseInversion:
     jac_perturbation_fraction        = 0.02
     data_misfit_acceptance_threshold = 0.1
     data_misfit_minimum_change       = 0.007
-    damp_value                       = 2500.
+    damp_value                       = 5000.
     damp_reduction_factor            = np.sqrt(2)
     iter_cap                         = 50
-    _dpred                        = None
+    _dpred                           = None
 
     def __init__(self, data_observed, data_error, starting_model,  forward_operator, logger=print):
         """Create an inversion object, the necessary """
@@ -171,52 +171,154 @@ class Tikhonov(BaseInversion):
         Aown = self.GtG + self.damp_matrix + self.HtH
         return solve(Aown, r_data)
 
-    def invert(self, smoothness=1e2, iter_cap=10, **kwargs):
-        self.vertical_smoothness = smoothness
+    def invert(self, iter_cap=10, **kwargs):
         return super().invert(iter_cap=iter_cap, **kwargs)
 
+
+class BaseInversion(BaseInversion):
+    def mforward(self, mvec):
+        return super().mforward(mvec).detach().cpu().numpy()
+
+class Tikhonov(Tikhonov):
+    def mforward(self, mvec):
+        return super().mforward(mvec).detach().cpu().numpy()
 
 def fastjacobian(cls):
     class FastJacobian(cls):
         def jacobian(self, mvec):
             self.mvec = mvec*1.
             rho, thick = self.model.modelize(mvec)
-            G = self.forward(rho, thick, jac=True)
+            # rho = torch.from_numpy(rho)
+            thick = torch.from_numpy(thick)# if thick is not None else None
+            G = self.forward(rho, thick, jac=True)#.detach().cpu().numpy()
             G *= rho[:, None]
             G /= self.data_predicted.exp()
             return G.T
         def copy(self):
             from copy import deepcopy
-            return deepcopy(self)               
+            return deepcopy(self) 
+        def calc_dm(self):
+            dm = super().calc_dm()
+            return dm
     return FastJacobian
 
 class Inversion(Tikhonov):
     vertical_smoothness = 0.4
-
+    one_over_error = None
+    n_sites = None
+    _GtG = None
+    _r_data = None
+    target_step = 0.5
+    dampf = 1./5000.
+    increase_count = 0
+    data_misfits = np.inf
+    actual_step = None
+    
     def setup_matrices(self):
+        if not isinstance(self.target_step, list): self.target_step = [self.target_step]
+        if not isinstance(self.dampf, list): self.dampf = [self.dampf]
+        if not isinstance(self.actual_step, list): self.actual_step = []
+        if not isinstance(self.data_misfits, list): self.data_misfits = [self.data_misfits]
+
         super().setup_matrices()
-        self.HtH = self.model.H().T @ (self.model.H() / np.log1p(self.vertical_smoothness)**2)
+        self.Rp = self.model.H()
+        self.C_rp = np.diag(np.ones(self.Rp.shape[0]) / np.log1p(self.vertical_smoothness)**2)
+        self.HtH = self.Rp.T @ self.C_rp @ self.Rp
         self.HtH = self.HtH.to(self.mvec.dtype)
+        self.CtC = self.HtH
 
     def calc_dm(self):
-        r_data  = self.G.T @ self.Cdi @ (self.data_observed-self.data_predicted)
-        r_data -= self.HtH @ self.mvec
-        Aown = self.GtG + self.damp_matrix + self.HtH
-        return solve(Aown, r_data)
+        cdamp = self.dampf[-1]*1.
+        gtgmax = self._GtG.diagonal().max()
+        cdamp *= gtgmax
+        Aown = self._GtG + self.CtC
+        cImod = self.Imod.clone()
+        dm = solve(Aown+cImod*cdamp, self._r_data)
+        dm_rep = torch.max(torch.abs(dm))
+        
+        attempts=1
+        measure = [dm_rep]
+        
+        while attempts<25:
+            if dm_rep<self.target_step[-1]*0.9:
+                cdamp /= (1.2)**attempts
+            elif dm_rep>self.target_step[-1]*1.1:
+                cdamp *= (1.2)**attempts
+            else:
+                break
+            dm = solve(Aown+cImod*cdamp, self._r_data)
+            dm_rep = torch.max(torch.abs(dm))
+            measure.append(dm_rep)
+            attempts+=1
+        self.actual_step.append(dm_rep)
+        self.dampf.append(cdamp/gtgmax)
+        return torch.nan_to_num(torch.tensor(dm, device=self.mvec.device, dtype=self.mvec.dtype))
+
+    
+    def run_iteration(self):
+        dM   = self.calc_dm()
+
+
+        self.mvec += dM
+        self.iteration += 1
+        new_misfit = self.misfit()
+        
+        dMisfit = (new_misfit-self.misfits[-1])/self.misfits[-1]
+        d_misfit = self.data_misfit().mean().item()
+    
+        dDatMisfit = (d_misfit - self.data_misfits[-1])/self.data_misfits[-1]
+
+        if dMisfit>0. or dDatMisfit>0:
+            self.dampf.append(self.dampf[-1]*3.)
+            self.mvec -= dM
+            self.target_step[-1] *= 0.5
+            self.increase_count +=1
+            self.actual_step.pop(-1)
+
+        else:
+            self.misfits.append(new_misfit)
+            if self.misfits[-1]<1.2:
+                self.target_step.append(0.2)
+            else:
+                self.target_step.append(self.target_step[-1]+0.1)
+            self.increase_count = 0
+            self.data_misfits.append(d_misfit)
+
+        self.log("{:03d}\tmisfit:\t{:2.2f}".format(self.iteration, self.misfits[-1]))
+        print('data misfit: ', d_misfit)
+    
+    @property
+    def stop_inversion(self):
+        if super().stop_inversion:
+            return True
+        if self.increase_count>2:
+            print('stop for repeated misfit increase')
+            return True
+        if self.target_step[-1]<0.01 and self.iteration>5:
+            print('stop for too small target step')
+            return True
+        return False
     
 fastJac = fastjacobian(Inversion)
 
 from .dolphinv import LCI as dolphinv_LCI, Inversion as dInversion
 class LCI(dolphinv_LCI):
     one_over_error = None
-    n_sites = None
-    _GtG = None
-    _r_data = None
-    target_step = [0.5]
-    dampf = [1./5000.]
+    n_sites        = None
+    _GtG           = None
+    _r_data        = None
+    target_step    = 0.5
+    dampf          = 1./5000.
     increase_count = 0
-    data_misfits = [np.inf]
-    actual_step = []
+    data_misfits   = np.inf
+    actual_step    = None
+
+    def setup_matrices(self):
+        if not isinstance(self.target_step, list): self.target_step = [self.target_step]
+        if not isinstance(self.dampf, list): self.dampf = [self.dampf]
+        if not isinstance(self.actual_step, list): self.actual_step = []
+        if not isinstance(self.data_misfits, list): self.data_misfits = [self.data_misfits]        
+        return super().setup_matrices()
 
     def mforward(self, mvec):
         if self.n_sites is None: self.n_sites = len(self.inv_list)
@@ -372,7 +474,7 @@ class LCI(dolphinv_LCI):
         if self.increase_count>2:
             print('stop for repeated misfit increase')
             return True
-        if self.target_step[-1]<0.01:
+        if self.target_step[-1]<0.01 and self.iteration>5:
             print('stop for too small target step')
             return True
         return False
