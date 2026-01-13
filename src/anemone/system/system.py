@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from anemone import constants as c, rdtype, cdtype
-from json_numpy import jsonable_dataclass
+from nosj import nosj
 
 
 S1 = lambda x: 1 - (9/4)*x**2 * ( 1 - 2./9*x*(1 + 5/2*x*(1 - 2/5 * x)))
@@ -23,20 +23,18 @@ def lamontagne(x):
 
 from torch import Tensor
 
-@jsonable_dataclass
+@nosj
 class Receiver: 
     x       : Tensor
     y       : Tensor
     z       : Tensor
     grid    : bool = True
-    description : str = 'Receiver Class'
 
-    def __init__(self, x=0., y=0., z=0., grid=True, description='Receiver Class') -> None:
+    def __init__(self, x=0., y=0., z=0., grid=False) -> None:
         self.x = torch.tensor(x, dtype=rdtype) if not isinstance(x, Tensor) else x.to(rdtype)
         self.y = torch.tensor(y, dtype=rdtype) if not isinstance(y, Tensor) else y.to(rdtype)
         self.z = torch.tensor(z, dtype=rdtype) if not isinstance(z, Tensor) else z.to(rdtype)
         self.grid = grid
-        self.description = description
         
         if self.grid:
             self._grid()
@@ -67,21 +65,20 @@ class Receiver:
     def __len__(self):
         return self.X.numel()
 
-@jsonable_dataclass
+@nosj
 class Loop:
     x : Tensor
     y : Tensor
     z : Tensor
-    description : str = 'Loop Class'
 
-    def __init__(self, x, y, z, description='Loop Class') -> None:
+    def __init__(self, x, y, z, **kwargs) -> None:
         self.x = torch.tensor(x, dtype=rdtype) if not isinstance(x, Tensor) else x.to(rdtype)
         self.y = torch.tensor(y, dtype=rdtype) if not isinstance(y, Tensor) else y.to(rdtype)
         self.z = torch.tensor(z, dtype=rdtype) if not isinstance(z, Tensor) else z.to(rdtype)
         
         if not torch.all(self.z == self.z[0]): raise NotImplemented('current implementation only supports horizontal transmitter loops; all z values must be equal.')
         r2 = self.x[0]**2 + self.y[0]**2
-        if torch.allclose(self.x**2 + self.y**2, r2):
+        if torch.allclose(self.x**2 + self.y**2, r2) and len(self.x)>=20:
             self.area = torch.pi*r2
             self.radius = torch.sqrt(r2)
 
@@ -93,7 +90,7 @@ class Loop:
         x = r*torch.cos(t)
         y = r*torch.sin(t)
         z = torch.ones_like(x)*kwargs.get('z', 0.)
-        lp = cls(x, y, z)
+        lp = cls(x, y, z, **kwargs)
         lp.area = torch.pi*radius**2
         lp.radius = r
         return lp
@@ -307,15 +304,13 @@ def integrate_around_loop(lp, rx, hr):
         return HR.T.squeeze()
 
 
-@jsonable_dataclass
+@nosj
 class Waveform:
     time      : Tensor
     amplitude : Tensor
-    description : str = 'Waveform Class'
-    def __init__(self, time, amplitude, description='Waveform Class'):
+    def __init__(self, time, amplitude):
         self.time      = time      if isinstance(time, torch.Tensor)      else torch.tensor(time)
         self.amplitude = amplitude if isinstance(amplitude, torch.Tensor) else torch.tensor(amplitude)
-        self.description = description
         self.calc_d2wdt2()
 
     def calc_d2wdt2(self):
@@ -336,27 +331,21 @@ class Waveform:
         wv = torch.tensor([0, 1, 1, 0], dtype=rdtype)
         return cls(t, wv)
 
-@jsonable_dataclass
+@nosj
 class SystemResponse:
     time      : Tensor
     dSRdt     : Tensor
-    description : str = 'Waveform Class'    
-    def __init__(self, time, dSRdt, description='Waveform Class'):
+    def __init__(self, time, dSRdt):
         np_time = time.numpy()
         dtime = torch.from_numpy(np.diff(np_time, prepend=np_time[0]))
         amplitude = dSRdt * dtime
-        Waveform(time, dSRdt, description)
+        Waveform(time, dSRdt)
         self.d2wdt2 = amplitude
 
-@jsonable_dataclass
+@nosj
 class ButterworthFilter:
     fcut : float
     order : int = 1
-    description : str = 'Butterworth Filter'
-    def __init__(self, fcut, order=1, description='Butterworth Filter'):
-        self.fcut = fcut
-        self.order = order
-        self.description = description
 
     def omega_filter(self, omega):
         return self.__call__(omega/c.twopi)
@@ -371,15 +360,9 @@ class ButterworthFilter:
 
 from typing import List
 
-@jsonable_dataclass
+@nosj
 class FilterChain:
     filters : List[ButterworthFilter]
-    description : str = 'Filter Chain'
-
-    """filter based on frequency in Hz (f), not radians/s (Omega)"""
-    def __init__(self, filters, description='Filter Chain'):
-        self.filters = filters
-        self.description = description
     
     def omega_filter(self, omega):
         return self.__call__(omega/c.twopi)

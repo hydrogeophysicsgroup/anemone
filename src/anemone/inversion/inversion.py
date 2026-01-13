@@ -6,29 +6,48 @@ import scipy as sp
 import numpy as np
 from torch.linalg import solve
 
+from nosj import nosj
+from .models import BaseModel
+from anemone.forwards import Forward
+
+@nosj
 class BaseInversion:
     """ Bare-bones damped least squares inversion class. """
-    jac_perturbation_fraction        = 0.02
-    data_misfit_acceptance_threshold = 0.1
-    data_misfit_minimum_change       = 0.007
-    damp_value                       = 5000.
-    damp_reduction_factor            = np.sqrt(2)
-    iter_cap                         = 50
-    _dpred                           = None
+    data_observed                    : torch.Tensor
+    data_error                       : torch.Tensor
+    starting_model                   : BaseModel
+    forward                          : Forward
+    jac_perturbation_fraction        : float = 0.02
+    data_misfit_acceptance_threshold : float = 0.1
+    data_misfit_minimum_change       : float = 0.007
+    damp_value                       : float = 5000.
+    damp_reduction_factor            : float = 2**0.5
+    iter_cap                         : int = 50
+    final_model                      : BaseModel = None
+    description                      : str = "Inversion Class"
 
-    def __init__(self, data_observed, data_error, starting_model,  forward_operator, logger=print):
+
+    def __init__(self, data_observed, data_error, starting_model,  forward, **kwargs):
         """Create an inversion object, the necessary """
-        self.data_observed       = data_observed
-        self.data_error          = data_error
-        self.model               = starting_model
-        self.forward             = forward_operator
-        self.result              = None
-        self.nM                  = len(self.m)
-        self.nD                  = len(data_observed)
-        self.recip_error_squared = 1./self.data_error**2
-        self.log                 = logger
-        self.device = self.model.vec.device
-        self.pslices = self.model.pslice
+        self.data_observed                    = data_observed
+        self.data_error                       = data_error
+        self.starting_model                   = starting_model.copy()
+        self.model                            = starting_model
+        self.forward                          = forward
+        self.nM                               = len(self.m)
+        self.nD                               = len(data_observed)
+        self.recip_error_squared              = 1./self.data_error**2
+        self.log                              = kwargs.get('logger', print)
+        self.device                           = self.model.vec.device
+        self.pslices                          = self.model.pslice
+        self.jac_perturbation_fraction        = kwargs.get('jac_perturbation_fraction', self.jac_perturbation_fraction)
+        self.data_misfit_acceptance_threshold = kwargs.get('data_misfit_acceptance_threshold', self.data_misfit_acceptance_threshold)
+        self.data_misfit_minimum_change       = kwargs.get('data_misfit_minimum_change', self.data_misfit_minimum_change)
+        self.damp_value                       = kwargs.get('damp_value', self.damp_value)
+        self.damp_reduction_factor            = kwargs.get('damp_reduction_factor', self.damp_reduction_factor)
+        self.iter_cap                         = kwargs.get('iter_cap', self.iter_cap)
+        self.final_model                      = kwargs.get('final_model', self.final_model)
+
 
     def set_device(self, device):
         # self.device=device
@@ -63,7 +82,6 @@ class BaseInversion:
     def _model_update(self, mvec):
         self.mvec = mvec
         self._current_mvec = self.mvec*1.
-
         self._dpred = self.mforward(self.mvec)
         self._G = self.jacobian(self.mvec)
         self._GtG = self._G.T @ self.Cdi @ self._G
@@ -155,9 +173,8 @@ class BaseInversion:
         while not self.stop_inversion:
             self.run_iteration()
 
-        mres = self.model.copy()
-        mres.values = mres.modelize(self.mvec)[:self.model.n_ptypes]
-        return mres
+        self.final_model = self.model.copy()
+        return self.final_model
 
 class Tikhonov(BaseInversion):
     vertical_smoothness = 1e2
@@ -175,20 +192,20 @@ class Tikhonov(BaseInversion):
         return super().invert(iter_cap=iter_cap, **kwargs)
 
 
-class BaseInversion(BaseInversion):
-    def mforward(self, mvec):
-        return super().mforward(mvec).detach().cpu().numpy()
+# class BaseInversion(BaseInversion):
+#     def mforward(self, mvec):
+#         return super().mforward(mvec).detach().cpu().numpy()
 
-class Tikhonov(Tikhonov):
-    def mforward(self, mvec):
-        return super().mforward(mvec).detach().cpu().numpy()
+# class Tikhonov(Tikhonov):
+#     def mforward(self, mvec):
+#         return super().mforward(mvec).detach().cpu().numpy()
 
 def fastjacobian(cls):
     class FastJacobian(cls):
         def jacobian(self, mvec):
             rho, thick = self.model.modelize(mvec)
             # rho = torch.from_numpy(rho)
-            thick = torch.from_numpy(thick)# if thick is not None else None
+            if isinstance(thick, np.ndarray): thick = torch.from_numpy(thick)
             G = self.forward(rho, thick, jac=True)#.detach().cpu().numpy()
             G *= rho[:, None]
             G /= self.data_predicted.exp()
@@ -309,6 +326,7 @@ class LCI(dolphinv_LCI):
     target_step    = 0.5
     dampf          = 1./5000.
     increase_count = 0
+    decrease_count = 0
     data_misfits   = np.inf
     actual_step    = None
 
@@ -322,8 +340,9 @@ class LCI(dolphinv_LCI):
     def mforward(self, mvec):
         if self.n_sites is None: self.n_sites = len(self.inv_list)
         mvecs = mvec.reshape(self.n_sites, -1).T
+        _, thickness = self.inv_list[0].model.mod
         rhos = mvecs.exp()
-        self._dpredgrid = self.inv_list[0].forward(rhos, self.inv_list[0].model.thickness)
+        self._dpredgrid = self.inv_list[0].forward(rhos, thickness)
         return self._dpredgrid.flatten()
     
     def _model_update(self, mvec):
@@ -335,6 +354,11 @@ class LCI(dolphinv_LCI):
         self.jacobian(self.mvec)
         self._r_data -= self.CtC @ self.cmvec 
 
+    def make_smoothness_matrix(self):
+        n = len(self.mvec)
+        m_per_inv = len(self.inv_list[0].m)
+        return (sp.sparse.eye(n)-sp.sparse.eye(n, k=m_per_inv))[:-m_per_inv]
+
     def jacobian(self, mvec):
         if self.one_over_error is None:
             self.n_sites = len(self.inv_list)
@@ -342,8 +366,9 @@ class LCI(dolphinv_LCI):
             self._dobsgrid = self.data_observed.reshape(self.n_sites, -1)
             self._derrgrid = self.data_error.reshape(self.n_sites, -1)**2
         mvecs = mvec.reshape(self.n_sites, -1).T
+        _,thick = self.inv_list[0].model.mod
         rhos = mvecs.exp()
-        thick = self.inv_list[0].model.thickness
+        # thick = self.inv_list[0].model.thickness
         Ggrid = torch.empty((self.n_sites, len(thick)+1, self._dobsgrid.shape[-1]), dtype=rdtype, device=self.device)
         if self.n_sites<100:
             Ggrid = self.inv_list[0].forward(rhos, thick, jac=True)
@@ -447,6 +472,7 @@ class LCI(dolphinv_LCI):
             self.mvec -= dM
             self.target_step[-1] *= 0.5
             self.increase_count +=1
+            self.decrease_count = 0
             self.actual_step.pop(-1)
         # elif dMisfit>0.1:
         #     self.dampf.append(self.dampf[-1]*1.1)
@@ -456,11 +482,12 @@ class LCI(dolphinv_LCI):
         #     self.increase_count += 1
         else:
             self.misfits.append(new_misfit)
-            if self.misfits[-1]<1.2:
-                self.target_step.append(0.2)
-            else:
-                self.target_step.append(self.target_step[-1]+0.1)
+            self.decrease_count += 1
             self.increase_count = 0
+            if self.decrease_count>2:
+                #self.target_step.append(self.target_step[-1]*1.2)
+                self.target_step.append(self.target_step[-1]+0.1)
+                self.decrease_count = 0
             self.data_misfits.append(d_misfit)
 
         self.log("{:03d}\tmisfit:\t{:2.2f}".format(self.iteration, self.misfits[-1]))

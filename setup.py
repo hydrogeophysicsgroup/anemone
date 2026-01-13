@@ -6,7 +6,7 @@ setup(
     author_email='mpg@geo.au.dk',
     packages=['anemone', 'anemone.experiment', 'anemone.physics', 'anemone.transforms', 'anemone.inversion', 'anemone.forwards'],
     package_dir={'':'src'},        
-    install_requires=['numpy', 'matplotlib', 'scipy', 'torch'],
+    install_requires=['numpy', 'matplotlib', 'scipy', 'torch', 'nosj'],
     license='MIT',
     description='electromagnetic forward',        
 )

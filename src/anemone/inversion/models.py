@@ -1,30 +1,46 @@
 import torch
 from scipy.linalg import block_diag
 import numpy as np
+from nosj import nosj
+from typing import List
 
+@nosj
 class BaseModel:
-    def __init__(self, layer_properties, **kwargs):
-        if not isinstance(layer_properties, list): layer_properties = [layer_properties]
-        self.values       = layer_properties
+    values: List[torch.Tensor]
+    names:  List[str]
+    lower_bounds: List[torch.Tensor]
+    upper_bounds: List[torch.Tensor]
+    free_params: List[bool] = None
+    description: str = "Base model class for inversion models"
+
+    def __init__(self, values, **kwargs):
+        if not isinstance(values, list): values = [values]
+        self.values       = values
+        self.free_params = kwargs.get('free_params', [True]*len(self.values))
+        
         self.names        = kwargs.get('names', ['physical_property_{}'.format(i) for i in range(len(self.values))])
-        self.lower_bounds = kwargs.get('lower_bounds', [-1.*torch.ones_like(val)*torch.inf for val in self.values])
-        self.upper_bounds = kwargs.get('upper_bounds', [ torch.ones_like(val)*torch.inf for val in self.values])
+        if not isinstance(self.names, list): self.names = [self.names]
+        
+        self.lower_bounds = kwargs.get('lower_bounds', [-1.*torch.ones_like(val)*torch.inf for val,free in zip(self.values, self.free_params)])
+        self.upper_bounds = kwargs.get('upper_bounds', [    torch.ones_like(val)*torch.inf for val,free in zip(self.values, self.free_params)])
         self.dim          = len(self.values[0].shape)
         self.pslice       = []
         self.pshape       = []
+        
 
         counter=0
-        for val in self.values:
-            self.pslice.append(slice(counter, counter+len(val.flatten())))
-            self.pshape.append(val.shape)
-            counter += len(val.flatten())
+        for val, free in zip(self.values, self.free_params):
+            if free:
+                self.pslice.append(slice(counter, counter+len(val.flatten())))
+                self.pshape.append(val.shape)
+                counter += len(val.flatten())
         self.lbnds = self.vectorize(self.lower_bounds)
         self.ubnds = self.vectorize(self.upper_bounds)
         if kwargs.get('device') is not None:
             self.set_device(kwargs['device'])
             
         self.n_params = len(self.vec)
-        self.n_ptypes = len(self.values)
+        self.n_ptypes = sum([int(free) for free in self.free_params])
 
     def set_device(self, device):
         self.device=device
@@ -50,26 +66,24 @@ class BaseModel:
     def vec(self):
         return self.vectorize(self.values)
     
-    @staticmethod
-    def vectorize(list_of_arrays):
-        return torch.concatenate([v for v in list_of_arrays])
+    def vectorize(self, list_of_arrays):
+        return torch.concatenate([v for v,free in zip(list_of_arrays, self.free_params) if free])
 
     def modelize(self, mvec):
         assert len(mvec) == self.n_params, 'incorrect number of parameters in update vector'
         i_m = 0
-        values = []
-        for pslice,pshape in zip(self.pslice, self.pshape):
-            values.append(mvec[pslice].reshape(pshape+(-1,)).squeeze())
-        return values
+        
+        for i,(pslice,pshape,free) in enumerate(zip(self.pslice, self.pshape, self.free_params)):
+            if free:
+                self.values[i] = mvec[pslice].reshape(pshape+(-1,)).squeeze()
+        return self.values
 
     def make_physical(self, mvec):
         new_mvec = torch.clamp(mvec, self.lbnds, self.ubnds)
         return new_mvec
 
     def H(self, **kwargs):
-        Hs = block_diag(*[self.H1d(val) for val in self.values])
-        if 'thickness' in self.names:
-            Hs = Hs[:-self.n_layers+2]
+        Hs = block_diag(*[self.H1d(val) for val,free in zip(self.values, self.free_params) if free])
         return torch.from_numpy(Hs)
 
     def H1d(self, values):
@@ -84,9 +98,10 @@ class BaseModel:
     def update_values(self, vec):
         assert len(vec) == len(self.vec), 'incorrect number of parameters in update vector'
         i_m = 0
-        for i_p in range(len(self.values)):
+        for i_p, free in enumerate(self.free_params):
             shp = self.values[i_p].shape
-            self.values[i_p] = vec[i_m:i_m+len(self.values[i_p].flatten())].reshape(shp)
+            if free:
+                self.values[i_p] = vec[i_m:i_m+len(self.values[i_p].flatten())].reshape(shp)
             i_m += len(self.values[i_p].flatten())
         return self
 
@@ -95,9 +110,6 @@ class BaseModel:
             self.values[i] = np.clip(self.values[i], self.lower_bounds[i], self.upper_bounds[i])*1.
         return self
     
-    def copy(self):
-        from copy import deepcopy
-        return deepcopy(self)
     
     def plot(self, axs=None, **kwargs):
         n_params = len(self.values)
@@ -127,33 +139,33 @@ class BaseModel:
         return axs
     
     @classmethod
-    def smooth(cls, property_values, z_bounds, **kwargs):
-        class SmoothModel(cls):
-            n_layers = len(z_bounds)+1
-            z = z_bounds
-            thickness = torch.diff(z_bounds, prepend=torch.zeros(1, dtype=z_bounds.dtype))
-            def __init__(self, property_values, **kwargs):
-                super().__init__(property_values, **kwargs)
-                self.thickness = self.thickness#.to(self.device)
-            
-            def modelize(self, mvec):
-                return super().modelize(mvec)+[self.thickness]
-        
-        return SmoothModel(property_values, **kwargs)
+    def smooth(cls, values, z_bounds, **kwargs):
+        n_layers = len(z_bounds)+1
+        z = z_bounds
+        thickness = torch.diff(z_bounds, prepend=torch.zeros(1, dtype=z_bounds.dtype))
+        if not isinstance(values, list): values = [values]
+        values += [thickness]
+        names = kwargs.get('names', ['physical_property_{}'.format(i) for i in range(len(values)-1)])
+        names += ['thickness']
+        kwargs['names'] = names
+        free_params = kwargs.get('free_params', [True]*len(values))
+        free_params[-1] = False  # fix thicknesses
+        kwargs['free_params'] = free_params
+        return cls(values, **kwargs)
     
     @classmethod
-    def few_layers(cls, property_values, thickness, **kwargs):
+    def few_layers(cls, values, thickness, **kwargs):
         class FewLayersModel(cls):
             n_layers = len(thickness)+1
-            def __init__(self, property_values, **kwargs):
-                super().__init__(property_values, **kwargs)
+            def __init__(self, values, **kwargs):
+                super().__init__(values, **kwargs)
                 if 'thickness' not in self.names:
                     self.names.append('thickness')
                     self.values.append(thickness)
 
-        if not isinstance(property_values, list): property_values = [property_values]
-        property_values += [thickness]
-        return FewLayersModel(property_values, **kwargs)
+        if not isinstance(values, list): values = [values]
+        values += [thickness]
+        return FewLayersModel(values, **kwargs)
 
 def logify(cls):
     class LogModel(cls):
@@ -164,7 +176,7 @@ def logify(cls):
             return super().modelize(mvec.exp())
     return LogModel
 
-
+@nosj
 class Resistivity(BaseModel):
     def __init__(self, values, **kwargs):
         res_bnds = kwargs.pop('res_bnds', (1e-1, 2e4))
@@ -174,12 +186,9 @@ class Resistivity(BaseModel):
             values = [values]
         upper_bounds = [torch.ones_like(values[0])*res_bnds[1]]
         lower_bounds = [torch.ones_like(values[0])*res_bnds[0]]
-        names = ['resistivity']
-        if len(values) == 2:
-            upper_bounds.append(torch.ones_like(values[1])*thk_bnds[1])
-            lower_bounds.append(torch.ones_like(values[1])*thk_bnds[0])
-            names.append('thickness')
-        kwargs['names'] = names
+        upper_bounds.append(torch.ones_like(values[1])*thk_bnds[1])
+        lower_bounds.append(torch.ones_like(values[1])*thk_bnds[0])
+        kwargs.setdefault('names', ['resistivity', 'thickness'])
         kwargs.setdefault('lower_bounds', lower_bounds)
         kwargs.setdefault('upper_bounds', upper_bounds)
         super().__init__(values, **kwargs)
