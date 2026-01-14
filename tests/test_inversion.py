@@ -178,6 +178,7 @@ def test_lci():
     bt = timer()
     lci = LCI(inv_list)
     lci.horizontal_smoothness=1.
+    lci.vertical_smoothness=0.6
 
     # lci.smoothness_vert = 1e3
     # lci.smoothness_horiz = 1e2

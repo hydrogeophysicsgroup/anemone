@@ -169,7 +169,7 @@ class Resistivity(BaseModel):
     def __init__(self, values, **kwargs):
         res_bnds = kwargs.pop('res_bnds', (1e-1, 2e4))
         thk_bnds = kwargs.pop('thk_bnds', (1, 100))
-        max_step = kwargs.pop('max_step', torch.log(torch.tensor([3, 1.6])))
+        max_step = kwargs.pop('max_step', torch.log(torch.tensor([3.0, 1.6])))
         min_step = kwargs.pop('min_step', torch.log(torch.tensor([1.1, 1.03])))
         
         if not isinstance(values, list):
