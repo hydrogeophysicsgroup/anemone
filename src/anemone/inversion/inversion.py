@@ -110,7 +110,7 @@ class BaseInversion:
         
         self.iteration   = 0
         self.misfits     = [np.inf]
-        self.misfits.append(self.misfit())
+        #self.misfits.append(self.misfit())
         self.set_device(self.mvec.device)
 
 
@@ -205,6 +205,8 @@ def fastjacobian(cls):
             return dm
     return FastJacobian
 
+
+
 class Inversion(BaseInversion):
     log = print
     vertical_smoothness = 0.2
@@ -232,10 +234,10 @@ class Inversion(BaseInversion):
     def vert_misfit(self):
         r_mod = -self.Rp @ self.mvec
         m_misfit = r_mod @ self.C_rp @ r_mod
-        return m_misfit
+        return m_misfit.mean()
 
     def misfit(self):
-        return torch.sqrt(self.data_misfit().mean()+self.vert_misfit().mean())
+        return torch.sqrt(self.data_misfit().mean()+self.vert_misfit())
     
     def damp_matrix(self):
         if self.damping_attempts==0:
@@ -265,7 +267,7 @@ class Inversion(BaseInversion):
                         else:
                             self.damp[pslice] = 0
         self.damp = torch.clamp(self.damp, min=1.)  # Ensure damping is at least 1
-        return self.Imod.multiply(self.damp.cpu().numpy())# self.damp*self.Imod
+        return sp.sparse.csr_matrix(self.Imod.multiply(self.damp.cpu().numpy()))# self.damp*self.Imod
 
     def find_damping(self):
         self.damping_attempts = 0
@@ -300,15 +302,16 @@ class Inversion(BaseInversion):
         
 
     def calc_dm(self):
-        Aown = self._GtG + self.CtC + self.damp_matrix()
+        Aown = sp.sparse.csr_matrix(self._GtG) + self.CtC + self.damp_matrix()
         dm = sp.sparse.linalg.spsolve(Aown, self._r_data)
 
         return torch.nan_to_num(torch.tensor(dm, device=self.mvec.device, dtype=self.mvec.dtype))
 
     
     def run_iteration(self):
+        import time
+        time_old = time.time()
         self.iteration += 1
-        self.n_local=0
         self.damping_attempts = 0
         self.test_damping = [True]*len(self.pslices)
 
@@ -356,18 +359,34 @@ class Inversion(BaseInversion):
         for i in range(len(self.damp_exponent)):
             self.damp_exponent[i] = max(self.damp_exponent[i] - 1, 0)
         if self.misfits[-1] == self.new_misfit:
-            print("{:03d}\tData misfit:\t{:2.2f}\tVertical misfit:\t{:2.2f}\tHorizontal misfit:\t{:2.2f}\tTotal misfit:\t{:2.2f}\tStep size:\t{:2.2f}".format(
+           # with open('inversion_log.txt', 'a') as f:
+            time_new = time.time()
+            self.log("{:03d}\tData misfit:\t{:2.2f}\tVertical misfit:\t{:2.2f}\tHorizontal misfit:\t{:2.2f}\tTotal misfit:\t{:2.2f}\tStep size:\t{:2.2f}\tLast iteration time:\t{:2.2f}\n".format(
                 self.iteration,
                 torch.sqrt(self.data_misfit().sum() / len(self.data_observed)),
                 self.vert_misfit()/self.Rp.shape[0],
                 self.horz_misfit()/self.RL.shape[0],
                 self.misfits[-1],
                 self.max_step[0],
+                time_new - time_old
             ))
             self.n_local += 1
         else:
             print("{:03d}\tTotal misfit increased, smaller step\t".format(self.iteration))
 
+
+    def invert(self, iter_cap=10, **kwargs):
+        self.setup_matrices()
+        self.iter_cap = iter_cap
+        self.n_local=0
+        while not self.stop_inversion:
+            self.run_iteration()
+            
+        mres = self.model.copy()
+        mres.values = mres.modelize(self.mvec)[:self.model.n_ptypes]
+        self.model = mres
+        return mres
+        
     @property
     def stop_inversion(self):
         if super().stop_inversion:
@@ -382,7 +401,7 @@ fastJac = fastjacobian(Inversion)
 
 #from .dolphinv import LCI as dolphinv_LCI, Inversion as dInversion
 class LCI(Inversion):
-    log = print
+    #log = print
     one_over_error = None
     n_sites        = None
     _GtG           = None
@@ -392,7 +411,7 @@ class LCI(Inversion):
     damp_exponent_start = 6
     max_step = 3.0
     min_step = 1.1
-    horizontal_smoothness = 0.4
+    horizontal_smoothness = 0.8
     increase_count = 0
     data_misfits   = np.inf
 
@@ -400,7 +419,8 @@ class LCI(Inversion):
     def m(self):
         return torch.concat([inv.m for inv in self.inv_list])
 
-    def __init__(self, inv_list, x=None, y=None):
+    def __init__(self, inv_list, x=None, y=None,log=print):
+        self.log = log
         self.damping_attempts = 0
         self.inv_list = inv_list
         self.data_observed = torch.concat([inv.data_observed for inv in self.inv_list])
@@ -430,7 +450,32 @@ class LCI(Inversion):
         self.Cdi = self.recip_error_squared.to(torch.float)
         from math import log
         # Vertical constraints
-        self.Rp = (sp.sparse.eye(len(self.mvec),format="csr")-sp.sparse.eye(len(self.mvec), k=1,format="csr"))[:-len(self.inv_list)]  # just to get the shape
+        # self.Rp = (sp.sparse.eye(len(self.mvec),format="csr")-sp.sparse.eye(len(self.mvec), k=1,format="csr"))
+        # print(self.Rp.shape)
+        n_cols = len(self.mvec)
+        n_rows = n_cols - len(self.inv_list)
+        
+
+        rows = []
+        cols = []
+        data = []
+
+        for i in range(n_rows):
+            shift = i // len(self.inv_list[0].m)
+            j = i + shift
+
+            if j < n_cols:
+                rows.append(i)
+                cols.append(j)
+                data.append(1.0)
+
+            if j + 1 < n_cols:
+                rows.append(i)
+                cols.append(j + 1)
+                data.append(-1.0)
+
+        self.Rp = sp.sparse.coo_matrix((data, (rows, cols)), shape=(n_rows, n_cols))
+        self.Rp = self.Rp.tocsr()
         self.C_rp = sp.sparse.eye(self.Rp.shape[0])/log(1.+self.vertical_smoothness)**2
         HtH = self.Rp.T @ self.C_rp @ self.Rp
 
@@ -467,7 +512,7 @@ class LCI(Inversion):
     def horz_misfit(self):
         r_mod = -self.RL * self.mvec
         m_misfit = r_mod @ self.C_rl @ r_mod
-        return m_misfit
+        return m_misfit.mean()
 
     def misfit(self):
         return torch.sqrt((self.data_misfit().sum()+self.vert_misfit()+self.horz_misfit())/(len(self.data_observed)+self.RL.shape[0]+self.Rp.shape[0]))
@@ -558,6 +603,7 @@ class LCI(Inversion):
             mres.values = mres.modelize(mvec)[:inv.model.n_ptypes]
             inv.model = mres
             mres_list.append(mres)
+        
         return mres_list
 
     @property
