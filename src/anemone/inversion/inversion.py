@@ -420,7 +420,7 @@ class LCI(dolphinv_LCI):
       #  if self.iteration==0:
         gtgmax = self._GtG.diagonal().max()
         cdamp *= gtgmax
-        # cdamp = max(cdamp, 1.)
+        cdamp = max(cdamp, 1.)
         # if self.iteration>2:
         #     Aown = self._GtG*self.data_misfits[-1] + self.CtC*self.misfits[-1]
         # else:

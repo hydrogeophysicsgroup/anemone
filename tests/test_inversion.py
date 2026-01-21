@@ -200,7 +200,7 @@ def test_lci():
         fig,ax = plt.subplots(2,1)
         result = []
         actual = []
-        _,thick = res_mods[0].mod
+        _,thick = res_mods[0].values
         z = np.cumsum(thick)
         for i, (mtrue, res_mod) in enumerate(zip(m_trues, res_mods)):
             result.append(Log.standard(res_mod.values[0].cpu().log10(), z, 'rho', xy=(i,0)))

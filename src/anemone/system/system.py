@@ -207,7 +207,6 @@ class Loop:
             radius = self.radius
         logR = torch.log(R).cpu()
         dR = logR[1]-logR[0]
-
         phi = lamontagne((torch.log(radius)-logR)/dR)
         geomz = 2*torch.pi*phi*radius
         return geomz.to(R.device)

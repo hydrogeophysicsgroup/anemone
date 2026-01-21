@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from anemone import rdtype
 from torch.linalg import solve
+from math import log
 
 class Inversion(BaseInversion):
     vertical_smoothness = 0.1
@@ -213,8 +214,6 @@ class LCI(Inversion):
     vertical_smoothness = 0.3
     diag_normalizer = 5e3
     damping_factor = 3.0
-    smoothness_vert = 0.1
-    smoothness_lat  = 0.1
     max_step = 3.
     diag_normalizer = 5e3
     damping_factor = 3.
@@ -290,12 +289,12 @@ class LCI(Inversion):
         
         # Vertical constraints
         self.Rp = torch.block_diag(*[inv.model.H() for inv in self.inv_list]).to(torch.float) # make it similar for C_rp
-        self.C_rp = torch.eye(len(self.Rp))/(torch.log1p(torch.tensor(self.vertical_smoothness, dtype=torch.float32)) ** 2)
+        self.C_rp = torch.eye(len(self.Rp))/log(1.+self.vertical_smoothness)**2
         self.HtH = self.Rp.T @ self.C_rp @ self.Rp
 
         # Horizontal constraints
         self.RL = self.make_smoothness_matrix()#.to(torch.float)
-        self.C_rl = torch.eye(len(self.RL), dtype=self.RL.dtype)/(torch.log1p(torch.tensor(self.horizontal_smoothness, dtype=torch.float32)) ** 2)
+        self.C_rl = torch.eye(self.RL.shape[0])/log(1.+self.horizontal_smoothness)**2
         self.LtL = self.RL.T @ self.C_rl @ self.RL
 
         # since these don't change, they can be added.
@@ -341,7 +340,7 @@ class LCI(Inversion):
         mvecs = self.mvec.reshape(len(self.inv_list), -1)
         for inv, mvec in zip(self.inv_list, mvecs):
             mres = inv.model.copy()
-            mres.values = mres.modelize(mvec)[:inv.model.n_ptypes]
+            mres.values = mres.modelize(mvec)
             inv.model = mres
             mres_list.append(mres)
         return mres_list
