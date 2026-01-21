@@ -65,7 +65,8 @@ def test_tikhonov_smooth():
 
     d_obs = torch.abs(d_obs).log()
 
-    res_start = LogResistivity.smooth(np.ones(31)*50, np.cumsum(np.logspace(0,1.5,30)))
+    res_start = LogResistivity.smooth(torch.ones(31)*50, torch.logspace(-1,2.2,30)+1)
+
 
     inv = Tikhonov(d_obs, d_err, res_start, fwrTD)
     inv.data_misfit_acceptance_threshold = 0.9
@@ -105,6 +106,8 @@ def test_fastjacobian():
 
 
     fastJac = fastjacobian(Tikhonov)
+    res_start = LogResistivity.smooth(torch.ones(31)*50, torch.logspace(-1,2.2,30)+1)
+
 
     inv = fastJac(d_obs, d_err, res_start, fwrTD)
     inv.data_misfit_acceptance_threshold = 0.9
@@ -218,6 +221,6 @@ def test_lci():
 if __name__ == '__main__':
     # test_tikhonov_few_layer()
     # test_tikhonov_smooth()
-    # test_fastjacobian()
-    test_lci()
+    test_fastjacobian()
+    # test_lci()
     pass

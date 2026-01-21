@@ -74,8 +74,10 @@ class BaseForward:
     tolerance  : float = None
     omega      : torch.Tensor = None
     lamda      : torch.Tensor = None
-    kind       : str          = 'res-only'
+    kind       : str          = 'res'
+    log_scale : bool         = False
     description: str          = 'Base Forward Model'
+
 
     def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None, **kwargs):
         warnings.warn("BaseForward is very slow, use Forward instead.", DeprecationWarning)
@@ -134,12 +136,13 @@ class BaseForward:
         
         self.omega = kwargs.get('omega', None)
         self.lamda = kwargs.get('lamda', None)
-        self.kind  = kwargs.get('kind', 'res-only')
+        self.kind  = kwargs.get('kind', 'res')
         self.description = kwargs.get('description', 'Base Forward Model')
+        self.log_scale = kwargs.get('log_scale', False)
 
-    @property
-    def sigma(self):
-        return 1./self.rho
+    # @property
+    # def sigma(self):
+    #     return 1./self.rho
     
     def calc_ft(self):
         def frq_integrand(f):
@@ -190,86 +193,90 @@ class BaseForward:
         kwargs.setdefault('waveform', Waveform.example())
         return cls(**kwargs)
 
-    def __call__(self, rho, thickness):
+    def _res_call(self, rho, thickness):
         if not isinstance(rho, torch.Tensor):       rho       = torch.tensor(rho)
-        if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)
+        if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)        
         self.rho = ((rho+0j)[..., None, None]).to(self.device).to(cdtype)
         if rho.ndim > thickness.ndim:
-            thickness = thickness[:, None, ...]
+            thickness = thickness[:, None]
         self.thick = ((thickness+0j)[..., None, None]).to(self.device).to(cdtype)
         return self.forward().squeeze().real*c.mu0
 
+    def _colecole_call(self, rho, m, tau,  C, thickness):
+        self.rho   =       rho.to(self.device).to(cdtype)[..., None,None]
+        self.m     =         m.to(self.device).to(cdtype)[..., None,None]
+        self.tau   =       tau.to(self.device).to(cdtype)[..., None,None]
+        self.c     =         C.to(self.device).to(cdtype)[..., None,None]
+        if rho.ndim > thickness.ndim:
+            thickness = thickness[:, None]
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device).to(cdtype)   
+    
+        return self.forward()*c.mu0        
+
+    def _mpa_call(self, rho, phi_max, tau_phi, C, thickness):
+        self.rho     =     rho.to(self.device)[..., None,None]
+        self.phi_max = phi_max.to(self.device)[..., None,None]
+        self.tau_phi = tau_phi.to(self.device)[..., None,None]
+        self.c       =       C.to(self.device)[..., None,None]
+        if rho.ndim > thickness.ndim:
+            thickness = thickness[:, None]
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
+        return self.forward()*c.mu0
+    
+    def _cpa_call(self, rho, phi, thickness):
+        self.rho   =       rho.to(self.device).to(cdtype)[..., None,None]
+        self.phi     =     phi.to(self.device).to(cdtype)[..., None,None]
+        if rho.ndim > thickness.ndim:
+            thickness = thickness[:, None]
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
+        return self.forward()*c.mu0
+
+    def __call__(self, *args, **kwargs):
+        if   self.kind == 'res':      data = self._res_call(*args, **kwargs)
+        elif self.kind == 'mpa':      data = self._mpa_call(*args, **kwargs)
+        elif self.kind == 'colecole': data = self._colecole_call(*args, **kwargs)
+        elif self.kind == 'cpa':      data = self._cpa_call(*args, **kwargs)        
+        if self.log_scale: data = torch.log(data)
+        return data
+
+    @staticmethod
+    def colecole2mpa(rho, m, tau, C):
+        from anemone.physics import colecole2mpa # not used much, so imported here to keep things clean.
+        rho, phi_max, tau_phi, C = colecole2mpa(rho, m, tau, C)
+        return rho, phi_max, tau_phi, C
+
+    @property
+    def sigma(self):
+        if   self.kind == 'res':      return 1./self.rho
+        elif self.kind == 'colecole': return 1./colecole(self.rho, self.m, self.tau, self.c, self.omega)    
+        elif self.kind == 'mpa':      
+            rho, m_new, tau_cc, C = mpa2colecole(self.rho, self.phi_max, self.tau_phi, self.c)
+            return 1./colecole(rho, m_new, tau_cc, C, self.omega)
+        elif self.kind == 'cpa':    
+            b = -2.*self.phi / c.pi
+            k = self.rho * self.omega_L**b
+            return k*(1j*self.omega + self.omega_L)**(-b)            
+        
     @classmethod
     def colecole(cls, source, receiver, times, **kwargs):
-        
-
-        class ColeCole(cls):
-            kind = 'colecole'
-            @property
-            def sigma(self):
-                return 1./colecole(self.rho, self.m, self.tau, self.c, self.omega)
-
-            def __call__(self, rho, m, tau,  C, thickness):
-                self.rho   =       rho.to(self.device).to(cdtype)[..., None,None]
-                self.m     =         m.to(self.device).to(cdtype)[..., None,None]
-                self.tau   =       tau.to(self.device).to(cdtype)[..., None,None]
-                self.c     =         C.to(self.device).to(cdtype)[..., None,None]
-                if rho.ndim > thickness.ndim:
-                    thickness = thickness[:, None]
-                self.thick = ((thickness+0j)[..., None, None]).to(self.device)
-
-                return self.forward()*c.mu0
-        
-        return ColeCole(source, receiver, times, **kwargs)
+        kwargs.setdefault('kind', 'colecole')
+        return cls(source, receiver, times, **kwargs)
     
     @classmethod
     def mpa(cls, source, receiver, times, **kwargs):
-
-        class MPA(cls):
-            kind = 'mpa'
-            @property
-            def sigma(self):
-                rho, m_new, tau_cc, C = mpa2colecole(self.rho, self.phi_max, self.tau_phi, self.c)
-                return 1./colecole(rho, m_new, tau_cc, C, self.omega)
-            
-            @staticmethod
-            def colecole2mpa(rho, m, tau, C):
-                from anemone.physics import colecole2mpa # not used much, so imported here to keep things clean.
-                rho, phi_max, tau_phi, C = colecole2mpa(rho, m, tau, C)
-                return rho, phi_max, tau_phi, C
-
-            def __call__(self, rho, phi_max, tau_phi, C, thickness):
-                self.rho     =     rho.to(self.device)[..., None,None]
-                self.phi_max = phi_max.to(self.device)[..., None,None]
-                self.tau_phi = tau_phi.to(self.device)[..., None,None]
-                self.c       =       C.to(self.device)[..., None,None]
-                if rho.ndim > thickness.ndim:
-                    thickness = thickness[:, None]
-                self.thick = ((thickness+0j)[..., None, None]).to(self.device)
-                return self.forward()*c.mu0
-        return MPA(source, receiver, times, **kwargs)
+        kwargs.setdefault('kind', 'mpa')
+        return cls(source, receiver, times, **kwargs)
     
     @classmethod
     def cpa(cls, source, receiver, times, drake_model=True, **kwargs):
-        class CPA(cls):
-            kind = 'cpa'
-            omega_L = c.twopi*1e-5 if drake_model else 0.
-            @property
-            def sigma(self):
-                b = -2.*self.phi / c.pi
-                k = self.rho * self.omega_L**b
-                return k*(1j*self.omega + self.omega_L)**(-b)
+        kwargs.setdefault('kind', 'cpa')
+        self = cls(source, receiver, times, **kwargs)
+        self.omega_L = c.twopi*1e-5 if drake_model else 0.
+        return self
 
-            def __call__(self, rho, phi, thickness):
-                self.rho   =       rho.to(self.device).to(cdtype)[..., None,None]
-                self.phi     =     phi.to(self.device).to(cdtype)[..., None,None]
-                if rho.ndim > thickness.ndim:
-                    thickness = thickness[:, None]
-                self.thick = ((thickness+0j)[..., None, None]).to(self.device)
-                return self.forward()*c.mu0
-
-        return CPA(source, receiver, times, **kwargs)
-                
+    def logify(self):
+        self.log_scale = True
+        return self
 
 class ForwardLaplace(BaseForward):
     """ Essentially the same as the BaseForward, but uses invserse Laplace transforms instead of inverse Fourier transforms."""
@@ -824,7 +831,7 @@ class Forward(BaseForward):
             Gr /= (self.rho.real.squeeze()**2)[:,None]
         return Gr
     
-    def __call__(self, rho, thickness, jac=False):
+    def _res_call(self, rho, thickness, jac=False):
         with torch.no_grad():
             if not isinstance(rho, torch.Tensor):       rho       = torch.tensor(rho)
             if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)        

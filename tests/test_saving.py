@@ -64,14 +64,17 @@ def test_filterchain_save():
 def test_baseforward_save():
     from anemone.forwards import BaseForward
     fwr = BaseForward.example(tolerance=1e-6)
-    print(fwr)
+    # print(fwr)
     fwr.save('test_forward.json')
     fwr2 = BaseForward.load('test_forward.json', load_subclasses=True)
+    print(fwr2)
+
     assert fwr==fwr2, "Forwards are not equal after saving"
 
     rho = torch.tensor([10., 20., 30.])
     thk = torch.tensor([5., 10.])
     dbdt = fwr(rho, thk)
+
     fwr.save('test_forward.json')
     fwr2 = BaseForward.load('test_forward.json', load_subclasses=True)
 
@@ -103,8 +106,22 @@ def test_forward_save():
 
     os.remove('test_forward.json')
 
+
+def test_model_save():
+    from anemone.inversion.models import BaseModel
+    #res = LogResistivity.smooth(torch.ones(31)*50, torch.logspace(0,2.2,30))
+    res = BaseModel([torch.tensor([20,20, 20]), torch.tensor([10., 20.])], names=['resistivity', 'thickness'])
+    res.save('test_model.json')
+    res2 = BaseModel.load('test_model.json')
+    os.remove('test_model.json')
+    assert res==res2, "Models are not equal after saving"
+    
+
+
+
 if __name__ == '__main__':
     # test_loop_save()
     # test_filterchain_save()
     # test_baseforward_save()
     test_forward_save()
+    test_model_save()

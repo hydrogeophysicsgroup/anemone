@@ -12,7 +12,6 @@ from anemone.forwards import Forward
 
 @nosj
 class BaseInversion:
-    """ Bare-bones damped least squares inversion class. """
     data_observed                    : torch.Tensor
     data_error                       : torch.Tensor
     starting_model                   : BaseModel
@@ -71,10 +70,9 @@ class BaseInversion:
         return torch.sqrt(self.data_misfit().mean())
     
     def jacobian(self, mvec):
-        self.mvec = mvec
         dm   = mvec*self.jac_perturbation_fraction
         dm[dm==0] = self.jac_perturbation_fraction
-        m_pert    = torch.diag(dm) + mvec[:, None]
+        m_pert    = torch.diag(dm) + mvec.clone()[:, None]
         d_data    = self.mforward(m_pert)
         Gt = (d_data - self.data_predicted) / dm[:, None]
         return Gt.T
@@ -122,12 +120,10 @@ class BaseInversion:
         self._current_mvec = self.mvec*1.1 if torch.all(self.mvec!=0) else torch.ones_like(self.mvec)# make sure the jacobian is calculated at least once
         self.Cdi = torch.diag(self.recip_error_squared).to(rdtype)
         self.Imod = torch.eye(len(self.mvec), device=self.mvec.device)
-        self._current_mvec = self.mvec*1.1 if torch.all(self.mvec!=0) else torch.ones_like(self.mvec)# make sure the jacobian is calculated at least once
         self._G = None
         
         self.iteration   = 0
         self.misfits     = [np.inf]
-        #self.misfits.append(self.misfit())
         self.set_device(self.mvec.device)
 
 
@@ -144,9 +140,6 @@ class BaseInversion:
         if self.misfits[-1]<self.data_misfit_acceptance_threshold:
             self.log(f'misfit is below {self.data_misfit_acceptance_threshold}, stopping inversion')
             return True
-        #if self.misfits[-1]>self.misfits[-2] and self.misfits[-3]==min(self.misfits):
-        #    self.log('misfit is increasing, stopping inversion')
-        #    return True
         if self.iteration>=self.iter_cap:
             self.log('reached iteration cap..')
             return True
@@ -160,7 +153,7 @@ class BaseInversion:
     def run_iteration(self):
         dM   = self.calc_dm()
         self.damp_value *= self.damp_reduction_factor
-        #self.mvec = self.model.make_physical(self.mvec + dM)
+        # self.mvec = self.model.make_physical(self.mvec + dM)
         self.mvec += torch.nan_to_num(dM)
         self.iteration += 1
         self.misfits.append(self.misfit())
@@ -172,27 +165,30 @@ class BaseInversion:
 
         while not self.stop_inversion:
             self.run_iteration()
-
-        self.final_model = self.model.copy()
+        self.final_model = self.model.update_values(self.mvec)
         return self.final_model
 
 class Tikhonov(BaseInversion):
-    vertical_smoothness = 1e2
+    vertical_smoothness = 0.2
 
     def setup_matrices(self):
+        from math import log
         super().setup_matrices()
-        self.HtH = self.model.H().T @ self.model.H() * self.vertical_smoothness
+        self.HtH = self.model.H().T @ (self.model.H() * log(1.+self.vertical_smoothness)**-2)
 
     def calc_dm(self):
         r_data = self.G.T @ self.Cdi @ (self.data_observed-self.data_predicted)
         Aown = self.GtG + self.damp_matrix + self.HtH
         return solve(Aown, r_data)
 
-    def invert(self, iter_cap=10, **kwargs):
-        return super().invert(iter_cap=iter_cap, **kwargs)
 
 def fastjacobian(cls):
     class FastJacobian(cls):
+        def __post_init__(self):
+            super().__post_init__()
+            assert self.forward.kind=='res', "FastJacobian only works for resistivity forward models"
+            assert self.model.free[-1]==False, "FastJacobian only works for models with fixed thicknesses"
+
         def jacobian(self, mvec):
             self.mvec = mvec*1.
             rho, thick = self.model.modelize(mvec)
@@ -203,16 +199,10 @@ def fastjacobian(cls):
             #self._dpred = torch.tensor(self.data_predicted, device=self.mvec.device, dtype=self.mvec.dtype)
             G /= self.data_predicted.exp()
             return G.T
-        def copy(self):
-            from copy import deepcopy
-            return deepcopy(self) 
-        def calc_dm(self):
-            dm = super().calc_dm()
-            return dm
     return FastJacobian
 
 
-
+@nosj
 class Inversion(BaseInversion):
     log = print
     vertical_smoothness = 0.2
@@ -223,6 +213,10 @@ class Inversion(BaseInversion):
     damp_exponent_start = 6
     increase_count = 0
     data_misfits = np.inf
+
+    def __init__(self, data_observed, data_error, starting_model,  forward, **kwargs):
+        """Create an inversion object, the necessary """
+        super().__init__(data_observed, data_error, starting_model, forward, **kwargs)
     
     def setup_matrices(self):
         if not isinstance(self.data_misfits, list): self.data_misfits = [self.data_misfits]
