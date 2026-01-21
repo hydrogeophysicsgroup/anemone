@@ -52,6 +52,7 @@ def logify_forward(cls):
         def __call__(self, *args, **kwargs):
             if not kwargs.get('jac', False):
                 return torch.abs(super().__call__(*args, **kwargs)).log()
+                return torch.abs(super().__call__(*args, **kwargs)).log()
             else:
                 return super().__call__(*args, **kwargs)
     return LogFwr

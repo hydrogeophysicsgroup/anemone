@@ -127,7 +127,7 @@ class BaseInversion:
         
         self.iteration   = 0
         self.misfits     = [np.inf]
-        self.misfits.append(self.misfit())
+        #self.misfits.append(self.misfit())
         self.set_device(self.mvec.device)
 
 
@@ -203,11 +203,13 @@ class Tikhonov(BaseInversion):
 def fastjacobian(cls):
     class FastJacobian(cls):
         def jacobian(self, mvec):
+            self.mvec = mvec*1.
             rho, thick = self.model.modelize(mvec)
             # rho = torch.from_numpy(rho)
             if isinstance(thick, np.ndarray): thick = torch.from_numpy(thick)
             G = self.forward(rho, thick, jac=True)#.detach().cpu().numpy()
             G *= rho[:, None]
+            #self._dpred = torch.tensor(self.data_predicted, device=self.mvec.device, dtype=self.mvec.dtype)
             G /= self.data_predicted.exp()
             return G.T
         def copy(self):
@@ -218,22 +220,20 @@ def fastjacobian(cls):
             return dm
     return FastJacobian
 
-class Inversion(Tikhonov):
-    vertical_smoothness = 0.4
+
+
+class Inversion(BaseInversion):
+    log = print
+    vertical_smoothness = 0.2
     one_over_error = None
     n_sites = None
     _GtG = None
     _r_data = None
-    target_step = 0.5
-    dampf = 1./5000.
+    damp_exponent_start = 6
     increase_count = 0
     data_misfits = np.inf
-    actual_step = None
     
     def setup_matrices(self):
-        if not isinstance(self.target_step, list): self.target_step = [self.target_step]
-        if not isinstance(self.dampf, list): self.dampf = [self.dampf]
-        if not isinstance(self.actual_step, list): self.actual_step = []
         if not isinstance(self.data_misfits, list): self.data_misfits = [self.data_misfits]
 
         super().setup_matrices()
@@ -242,100 +242,296 @@ class Inversion(Tikhonov):
         self.HtH = self.Rp.T @ self.C_rp @ self.Rp
         self.HtH = self.HtH.to(self.mvec.dtype)
         self.CtC = self.HtH
+        self.damp_exponent = torch.ones(len(self.pslices))*self.damp_exponent_start
+        #step_down                        = torch.log(torch.tensor(2.0))
+        #step_up                          = torch.log(torch.tensor(1.2))
+
+    def vert_misfit(self):
+        r_mod = -self.Rp @ self.mvec
+        m_misfit = r_mod @ self.C_rp @ r_mod
+        return m_misfit.mean()
+
+    def misfit(self):
+        return torch.sqrt(self.data_misfit().mean()+self.vert_misfit())
+    
+    def damp_matrix(self):
+        if self.damping_attempts==0:
+            diag_GTG = torch.tensor(self.GtG.diagonal())
+            self.damp = torch.empty_like(diag_GTG)
+            max_GTG = [diag_GTG[pslice].max()/self.diag_normalizer for pslice in self.pslices]
+            for i,pslice in enumerate(self.pslices):
+                if self.damp_exponent[i]>0:
+                    self.damp[pslice] =  max_GTG[i]*self.damping_factor**(self.damp_exponent[i])
+                else:
+                    self.damp[pslice] = 0
+        else:
+            for i,pslice in enumerate(self.pslices):
+                if self.test_damping[i]:
+                    if self.damp_increase[i]:
+                        if self.damp_exponent[i]>0:
+                            self.damp[pslice] =  self.damp[pslice]*self.damping_factor
+                            self.damp_exponent[i] +=1
+                        else:
+                            diag_GTG = self.GtG.diagonal()
+                            self.damp_exponent[i] +=1
+                            self.damp[pslice] =  diag_GTG[pslice].max()/self.diag_normalizer*self.damping_factor**self.damp_exponent[i]
+                    else:
+                        if self.damp_exponent[i]>0:
+                            self.damp[pslice] =  self.damp[pslice]/self.damping_factor
+                            self.damp_exponent[i] -=1
+                        else:
+                            self.damp[pslice] = 0
+        self.damp = torch.clamp(self.damp, min=1.)  # Ensure damping is at least 1
+        return sp.sparse.csr_matrix(self.Imod.multiply(self.damp.cpu().numpy()))# self.damp*self.Imod
+
+    def find_damping(self):
+        self.damping_attempts = 0
+        self.test_damping = [True]*len(self.pslices)
+
+        while any(self.test_damping):
+            if self.damping_attempts > 20:
+                self.test_damping = [False] * len(self.pslices)
+                break
+
+            
+
+            dM = self.calc_dm()
+            dM_abs = torch.abs(dM)
+
+            for i, pslice in enumerate(self.pslices):
+                max_dM = dM_abs[pslice].max()
+
+                if max_dM > self.max_step[i]:
+                    if self.damp_increase[i]:
+                        continue
+                    else:
+                        self.damp_increase[i] = True
+                        self.test_damping[i] = False
+                        break  # force recalculation next while-iteration
+
+                else:  # max_dM <= max_step[i]
+                    if self.damp_increase[i] or self.damp_exponent[i] == 0:
+                        self.test_damping[i] = False
+            self.damping_attempts += 1
+        return dM
+        
 
     def calc_dm(self):
-        cdamp = self.dampf[-1]*1.
-        gtgmax = self._GtG.diagonal().max()
-        cdamp *= gtgmax
-        Aown = self._GtG + self.CtC
-        cImod = self.Imod.clone()
-        dm = solve(Aown+cImod*cdamp, self._r_data)
-        dm_rep = torch.max(torch.abs(dm))
-        
-        attempts=1
-        measure = [dm_rep]
-        
-        while attempts<25:
-            if dm_rep<self.target_step[-1]*0.9:
-                cdamp /= (1.2)**attempts
-            elif dm_rep>self.target_step[-1]*1.1:
-                cdamp *= (1.2)**attempts
-            else:
-                break
-            dm = solve(Aown+cImod*cdamp, self._r_data)
-            dm_rep = torch.max(torch.abs(dm))
-            measure.append(dm_rep)
-            attempts+=1
-        self.actual_step.append(dm_rep)
-        self.dampf.append(cdamp/gtgmax)
+        Aown = sp.sparse.csr_matrix(self._GtG) + self.CtC + self.damp_matrix()
+        dm = sp.sparse.linalg.spsolve(Aown, self._r_data)
+
         return torch.nan_to_num(torch.tensor(dm, device=self.mvec.device, dtype=self.mvec.dtype))
 
     
     def run_iteration(self):
-        dM   = self.calc_dm()
-
-
-        self.mvec += dM
+        import time
+        time_old = time.time()
         self.iteration += 1
-        new_misfit = self.misfit()
+        self.damping_attempts = 0
+        self.test_damping = [True]*len(self.pslices)
+
+
+        dM = self.find_damping()
+        self.mvec      = self.mvec+torch.nan_to_num(dM)
+        self.new_misfit = self.misfit()
+        self.n_local += 1
+        self.data_predicted
         
-        dMisfit = (new_misfit-self.misfits[-1])/self.misfits[-1]
-        d_misfit = self.data_misfit().mean().item()
-    
-        dDatMisfit = (d_misfit - self.data_misfits[-1])/self.data_misfits[-1]
+        misfit_increased =  self.new_misfit > self.misfits[-1]
+        misfit_change_small = (abs(self.misfits[-1] - self.new_misfit) / self.new_misfit < self.data_misfit_minimum_change)
+        step_ratio_significant = torch.any(torch.abs(1 - self.max_step / self.min_step) >= 0.001)
 
-        if dMisfit>0. or dDatMisfit>0:
-            self.dampf.append(self.dampf[-1]*3.)
-            self.mvec -= dM
-            self.target_step[-1] *= 0.5
-            self.increase_count +=1
-            self.actual_step.pop(-1)
 
+        if (misfit_increased and not self.iteration < 2):
+            for i, _ in enumerate(self.pslices):
+                self.max_step[i] -= self.step_down
+            self.iteration -= 1
+            self.n_local = 0
+            self.mvec = self.mvec-dM
+            self.damp_exponent[:] += 2
+        elif self.n_local > 2:
+            for i, _ in enumerate(self.pslices):
+                self.max_step[i] += self.step_up
+            self.misfits.append(self.new_misfit)
+            self.diag_normalizer *= 3
+            self.n_local = 0
+            self.misfits.append(self.new_misfit)
+        elif misfit_change_small:
+            if step_ratio_significant:
+                for i, _ in enumerate(self.pslices):
+                    self.max_step[i] -= self.step_down
+                self.n_local = 0
+                self.misfits.append(self.new_misfit)
+                print('Reducing step size due to small misfit change')
         else:
-            self.misfits.append(new_misfit)
-            if self.misfits[-1]<1.2:
-                self.target_step.append(0.2)
-            else:
-                self.target_step.append(self.target_step[-1]+0.1)
-            self.increase_count = 0
-            self.data_misfits.append(d_misfit)
+            self.misfits.append(self.new_misfit)
+        # Check if max_step is below min_step
+        for i in range(len(self.max_step)):
+            if self.max_step[i] < self.min_step[i]:
+                self.max_step[i] = self.min_step[i]
 
-        self.log("{:03d}\tmisfit:\t{:2.2f}".format(self.iteration, self.misfits[-1]))
-        print('data misfit: ', d_misfit)
-    
+        # Decrease damping before next iteration.
+        for i in range(len(self.damp_exponent)):
+            self.damp_exponent[i] = max(self.damp_exponent[i] - 1, 0)
+        if self.misfits[-1] == self.new_misfit:
+           # with open('inversion_log.txt', 'a') as f:
+            time_new = time.time()
+            self.log("{:03d}\tData misfit:\t{:2.2f}\tVertical misfit:\t{:2.2f}\tHorizontal misfit:\t{:2.2f}\tTotal misfit:\t{:2.2f}\tStep size:\t{:2.2f}\tLast iteration time:\t{:2.2f}\n".format(
+                self.iteration,
+                torch.sqrt(self.data_misfit().sum() / len(self.data_observed)),
+                self.vert_misfit()/self.Rp.shape[0],
+                self.horz_misfit()/self.RL.shape[0],
+                self.misfits[-1],
+                self.max_step[0],
+                time_new - time_old
+            ))
+            self.n_local += 1
+        else:
+            print("{:03d}\tTotal misfit increased, smaller step\t".format(self.iteration))
+
+
+    def invert(self, iter_cap=10, **kwargs):
+        self.setup_matrices()
+        self.iter_cap = iter_cap
+        self.n_local=0
+        while not self.stop_inversion:
+            self.run_iteration()
+            
+        mres = self.model.copy()
+        mres.values = mres.modelize(self.mvec)[:self.model.n_ptypes]
+        self.model = mres
+        return mres
+        
     @property
     def stop_inversion(self):
         if super().stop_inversion:
             return True
-        if self.increase_count>2:
-            print('stop for repeated misfit increase')
-            return True
-        if self.target_step[-1]<0.01 and self.iteration>5:
-            print('stop for too small target step')
+        if torch.any(self.max_step == self.min_step):
+            self.run_iteration()
+            print('stop for reaching min step size')
             return True
         return False
     
 fastJac = fastjacobian(Inversion)
 
-from .dolphinv import LCI as dolphinv_LCI, Inversion as dInversion
-class LCI(dolphinv_LCI):
+#from .dolphinv import LCI as dolphinv_LCI, Inversion as dInversion
+class LCI(Inversion):
+    #log = print
     one_over_error = None
     n_sites        = None
     _GtG           = None
     _r_data        = None
-    target_step    = 0.5
-    dampf          = 1./5000.
+    diag_normalizer = 5e3
+    damping_factor = 3.0
+    damp_exponent_start = 6
+    max_step = 3.0
+    min_step = 1.1
+    horizontal_smoothness = 0.8
     increase_count = 0
     decrease_count = 0
     data_misfits   = np.inf
-    actual_step    = None
+
+    @property
+    def m(self):
+        return torch.concat([inv.m for inv in self.inv_list])
+
+    def __init__(self, inv_list, x=None, y=None,log=print):
+        self.log = log
+        self.damping_attempts = 0
+        self.inv_list = inv_list
+        self.data_observed = torch.concat([inv.data_observed for inv in self.inv_list])
+        self.data_error    = torch.concat([inv.data_error    for inv in self.inv_list])
+        self.recip_error_squared = 1. / self.data_error**2
+        self.iter_cap = 50
+        self.misfits = [np.inf]
+        self.NDamp = 6  # Initial damping exponent
+        self.x = x
+        self.y = y
+        self.n_model_updates=0
+
+    def make_smoothness_matrix(self):
+        n = len(self.mvec)
+        m_per_inv = len(self.inv_list[0].m)
+        RL2 = (sp.sparse.eye(n, format="csr")- sp.sparse.eye(n, k=m_per_inv, format="csr"))[:-m_per_inv]
+        return RL2
 
     def setup_matrices(self):
-        if not isinstance(self.target_step, list): self.target_step = [self.target_step]
-        if not isinstance(self.dampf, list): self.dampf = [self.dampf]
-        if not isinstance(self.actual_step, list): self.actual_step = []
-        if not isinstance(self.data_misfits, list): self.data_misfits = [self.data_misfits]        
-        return super().setup_matrices()
+        if not isinstance(self.data_misfits, list): self.data_misfits = [self.data_misfits]
+        self.mvec = self.m.to(torch.float)        
+        self.device =self.mvec.device
+        self.step_down                        = torch.log(torch.tensor(2.0))
+        self.step_up                          = torch.log(torch.tensor(1.2))
+
+
+        self.Cdi = self.recip_error_squared.to(torch.float)
+        from math import log
+        # Vertical constraints
+        # self.Rp = (sp.sparse.eye(len(self.mvec),format="csr")-sp.sparse.eye(len(self.mvec), k=1,format="csr"))
+        # print(self.Rp.shape)
+        n_cols = len(self.mvec)
+        n_rows = n_cols - len(self.inv_list)
+        
+
+        rows = []
+        cols = []
+        data = []
+
+        for i in range(n_rows):
+            shift = i // len(self.inv_list[0].m)
+            j = i + shift
+
+            if j < n_cols:
+                rows.append(i)
+                cols.append(j)
+                data.append(1.0)
+
+            if j + 1 < n_cols:
+                rows.append(i)
+                cols.append(j + 1)
+                data.append(-1.0)
+
+        self.Rp = sp.sparse.coo_matrix((data, (rows, cols)), shape=(n_rows, n_cols))
+        self.Rp = self.Rp.tocsr()
+        self.C_rp = sp.sparse.eye(self.Rp.shape[0])/log(1.+self.vertical_smoothness)**2
+        HtH = self.Rp.T @ self.C_rp @ self.Rp
+
+        # Horizontal constraints
+        self.RL= self.make_smoothness_matrix()
+        self.C_rl = sp.sparse.eye(self.RL.shape[0])/log(1.+self.horizontal_smoothness)**2
+        LtL = self.RL.T @ self.C_rl @ self.RL
+        
+        self.CtC = (HtH + LtL)
+
+        self.iteration     = 0
+        self._model_update(self.mvec)
+
+        all_pslices = [[] for _ in self.inv_list[0].model.pslice]
+        for inv in self.inv_list:
+            for i, pslice in enumerate(inv.model.pslice):
+                pslice_bool = torch.zeros_like(inv.m, dtype=torch.bool)
+                pslice_bool[pslice] = True
+                all_pslices[i].append(pslice_bool)
+        self.pslices = [torch.concat(slices).to(self.device) for slices in all_pslices]
+        self.damp_exponent = torch.ones(len(self.pslices))*self.damp_exponent_start
+        if hasattr(self.inv_list[0].model, 'max_step'):
+            self.max_step = self.inv_list[0].model.max_step
+        else:
+            self.max_step = torch.ones(len(self.inv_list[0].pslices))*self.max_step_init
+
+        if hasattr(self.inv_list[0].model, 'min_step'):
+            self.min_step = self.inv_list[0].model.min_step
+        else:
+            self.min_step = torch.ones(len(self.inv_list[0].pslices))*self.min_step
+        self.damp_increase = torch.ones(len(self.pslices)).bool()
+        return #super().setup_matrices()
+
+    def horz_misfit(self):
+        r_mod = -self.RL * self.mvec
+        m_misfit = r_mod @ self.C_rl @ r_mod
+        return m_misfit.mean()
+
+    def misfit(self):
+        return torch.sqrt((self.data_misfit().sum()+self.vert_misfit()+self.horz_misfit())/(len(self.data_observed)+self.RL.shape[0]+self.Rp.shape[0]))
 
     def mforward(self, mvec):
         if self.n_sites is None: self.n_sites = len(self.inv_list)
@@ -406,7 +602,7 @@ class LCI(dolphinv_LCI):
                 (eye_blocks, indices, indptr),
                 shape=self._GtG.shape,
             )
-            self.CtC = sp.sparse.bsr_matrix(self.CtC.cpu().numpy())
+            #self.CtC = sp.sparse.bsr_matrix(self.CtC.cpu().numpy())
             
         else:
             self._GtG.data[...] = GtG_np*1.  # no flattening
@@ -414,94 +610,36 @@ class LCI(dolphinv_LCI):
         self._r_data = r_data.cpu().numpy().flatten()
         self.cmvec = self.mvec.cpu().numpy()*1.
 
-    def calc_dm(self):
-        
-        cdamp = self.dampf[-1]*1.
-      #  if self.iteration==0:
-        gtgmax = self._GtG.diagonal().max()
-        cdamp *= gtgmax
-        cdamp = max(cdamp, 1.)
-        # if self.iteration>2:
-        #     Aown = self._GtG*self.data_misfits[-1] + self.CtC*self.misfits[-1]
-        # else:
-        Aown = self._GtG + self.CtC
-        cImod = self.Imod.copy()
-        # cImod.data[:] = 1.
-        # cImod.data[self._GtG.data<1e-6] = 0.
-        # dm = sp.sparse.linalg.spsolve(Aown+cImod*cdamp, self._r_data)[0]
-        dm = sp.sparse.linalg.cg(Aown+cImod*cdamp, self._r_data, maxiter=500)[0]
-        dm_rep = np.max(np.abs(dm))
-        
-        attempts=1
-        measure = [dm_rep]
-        
-        while attempts<25:
-            if dm_rep<self.target_step[-1]*0.75:
-                cdamp /= (1.2)**attempts
-            elif dm_rep>self.target_step[-1]*1.5:
-                cdamp *= (1.2)**attempts
-            else:
-                break
-            # dm = sp.sparse.linalg.spsolve(Aown+cImod*cdamp, self._r_data)[0]
-            dm = sp.sparse.linalg.cg(Aown+cImod*cdamp, self._r_data, maxiter=500)[0]
-            dm_rep = np.max(np.abs(dm))
-            measure.append(dm_rep)
-            attempts+=1
-        self.actual_step.append(dm_rep)
-        print(attempts, ' attempts ', measure)
-        self.dampf.append(cdamp/gtgmax)
-        return torch.nan_to_num(torch.tensor(dm, device=self.mvec.device, dtype=self.mvec.dtype))
-
     
-    def run_iteration(self):
-        dM   = self.calc_dm()
-
-
-        self.mvec += dM
-        self.iteration += 1
-        new_misfit = self.misfit()
+    def invert(self, iter_cap=10, **kwargs):
+        self.setup_matrices()
+        self.iter_cap = iter_cap
+        self.n_local=0
+        while not self.stop_inversion:
+            self.run_iteration()
+            
+        # Split mvec back to each inversion
+        mres_list = []
+        mvecs = self.mvec.reshape(len(self.inv_list), -1)
+        for inv, mvec in zip(self.inv_list, mvecs):
+            mres = inv.model.copy()
+            mres.values = mres.modelize(mvec)[:inv.model.n_ptypes]
+            inv.model = mres
+            mres_list.append(mres)
         
-        dMisfit = (new_misfit-self.misfits[-1])/self.misfits[-1]
-        d_misfit = self.data_misfit().mean().item()
-        
-        print('dMisfit: ', dMisfit)
-        dDatMisfit = (d_misfit - self.data_misfits[-1])/self.data_misfits[-1]
+        return mres_list
 
-        if dMisfit>0. or dDatMisfit>0:
-            self.dampf.append(self.dampf[-1]*3.)
-            self.mvec -= dM
-            self.target_step[-1] *= 0.5
-            self.increase_count +=1
-            self.decrease_count = 0
-            self.actual_step.pop(-1)
-        # elif dMisfit>0.1:
-        #     self.dampf.append(self.dampf[-1]*1.1)
-        #     self.target_step.append(max(self.target_step[-1]/2., self.target_step[-1]*-0.1))
-        #     self.misfits.append(new_misfit)
-        #     self.data_misfits.append(d_misfit)
-        #     self.increase_count += 1
-        else:
-            self.misfits.append(new_misfit)
-            self.decrease_count += 1
-            self.increase_count = 0
-            if self.decrease_count>2:
-                #self.target_step.append(self.target_step[-1]*1.2)
-                self.target_step.append(self.target_step[-1]+0.1)
-                self.decrease_count = 0
-            self.data_misfits.append(d_misfit)
-
-        self.log("{:03d}\tmisfit:\t{:2.2f}".format(self.iteration, self.misfits[-1]))
-        print('data misfit: ', d_misfit)
-    
     @property
     def stop_inversion(self):
         if super().stop_inversion:
             return True
-        if self.increase_count>2:
-            print('stop for repeated misfit increase')
+        if self.iteration<=1:
+            return False
+        if (abs(self.misfits[-2]-self.misfits[-1]) / self.misfits[-1]) < self.data_misfit_minimum_change and self.misfits[-1]>self.misfits[-2]:
+            self.log(f'misfit change is less than {self.data_misfit_minimum_change}')
             return True
-        if self.target_step[-1]<0.01 and self.iteration>5:
-            print('stop for too small target step')
+        if torch.any(self.max_step == self.min_step):
+            print('stop for reaching min step size')
             return True
         return False
 
@@ -554,5 +692,5 @@ class SCI(LCI):
 
         for i in range(n_layers):
             c_mat[i::n_layers, :] = np.roll(c_mat[i::n_layers, :], i, axis=1)
-        return torch.from_numpy(c_mat)
-    
+
+        return sp.sparse.csr_matrix(c_mat)
