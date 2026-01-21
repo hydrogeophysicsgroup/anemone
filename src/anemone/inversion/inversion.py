@@ -191,15 +191,6 @@ class Tikhonov(BaseInversion):
     def invert(self, iter_cap=10, **kwargs):
         return super().invert(iter_cap=iter_cap, **kwargs)
 
-
-# class BaseInversion(BaseInversion):
-#     def mforward(self, mvec):
-#         return super().mforward(mvec).detach().cpu().numpy()
-
-# class Tikhonov(Tikhonov):
-#     def mforward(self, mvec):
-#         return super().mforward(mvec).detach().cpu().numpy()
-
 def fastjacobian(cls):
     class FastJacobian(cls):
         def jacobian(self, mvec):
@@ -414,7 +405,6 @@ class Inversion(BaseInversion):
     
 fastJac = fastjacobian(Inversion)
 
-#from .dolphinv import LCI as dolphinv_LCI, Inversion as dInversion
 class LCI(Inversion):
     #log = print
     one_over_error = None
@@ -602,8 +592,6 @@ class LCI(Inversion):
                 (eye_blocks, indices, indptr),
                 shape=self._GtG.shape,
             )
-            #self.CtC = sp.sparse.bsr_matrix(self.CtC.cpu().numpy())
-            
         else:
             self._GtG.data[...] = GtG_np*1.  # no flattening
         
@@ -623,10 +611,8 @@ class LCI(Inversion):
         mvecs = self.mvec.reshape(len(self.inv_list), -1)
         for inv, mvec in zip(self.inv_list, mvecs):
             mres = inv.model.copy()
-            mres.values = mres.modelize(mvec)[:inv.model.n_ptypes]
-            inv.model = mres
-            mres_list.append(mres)
-        
+            mres.values = mres.modelize(mvec)
+            mres_list.append(mres.copy())
         return mres_list
 
     @property

@@ -12,6 +12,7 @@ class BaseModel:
     upper_bounds: List[torch.Tensor]
     free_params: List[bool] = None
     description: str = "Base model class for inversion models"
+    log_scale: bool = False
 
     def __init__(self, values, **kwargs):
         if not isinstance(values, list): values = [values]
@@ -67,9 +68,12 @@ class BaseModel:
         return self.vectorize(self.values)
     
     def vectorize(self, list_of_arrays):
-        return torch.concatenate([v for v,free in zip(list_of_arrays, self.free_params) if free])
+        res = torch.concatenate([v for v,free in zip(list_of_arrays, self.free_params) if free])
+        if self.log_scale: res = torch.log(res)
+        return res
 
     def modelize(self, mvec):
+        if self.log_scale: mvec = torch.exp(mvec)
         assert len(mvec) == self.n_params, 'incorrect number of parameters in update vector'
         i_m = 0
         
@@ -178,6 +182,7 @@ def logify(cls):
 
 @nosj
 class Resistivity(BaseModel):
+    log_scale: bool = True
     def __init__(self, values, **kwargs):
         res_bnds = kwargs.pop('res_bnds', (1e-1, 2e4))
         thk_bnds = kwargs.pop('thk_bnds', (1, 100))
@@ -197,8 +202,9 @@ class Resistivity(BaseModel):
         self.max_step = max_step
         self.min_step = min_step
 
-
+@nosj
 class MPA(BaseModel):
+    log_scale: bool = True
     def __init__(self, values, **kwargs):
         res_bnds = kwargs.pop('res_bnds', (1,    1e3))
         phi_bnds = kwargs.pop('phi_bnds', (1e-5, 1e-1))
@@ -224,6 +230,7 @@ class MPA(BaseModel):
         self.max_step = max_step
         self.min_step = min_step
 
+@nosj
 class ColeCole(BaseModel):
     def __init__(self, values, **kwargs):
         res_bnds = kwargs.pop('res_bnds', (1,    1e3))
@@ -250,6 +257,7 @@ class ColeCole(BaseModel):
         self.max_step = max_step
         self.min_step = min_step    
 
-LogResistivity = logify(Resistivity)
-LogMPA = logify(MPA)
-LogColeCole = logify(ColeCole)
+# for backward compatibility
+LogResistivity = Resistivity
+LogMPA         = MPA
+LogColeCole    = ColeCole
