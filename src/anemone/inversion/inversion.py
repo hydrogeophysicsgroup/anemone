@@ -215,6 +215,8 @@ class Inversion(BaseInversion):
     damp_exponent_start = 6
     diag_normalizer = 5e3
     damping_factor = 3.0
+    step_down = torch.log(torch.tensor(2.0))
+    step_up   = torch.log(torch.tensor(1.2))
     increase_count = 0
     data_misfits = np.inf
 
@@ -227,13 +229,16 @@ class Inversion(BaseInversion):
 
         super().setup_matrices()
         self.Rp = self.model.H()
+        self.Rp = self.Rp.to(self.mvec.dtype)
         self.C_rp = np.diag(np.ones(self.Rp.shape[0]) / np.log1p(self.vertical_smoothness)**2)
+        self.C_rp = self.C_rp.astype(np.float32)
         self.HtH = self.Rp.T @ self.C_rp @ self.Rp
         self.HtH = self.HtH.to(self.mvec.dtype)
         self.CtC = self.HtH
         self.damp_exponent = torch.ones(len(self.pslices))*self.damp_exponent_start
         self._model_update(self.mvec)
         self.max_step = torch.ones(len(self.pslices))*self.max_step
+        self.min_step = torch.ones(len(self.pslices))*self.min_step
         self.damp_increase = torch.ones(len(self.pslices)).bool()
         #step_down                        = torch.log(torch.tensor(2.0))
         #step_up                          = torch.log(torch.tensor(1.2))
@@ -241,10 +246,10 @@ class Inversion(BaseInversion):
     def vert_misfit(self):
         r_mod = -self.Rp @ self.mvec
         m_misfit = r_mod @ self.C_rp @ r_mod
-        return m_misfit.mean()
+        return m_misfit.mean()/self.Rp.shape[0]
 
     def misfit(self):
-        return torch.sqrt(self.data_misfit().mean()+self.vert_misfit())
+        return torch.sqrt(self.data_misfit().sum()+self.vert_misfit())/(torch.tensor(len(self.data_observed)+self.Rp.shape[0], dtype=self.mvec.dtype))
     
     def damp_matrix(self):
         if self.damping_attempts==0:
@@ -312,7 +317,7 @@ class Inversion(BaseInversion):
         
 
     def calc_dm(self):
-        Aown = (self._GtG) + self.CtC + self.damp_matrix()
+        Aown = self._GtG + self.CtC + self.damp_matrix()
         dm = sp.sparse.linalg.spsolve(Aown, self._r_data)
 
         return torch.nan_to_num(torch.tensor(dm, device=self.mvec.device, dtype=self.mvec.dtype))
@@ -371,15 +376,25 @@ class Inversion(BaseInversion):
         if self.misfits[-1] == self.new_misfit:
            # with open('inversion_log.txt', 'a') as f:
             time_new = time.time()
-            self.log("{:03d}\tData misfit:\t{:2.2f}\tVertical misfit:\t{:2.2f}\tHorizontal misfit:\t{:2.2f}\tTotal misfit:\t{:2.2f}\tStep size:\t{:2.2f}\tLast iteration time:\t{:2.2f}\n".format(
-                self.iteration,
-                torch.sqrt(self.data_misfit().sum() / len(self.data_observed)),
-                self.vert_misfit()/self.Rp.shape[0],
-                self.horz_misfit()/self.RL.shape[0],
-                self.misfits[-1],
-                self.max_step[0],
-                time_new - time_old
-            ))
+            if hasattr(self, "inv_list") and isinstance(self.inv_list, list):
+                self.log("{:03d}\tData misfit:\t{:2.2f}\tVertical misfit:\t{:2.2f}\tHorizontal misfit:\t{:2.2f}\tTotal misfit:\t{:2.2f}\tStep size:\t{:2.2f}\tLast iteration time:\t{:2.2f}\n".format(
+                    self.iteration,
+                    torch.sqrt(self.data_misfit().sum() / len(self.data_observed)),
+                    self.vert_misfit()/self.Rp.shape[0],
+                    self.horz_misfit()/self.RL.shape[0],
+                    self.misfits[-1],
+                    self.max_step[0],
+                    time_new - time_old
+                ))
+            else:
+                self.log("{:03d}\tData misfit:\t{:2.2f}\tVertical misfit:\t{:2.2f}\tTotal misfit:\t{:2.2f}\tStep size:\t{:2.2f}\tLast iteration time:\t{:2.2f}\n".format(
+                    self.iteration,
+                    torch.sqrt(self.data_misfit().sum() / len(self.data_observed)),
+                    self.vert_misfit()/self.Rp.shape[0],
+                    self.misfits[-1],
+                    self.max_step[0],
+                    time_new - time_old
+                ))
             #self.n_local += 1
         else:
             print("{:03d}\tTotal misfit increased, smaller step\t".format(self.iteration))
@@ -540,6 +555,12 @@ class LCI(Inversion):
         self._dpred = self.mforward(self.mvec)
         self.jacobian(self.mvec)
         self._r_data -= self.CtC @ self.cmvec 
+    
+    def calc_dm(self):
+        Aown = sp.sparse.csr_matrix(self._GtG) + self.CtC + self.damp_matrix()
+        dm = sp.sparse.linalg.spsolve(Aown, self._r_data)
+
+        return torch.nan_to_num(torch.tensor(dm, device=self.mvec.device, dtype=self.mvec.dtype))
 
     def make_smoothness_matrix(self):
         n = len(self.mvec)
@@ -724,7 +745,7 @@ class SCI(LCI):
         constraint_strength = min_dist.mean() / all_dist
 
         # --- Model layout ---
-        n_layers = self.inv_list[0].nM
+        n_layers = self.inv_list[0].model.n_layers
         n_constraints = n_pairs * n_layers
         n_params = n_points * n_layers
 
