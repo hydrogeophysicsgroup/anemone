@@ -27,6 +27,7 @@ def aarhusInv_stepoff_comparison(ForwardMaker, **kwargs):
 
     lp = Loop.square(40)
     rx = Receiver()
+    print(lp)
 
     rho = 40*torch.ones(3)
     thick = torch.tensor([10, 10])
@@ -741,14 +742,15 @@ def test_save():
 
 if __name__ == '__main__':
     
-    # test_halfspace_circle_center_forward()
+    #test_halfspace_circle_center_forward()
+    test_colecole_forwardTD()
     # test_halfspace_circle_center()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_piecewise_waveform()
     # test_forward_parallel_models()
     # test_colecole_forwardTD()
     #test_mpaforwardTD()
-    test_save()
+    #test_40x40_aarhusInv_stepoff()
 
     #test_multirx_forward_shape_check()
     # test_multireceiver_frequency_domain()

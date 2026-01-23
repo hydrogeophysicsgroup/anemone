@@ -1,6 +1,8 @@
 import numpy as np
 import torch
-from .. import constants as c, rdtype, cdtype
+from anemone import constants as c, rdtype, cdtype
+from nosj import nosj
+
 
 S1 = lambda x: 1 - (9/4)*x**2 * ( 1 - 2./9*x*(1 + 5/2*x*(1 - 2/5 * x)))
 S2 = lambda x: -1/2*x*(1 - 11/6*x*(1 - 2/11*x*(1 + 5/2*x*(1-2/5*x))))
@@ -19,21 +21,31 @@ def lamontagne(x):
     
     return phi
 
-class Receiver:
-    def __init__(self, x=0., y=0., z=0., grid=True) -> None:
-        self.x = torch.tensor(x, dtype=rdtype)
-        self.y = torch.tensor(y, dtype=rdtype)
-        self.z = torch.tensor(z, dtype=rdtype)
-        
-        if grid:
-            self.grid()
-        else:
-            npoints = max(len(self.x), len(self.y),len(self.z))
-            if len(self.x)==1: self.X = torch.ones(npoints)*self.x
-            if len(self.y)==1: self.Y = torch.ones(npoints)*self.y
-            if len(self.z)==1: self.Z = torch.ones(npoints)*self.z
+from torch import Tensor
 
-    def grid(self):
+@nosj
+class Receiver: 
+    x       : Tensor
+    y       : Tensor
+    z       : Tensor
+    grid    : bool = True
+
+    def __init__(self, x=0., y=0., z=0., grid=False) -> None:
+        self.x = torch.tensor(x, dtype=rdtype) if not isinstance(x, Tensor) else x.to(rdtype)
+        self.y = torch.tensor(y, dtype=rdtype) if not isinstance(y, Tensor) else y.to(rdtype)
+        self.z = torch.tensor(z, dtype=rdtype) if not isinstance(z, Tensor) else z.to(rdtype)
+        self.grid = grid
+        
+        if self.grid:
+            self._grid()
+        else:
+            all_points = [coord.numel() for coord in (self.x, self.y, self.z)]
+            npoints = max(all_points)
+            self.X = self.x if self.x.numel()!=npoints else torch.ones(npoints)*self.x
+            self.Y = self.y if self.y.numel()!=npoints else torch.ones(npoints)*self.y
+            self.Z = self.z if self.z.numel()!=npoints else torch.ones(npoints)*self.z
+
+    def _grid(self):
         X,Y,Z = torch.meshgrid(self.x, self.y, self.z, indexing='ij')
         self.shp = X.shape+(3,)
         self.X = X.squeeze()
@@ -53,17 +65,22 @@ class Receiver:
     def __len__(self):
         return self.X.numel()
 
+@nosj
 class Loop:
-    def __init__(self, x, y, z):
-        if not isinstance(x, torch.Tensor):
-            self.x = torch.tensor(x, dtype=rdtype)
-            self.y = torch.tensor(y, dtype=rdtype)
-            self.z = torch.tensor(z, dtype=rdtype)
-        else:
-            self.x = x
-            self.y = y
-            self.z = z
+    x : Tensor
+    y : Tensor
+    z : Tensor
+
+    def __init__(self, x, y, z, **kwargs) -> None:
+        self.x = torch.tensor(x, dtype=rdtype) if not isinstance(x, Tensor) else x.to(rdtype)
+        self.y = torch.tensor(y, dtype=rdtype) if not isinstance(y, Tensor) else y.to(rdtype)
+        self.z = torch.tensor(z, dtype=rdtype) if not isinstance(z, Tensor) else z.to(rdtype)
+        
         if not torch.all(self.z == self.z[0]): raise NotImplemented('current implementation only supports horizontal transmitter loops; all z values must be equal.')
+        r2 = self.x[0]**2 + self.y[0]**2
+        if torch.allclose(self.x**2 + self.y**2, r2) and len(self.x)>=20:
+            self.area = torch.pi*r2
+            self.radius = torch.sqrt(r2)
 
     @classmethod
     def circle(cls, radius, n=40, **kwargs):
@@ -73,7 +90,7 @@ class Loop:
         x = r*torch.cos(t)
         y = r*torch.sin(t)
         z = torch.ones_like(x)*kwargs.get('z', 0.)
-        lp = cls(x, y, z)
+        lp = cls(x, y, z, **kwargs)
         lp.area = torch.pi*radius**2
         lp.radius = r
         return lp
@@ -190,7 +207,6 @@ class Loop:
             radius = self.radius
         logR = torch.log(R).cpu()
         dR = logR[1]-logR[0]
-
         phi = lamontagne((torch.log(radius)-logR)/dR)
         geomz = 2*torch.pi*phi*radius
         return geomz.to(R.device)
@@ -287,7 +303,10 @@ def integrate_around_loop(lp, rx, hr):
         return HR.T.squeeze()
 
 
+@nosj
 class Waveform:
+    time      : Tensor
+    amplitude : Tensor
     def __init__(self, time, amplitude):
         self.time      = time      if isinstance(time, torch.Tensor)      else torch.tensor(time)
         self.amplitude = amplitude if isinstance(amplitude, torch.Tensor) else torch.tensor(amplitude)
@@ -311,19 +330,21 @@ class Waveform:
         wv = torch.tensor([0, 1, 1, 0], dtype=rdtype)
         return cls(t, wv)
 
-class SystemResponse(Waveform):
+@nosj
+class SystemResponse:
+    time      : Tensor
+    dSRdt     : Tensor
     def __init__(self, time, dSRdt):
         np_time = time.numpy()
         dtime = torch.from_numpy(np.diff(np_time, prepend=np_time[0]))
         amplitude = dSRdt * dtime
-        super().__init__(time, dSRdt)
+        Waveform(time, dSRdt)
         self.d2wdt2 = amplitude
 
-
+@nosj
 class ButterworthFilter:
-    def __init__(self, fcut, order=1):
-        self.fcut = fcut
-        self.order = order
+    fcut : float
+    order : int = 1
 
     def omega_filter(self, omega):
         return self.__call__(omega/c.twopi)
@@ -335,11 +356,12 @@ class ButterworthFilter:
         elif self.order==3: recip_resp = (s**2 + s + 1)*(1+s)
         elif self.order==4: recip_resp = (s**2 + 1.84776*s+1)*(s**2 + 0.76537*s+1)
         return 1./recip_resp
-    
+
+from typing import List
+
+@nosj
 class FilterChain:
-    """filter based on frequency in Hz (f), not radians/s (Omega)"""
-    def __init__(self, filters):
-        self.filters = filters
+    filters : List[ButterworthFilter]
     
     def omega_filter(self, omega):
         return self.__call__(omega/c.twopi)
@@ -355,3 +377,16 @@ class FilterChain:
     
     def __iter__(self):
         return iter(self.filters)
+    
+
+if __name__ == "__main__":
+    f1 = ButterworthFilter(1000., order=2)
+    f2 = ButterworthFilter(5000., order=1)
+    fc = FilterChain([f1, f2])
+
+    fc.save('test_filterchain.json')
+    fc2 = FilterChain.load('test_filterchain.json', load_subclasses=True)
+    print(fc)
+    print(fc2)
+    assert len(fc)==len(fc2)
+    print('is fc and fc2 equal?', fc==fc2)

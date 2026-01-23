@@ -6,29 +6,47 @@ import scipy as sp
 import numpy as np
 from torch.linalg import solve
 
-class BaseInversion:
-    """ Bare-bones damped least squares inversion class. """
-    jac_perturbation_fraction        = 0.02
-    data_misfit_acceptance_threshold = 0.1
-    data_misfit_minimum_change       = 0.007
-    damp_value                       = 5000.
-    damp_reduction_factor            = np.sqrt(2)
-    iter_cap                         = 50
-    _dpred                           = None
+from nosj import nosj
+from .models import BaseModel
+from anemone.forwards import Forward
 
-    def __init__(self, data_observed, data_error, starting_model,  forward_operator, logger=print):
+@nosj
+class BaseInversion:
+    data_observed                    : torch.Tensor
+    data_error                       : torch.Tensor
+    starting_model                   : BaseModel
+    forward                          : Forward
+    jac_perturbation_fraction        : float = 0.02
+    data_misfit_acceptance_threshold : float = 0.1
+    data_misfit_minimum_change       : float = 0.007
+    damp_value                       : float = 5000.
+    damp_reduction_factor            : float = 2**0.5
+    iter_cap                         : int = 50
+    final_model                      : BaseModel = None
+    description                      : str = "Inversion Class"
+
+
+    def __init__(self, data_observed, data_error, starting_model,  forward, **kwargs):
         """Create an inversion object, the necessary """
-        self.data_observed       = data_observed
-        self.data_error          = data_error
-        self.model               = starting_model
-        self.forward             = forward_operator
-        self.result              = None
-        self.nM                  = len(self.m)
-        self.nD                  = len(data_observed)
-        self.recip_error_squared = 1./self.data_error**2
-        self.log                 = logger
-        self.device = self.model.vec.device
-        self.pslices = self.model.pslice
+        self.data_observed                    = data_observed
+        self.data_error                       = data_error
+        self.starting_model                   = starting_model.copy()
+        self.model                            = starting_model
+        self.forward                          = forward
+        self.nM                               = len(self.m)
+        self.nD                               = len(data_observed)
+        self.recip_error_squared              = 1./self.data_error**2
+        self.log                              = kwargs.get('logger', print)
+        self.device                           = self.model.vec.device
+        self.pslices                          = self.model.pslice
+        self.jac_perturbation_fraction        = kwargs.get('jac_perturbation_fraction', self.jac_perturbation_fraction)
+        self.data_misfit_acceptance_threshold = kwargs.get('data_misfit_acceptance_threshold', self.data_misfit_acceptance_threshold)
+        self.data_misfit_minimum_change       = kwargs.get('data_misfit_minimum_change', self.data_misfit_minimum_change)
+        self.damp_value                       = kwargs.get('damp_value', self.damp_value)
+        self.damp_reduction_factor            = kwargs.get('damp_reduction_factor', self.damp_reduction_factor)
+        self.iter_cap                         = kwargs.get('iter_cap', self.iter_cap)
+        self.final_model                      = kwargs.get('final_model', self.final_model)
+
 
     def set_device(self, device):
         # self.device=device
@@ -51,12 +69,10 @@ class BaseInversion:
     def misfit(self):
         return torch.sqrt(self.data_misfit().mean())
     
-
     def jacobian(self, mvec):
-        self.mvec = mvec
         dm   = mvec*self.jac_perturbation_fraction
         dm[dm==0] = self.jac_perturbation_fraction
-        m_pert    = torch.diag(dm) + mvec[:, None]
+        m_pert    = torch.diag(dm) + mvec.clone()[:, None]
         d_data    = self.mforward(m_pert)
         Gt = (d_data - self.data_predicted) / dm[:, None]
         return Gt.T
@@ -64,7 +80,6 @@ class BaseInversion:
     def _model_update(self, mvec):
         self.mvec = mvec
         self._current_mvec = self.mvec*1.
-
         self._dpred = self.mforward(self.mvec)
         self._G = self.jacobian(self.mvec)
         self._GtG = self._G.T @ self.Cdi @ self._G
@@ -105,12 +120,10 @@ class BaseInversion:
         self._current_mvec = self.mvec*1.1 if torch.all(self.mvec!=0) else torch.ones_like(self.mvec)# make sure the jacobian is calculated at least once
         self.Cdi = torch.diag(self.recip_error_squared).to(rdtype)
         self.Imod = torch.eye(len(self.mvec), device=self.mvec.device)
-        self._current_mvec = self.mvec*1.1 if torch.all(self.mvec!=0) else torch.ones_like(self.mvec)# make sure the jacobian is calculated at least once
         self._G = None
         
         self.iteration   = 0
         self.misfits     = [np.inf]
-        #self.misfits.append(self.misfit())
         self.set_device(self.mvec.device)
 
 
@@ -127,9 +140,6 @@ class BaseInversion:
         if self.misfits[-1]<self.data_misfit_acceptance_threshold:
             self.log(f'misfit is below {self.data_misfit_acceptance_threshold}, stopping inversion')
             return True
-        #if self.misfits[-1]>self.misfits[-2] and self.misfits[-3]==min(self.misfits):
-        #    self.log('misfit is increasing, stopping inversion')
-        #    return True
         if self.iteration>=self.iter_cap:
             self.log('reached iteration cap..')
             return True
@@ -143,7 +153,7 @@ class BaseInversion:
     def run_iteration(self):
         dM   = self.calc_dm()
         self.damp_value *= self.damp_reduction_factor
-        #self.mvec = self.model.make_physical(self.mvec + dM)
+        # self.mvec = self.model.make_physical(self.mvec + dM)
         self.mvec += torch.nan_to_num(dM)
         self.iteration += 1
         self.misfits.append(self.misfit())
@@ -155,58 +165,44 @@ class BaseInversion:
 
         while not self.stop_inversion:
             self.run_iteration()
-
-        mres = self.model.copy()
-        mres.values = mres.modelize(self.mvec)[:self.model.n_ptypes]
-        return mres
+        self.final_model = self.model.update_values(self.mvec)
+        return self.final_model
 
 class Tikhonov(BaseInversion):
-    vertical_smoothness = 1e2
+    vertical_smoothness = 0.2
 
     def setup_matrices(self):
+        from math import log
         super().setup_matrices()
-        self.HtH = self.model.H().T @ self.model.H() * self.vertical_smoothness
+        self.HtH = self.model.H().T @ (self.model.H() * log(1.+self.vertical_smoothness)**-2)
 
     def calc_dm(self):
         r_data = self.G.T @ self.Cdi @ (self.data_observed-self.data_predicted)
         Aown = self.GtG + self.damp_matrix + self.HtH
         return solve(Aown, r_data)
 
-    def invert(self, iter_cap=10, **kwargs):
-        return super().invert(iter_cap=iter_cap, **kwargs)
-
-
-# class BaseInversion(BaseInversion):
-#     def mforward(self, mvec):
-#         return super().mforward(mvec).detach().cpu().numpy()
-
-# class Tikhonov(Tikhonov):
-#     def mforward(self, mvec):
-#         return super().mforward(mvec).detach().cpu().numpy()
 
 def fastjacobian(cls):
     class FastJacobian(cls):
+        def __post_init__(self):
+            super().__post_init__()
+            assert self.forward.kind=='res', "FastJacobian only works for resistivity forward models"
+            assert self.model.free[-1]==False, "FastJacobian only works for models with fixed thicknesses"
+
         def jacobian(self, mvec):
             self.mvec = mvec*1.
             rho, thick = self.model.modelize(mvec)
             # rho = torch.from_numpy(rho)
-            #print(thick)
-            # thick = torch.from_numpy(thick)# if thick is not None else None
+            if isinstance(thick, np.ndarray): thick = torch.from_numpy(thick)
             G = self.forward(rho, thick, jac=True)#.detach().cpu().numpy()
             G *= rho[:, None]
             #self._dpred = torch.tensor(self.data_predicted, device=self.mvec.device, dtype=self.mvec.dtype)
             G /= self.data_predicted.exp()
             return G.T
-        def copy(self):
-            from copy import deepcopy
-            return deepcopy(self) 
-        def calc_dm(self):
-            dm = super().calc_dm()
-            return dm
     return FastJacobian
 
 
-
+@nosj
 class Inversion(BaseInversion):
     log = print
     vertical_smoothness = 0.2
@@ -221,6 +217,10 @@ class Inversion(BaseInversion):
     damping_factor = 3.0
     increase_count = 0
     data_misfits = np.inf
+
+    def __init__(self, data_observed, data_error, starting_model,  forward, **kwargs):
+        """Create an inversion object, the necessary """
+        super().__init__(data_observed, data_error, starting_model, forward, **kwargs)
     
     def setup_matrices(self):
         if not isinstance(self.data_misfits, list): self.data_misfits = [self.data_misfits]
@@ -409,7 +409,6 @@ class Inversion(BaseInversion):
     
 fastJac = fastjacobian(Inversion)
 
-#from .dolphinv import LCI as dolphinv_LCI, Inversion as dInversion
 class LCI(Inversion):
     #log = print
     one_over_error = None
@@ -423,6 +422,7 @@ class LCI(Inversion):
     min_step = 1.1
     horizontal_smoothness = 0.8
     increase_count = 0
+    decrease_count = 0
     data_misfits   = np.inf
 
     @property
@@ -530,8 +530,9 @@ class LCI(Inversion):
     def mforward(self, mvec):
         if self.n_sites is None: self.n_sites = len(self.inv_list)
         mvecs = mvec.reshape(self.n_sites, -1).T
+        _, thickness = self.inv_list[0].model.mod
         rhos = mvecs.exp()
-        self._dpredgrid = self.inv_list[0].forward(rhos, self.inv_list[0].model.thickness)
+        self._dpredgrid = self.inv_list[0].forward(rhos, thickness)
         return self._dpredgrid.flatten()
     
     def _model_update(self, mvec):
@@ -543,6 +544,11 @@ class LCI(Inversion):
         self.jacobian(self.mvec)
         self._r_data -= self.CtC @ self.cmvec 
 
+    def make_smoothness_matrix(self):
+        n = len(self.mvec)
+        m_per_inv = len(self.inv_list[0].m)
+        return (sp.sparse.eye(n)-sp.sparse.eye(n, k=m_per_inv))[:-m_per_inv]
+
     def jacobian(self, mvec):
         if self.one_over_error is None:
             self.n_sites = len(self.inv_list)
@@ -550,8 +556,9 @@ class LCI(Inversion):
             self._dobsgrid = self.data_observed.reshape(self.n_sites, -1)
             self._derrgrid = self.data_error.reshape(self.n_sites, -1)**2
         mvecs = mvec.reshape(self.n_sites, -1).T
+        _,thick = self.inv_list[0].model.mod
         rhos = mvecs.exp()
-        thick = self.inv_list[0].model.thickness
+        # thick = self.inv_list[0].model.thickness
         Ggrid = torch.empty((self.n_sites, len(thick)+1, self._dobsgrid.shape[-1]), dtype=rdtype, device=self.device)
         if self.n_sites<100:
             Ggrid = self.inv_list[0].forward(rhos, thick, jac=True)
@@ -589,8 +596,6 @@ class LCI(Inversion):
                 (eye_blocks, indices, indptr),
                 shape=self._GtG.shape,
             )
-            #self.CtC = sp.sparse.bsr_matrix(self.CtC.cpu().numpy())
-            
         else:
             self._GtG.data[...] = GtG_np*1.  # no flattening
         
@@ -610,10 +615,8 @@ class LCI(Inversion):
         mvecs = self.mvec.reshape(len(self.inv_list), -1)
         for inv, mvec in zip(self.inv_list, mvecs):
             mres = inv.model.copy()
-            mres.values = mres.modelize(mvec)[:inv.model.n_ptypes]
-            inv.model = mres
-            mres_list.append(mres)
-        
+            mres.values = mres.modelize(mvec)
+            mres_list.append(mres.copy())
         return mres_list
 
     @property
