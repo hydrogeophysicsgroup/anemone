@@ -189,10 +189,12 @@ class Resistivity(BaseModel):
     free_params:  List[bool] = field(default_factory=lambda: [True, True])
     description: str = "Resistivity class for inversion models"    
     log_scale: bool = True
+    
     def __post_init__(self):
         super().__post_init__()
         self.max_step = torch.log(torch.tensor([3.0, 1.6]))
         self.min_step = torch.log(torch.tensor([1.1, 1.03]))
+        self.n_layers = len(self.values[0])
 
 @nosj
 class MPA(BaseModel):
