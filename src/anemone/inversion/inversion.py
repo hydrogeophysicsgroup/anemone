@@ -214,7 +214,11 @@ class Inversion(BaseInversion):
     n_sites = None
     _GtG = None
     _r_data = None
+    max_step = 3.0
+    min_step = 1.1
     damp_exponent_start = 6
+    diag_normalizer = 5e3
+    damping_factor = 3.0
     increase_count = 0
     data_misfits = np.inf
     
@@ -228,6 +232,9 @@ class Inversion(BaseInversion):
         self.HtH = self.HtH.to(self.mvec.dtype)
         self.CtC = self.HtH
         self.damp_exponent = torch.ones(len(self.pslices))*self.damp_exponent_start
+        self._model_update(self.mvec)
+        self.max_step = torch.ones(len(self.pslices))*self.max_step
+        self.damp_increase = torch.ones(len(self.pslices)).bool()
         #step_down                        = torch.log(torch.tensor(2.0))
         #step_up                          = torch.log(torch.tensor(1.2))
 
@@ -267,7 +274,7 @@ class Inversion(BaseInversion):
                         else:
                             self.damp[pslice] = 0
         self.damp = torch.clamp(self.damp, min=1.)  # Ensure damping is at least 1
-        return sp.sparse.csr_matrix(self.Imod.multiply(self.damp.cpu().numpy()))# self.damp*self.Imod
+        return self.damp*self.Imod#sp.sparse.csr_matrix(self.Imod.multiply(self.damp.cpu().numpy()))# self.damp*self.Imod
 
     def find_damping(self):
         self.damping_attempts = 0
@@ -302,7 +309,7 @@ class Inversion(BaseInversion):
         
 
     def calc_dm(self):
-        Aown = sp.sparse.csr_matrix(self._GtG) + self.CtC + self.damp_matrix()
+        Aown = (self._GtG) + self.CtC + self.damp_matrix()
         dm = sp.sparse.linalg.spsolve(Aown, self._r_data)
 
         return torch.nan_to_num(torch.tensor(dm, device=self.mvec.device, dtype=self.mvec.dtype))
@@ -370,7 +377,7 @@ class Inversion(BaseInversion):
                 self.max_step[0],
                 time_new - time_old
             ))
-            self.n_local += 1
+            #self.n_local += 1
         else:
             print("{:03d}\tTotal misfit increased, smaller step\t".format(self.iteration))
 
@@ -391,10 +398,13 @@ class Inversion(BaseInversion):
     def stop_inversion(self):
         if super().stop_inversion:
             return True
-        if torch.any(self.max_step == self.min_step):
-            self.run_iteration()
-            print('stop for reaching min step size')
+        if self.iteration<=1:
+            return False
+        if (abs(self.misfits[-2]-self.misfits[-1]) / self.misfits[-1]) < self.data_misfit_minimum_change and self.misfits[-1]>self.misfits[-2]:
+            self.log(f'misfit change is less than {self.data_misfit_minimum_change}')
             return True
+        if self.max_step == self.min_step:
+            print('stop for reaching min step size')
         return False
     
 fastJac = fastjacobian(Inversion)
@@ -626,48 +636,128 @@ class SCI(LCI):
     def make_smoothness_matrix(self):
         from scipy.spatial import Delaunay
 
+        # assert len(self.x) == len(self.y), "x and y must have the same length"
+        # assert len(self.x) == len(self.inv_list), "x and y must match the number of sites"
+
+        # points = np.vstack((self.x, self.y)).T
+        # import matplotlib.pyplot as plt
+        # fig, ax = plt.subplots(1,3, figsize=(6,10))
+        # ax[0].scatter(self.x, self.y)
+        # for i, (x, y) in enumerate(zip(self.x, self.y)):
+        #     ax[0].text(x, y, str(i), fontsize=13, ha='center', va='center', color='red')
+        # #plt.show()
+        # tri = Delaunay(points)
+        # connected_pairs = []
+        # for simplex in tri.simplices:
+        #     simplex.sort()
+        #     p1 = int(simplex[0]), int(simplex[1])
+        #     p2 = int(simplex[0]), int(simplex[2])
+        #     p3 = int(simplex[1]), int(simplex[2])
+        #     if p1 not in connected_pairs:
+        #         connected_pairs.append(p1)
+        #     if p2 not in connected_pairs:
+        #         connected_pairs.append(p2)
+        #     if p3 not in connected_pairs:
+        #         connected_pairs.append(p3)
+
+        # all_dist = np.zeros(len(connected_pairs))
+
+
+        # for i,pair in enumerate(connected_pairs):
+        #     p1 = points[pair[0]]
+        #     p2 = points[pair[1]]
+        #     all_dist[i] = np.linalg.norm(p1 - p2)
+
+        # ax[0].plot(points[connected_pairs, 0].T, points[connected_pairs, 1].T, 'b-', alpha=0.3)
+        # #plt.show()
+
+        # min_dist = np.ones(len(points))*all_dist.max()
+
+        # for i,pair in enumerate(connected_pairs):    
+        #     min_dist[pair[0]] = min(min_dist[pair[0]], all_dist[i])
+        # print(min_dist.mean())
+        # constraint_strength = min_dist.mean() / all_dist
+        # print(constraint_strength)
+        # n_layers = self.inv_list[0].model.n_layers
+        # c_mat = np.zeros((len(connected_pairs), len(points)*n_layers))
+        # for i, pair in enumerate(connected_pairs):
+        #     c_mat[i, ::n_layers][pair[0]] =  constraint_strength[i]
+        #     c_mat[i, ::n_layers][pair[1]] = -constraint_strength[i]
+
+        # c_mat = np.repeat(c_mat, n_layers, axis=0)
+
+        # for i in range(n_layers):
+        #     c_mat[i::n_layers, :] = np.roll(c_mat[i::n_layers, :], i, axis=1)
+
+        # ax[1].imshow((c_mat != 0).astype(int), aspect='auto', cmap='gray', interpolation='nearest')
+        # ax[1].set_xlabel('Model parameters')
+        # ax[1].set_ylabel('Constraints')
+        # ax[1].set_title('Constraint matrix (c_mat)')
+        # plt.colorbar(ax[1].images[0], ax=ax[1])
+        # plt.tight_layout()
+        # # plt.show()
+
+        # from scipy.sparse import coo_matrix
+
         assert len(self.x) == len(self.y), "x and y must have the same length"
         assert len(self.x) == len(self.inv_list), "x and y must match the number of sites"
 
         points = np.vstack((self.x, self.y)).T
+        n_points = len(points)
+
+        # --- Delaunay connectivity ---
         tri = Delaunay(points)
-        connected_pairs = []
+
+        connected_pairs = set()
         for simplex in tri.simplices:
-            simplex.sort()
-            p1 = int(simplex[0]), int(simplex[1])
-            p2 = int(simplex[0]), int(simplex[2])
-            p3 = int(simplex[1]), int(simplex[2])
-            if p1 not in connected_pairs:
-                connected_pairs.append(p1)
-            if p2 not in connected_pairs:
-                connected_pairs.append(p2)
-            if p3 not in connected_pairs:
-                connected_pairs.append(p3)
+            simplex = np.sort(simplex)
+            connected_pairs.add((simplex[0], simplex[1]))
+            connected_pairs.add((simplex[0], simplex[2]))
+            connected_pairs.add((simplex[1], simplex[2]))
 
-        all_dist = np.zeros(len(connected_pairs))
+        connected_pairs = list(connected_pairs)
+        n_pairs = len(connected_pairs)
 
+        # --- Edge lengths ---
+        all_dist = np.zeros(n_pairs)
+        for i, (i1, i2) in enumerate(connected_pairs):
+            all_dist[i] = np.linalg.norm(points[i1] - points[i2])
 
-        for i,pair in enumerate(connected_pairs):
-            p1 = points[pair[0]]
-            p2 = points[pair[1]]
-            all_dist[i] = np.linalg.norm(p1 - p2)
-
-        min_dist = np.ones(len(points))*all_dist.max()
-
-        for i,pair in enumerate(connected_pairs):    
-            min_dist[pair[0]] = min(min_dist[pair[0]], all_dist[i])
+        # --- Minimum neighbor distance per node ---
+        min_dist = np.full(n_points, all_dist.max())
+        for d, (i1, i2) in zip(all_dist, connected_pairs):
+            min_dist[i1] = min(min_dist[i1], d)
+            min_dist[i2] = min(min_dist[i2], d)
 
         constraint_strength = min_dist.mean() / all_dist
 
+        # --- Model layout ---
         n_layers = self.inv_list[0].model.n_layers
-        c_mat = np.zeros((len(connected_pairs), len(points)*n_layers))
-        for i, pair in enumerate(connected_pairs):
-            c_mat[i, ::n_layers][pair[0]] =  constraint_strength[i]
-            c_mat[i, ::n_layers][pair[1]] = -constraint_strength[i]
+        n_constraints = n_pairs * n_layers
+        n_params = n_points * n_layers
 
-        c_mat = np.repeat(c_mat, n_layers, axis=0)
+        # --- Sparse assembly ---
+        rows = []
+        cols = []
+        data = []
 
-        for i in range(n_layers):
-            c_mat[i::n_layers, :] = np.roll(c_mat[i::n_layers, :], i, axis=1)
+        for pair_idx, ((p1, p2), w) in enumerate(zip(connected_pairs, constraint_strength)):
+            for layer in range(n_layers):
+                row = pair_idx * n_layers + layer
 
-        return sp.sparse.csr_matrix(c_mat)
+                col1 = p1 * n_layers + layer
+                col2 = p2 * n_layers + layer
+
+                rows.extend([row, row])
+                cols.extend([col1, col2])
+                data.extend([w, -w])
+
+        c_mat = sp.sparse.coo_matrix(
+            (data, (rows, cols)),
+            shape=(n_constraints, n_params)
+        ).tocsr()
+
+        # #ax[2].imshow((c_mat != 0).astype(int), aspect='auto', cmap='gray', interpolation='nearest')
+        # ax[2].spy(c_mat, markersize=1)
+        # plt.show()
+        return c_mat#sp.sparse.csr_matrix(c_mat)
