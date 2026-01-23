@@ -274,7 +274,10 @@ class Inversion(BaseInversion):
                         else:
                             self.damp[pslice] = 0
         self.damp = torch.clamp(self.damp, min=1.)  # Ensure damping is at least 1
-        return self.damp*self.Imod#sp.sparse.csr_matrix(self.Imod.multiply(self.damp.cpu().numpy()))# self.damp*self.Imod
+        if sp.sparse.issparse(self.Imod):
+            return sp.sparse.csr_matrix(self.Imod.multiply(self.damp.cpu().numpy()))# self.damp*self.Imod
+        else:
+            return self.damp * self.Imod
 
     def find_damping(self):
         self.damping_attempts = 0
@@ -403,8 +406,9 @@ class Inversion(BaseInversion):
         if (abs(self.misfits[-2]-self.misfits[-1]) / self.misfits[-1]) < self.data_misfit_minimum_change and self.misfits[-1]>self.misfits[-2]:
             self.log(f'misfit change is less than {self.data_misfit_minimum_change}')
             return True
-        if self.max_step == self.min_step:
+        if torch.any(self.max_step == self.min_step):
             print('stop for reaching min step size')
+            return True
         return False
     
 fastJac = fastjacobian(Inversion)
@@ -415,14 +419,7 @@ class LCI(Inversion):
     n_sites        = None
     _GtG           = None
     _r_data        = None
-    diag_normalizer = 5e3
-    damping_factor = 3.0
-    damp_exponent_start = 6
-    max_step = 3.0
-    min_step = 1.1
     horizontal_smoothness = 0.8
-    increase_count = 0
-    decrease_count = 0
     data_misfits   = np.inf
 
     @property
@@ -623,14 +620,6 @@ class LCI(Inversion):
     def stop_inversion(self):
         if super().stop_inversion:
             return True
-        if self.iteration<=1:
-            return False
-        if (abs(self.misfits[-2]-self.misfits[-1]) / self.misfits[-1]) < self.data_misfit_minimum_change and self.misfits[-1]>self.misfits[-2]:
-            self.log(f'misfit change is less than {self.data_misfit_minimum_change}')
-            return True
-        if torch.any(self.max_step == self.min_step):
-            print('stop for reaching min step size')
-            return True
         return False
 
 
@@ -735,7 +724,7 @@ class SCI(LCI):
         constraint_strength = min_dist.mean() / all_dist
 
         # --- Model layout ---
-        n_layers = self.inv_list[0].model.n_layers
+        n_layers = self.inv_list[0].nM
         n_constraints = n_pairs * n_layers
         n_params = n_points * n_layers
 
