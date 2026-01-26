@@ -205,13 +205,13 @@ def fastjacobian(cls):
 @nosj
 class Inversion(BaseInversion):
     log = print
-    vertical_smoothness = 0.2
+    vertical_smoothness = 0.5
     one_over_error = None
     n_sites = None
     _GtG = None
     _r_data = None
-    max_step = 3.0
-    min_step = 1.1
+    max_step = torch.log(torch.tensor(3.0))
+    min_step = torch.log(torch.tensor(1.1))
     damp_exponent_start = 6
     diag_normalizer = 5e3
     damping_factor = 3.0
@@ -233,7 +233,7 @@ class Inversion(BaseInversion):
         self.C_rp = np.diag(np.ones(self.Rp.shape[0]) / np.log1p(self.vertical_smoothness)**2)
         self.C_rp = self.C_rp.astype(np.float32)
         self.HtH = self.Rp.T @ self.C_rp @ self.Rp
-        self.HtH = self.HtH.to(self.mvec.dtype)
+        #self.HtH = self.HtH.to(self.mvec.dtype)
         self.CtC = self.HtH
         self.damp_exponent = torch.ones(len(self.pslices))*self.damp_exponent_start
         self._model_update(self.mvec)
@@ -242,14 +242,15 @@ class Inversion(BaseInversion):
         self.damp_increase = torch.ones(len(self.pslices)).bool()
         #step_down                        = torch.log(torch.tensor(2.0))
         #step_up                          = torch.log(torch.tensor(1.2))
+        self.n_local=0
 
     def vert_misfit(self):
         r_mod = -self.Rp @ self.mvec
         m_misfit = r_mod @ self.C_rp @ r_mod
-        return m_misfit.mean()/self.Rp.shape[0]
+        return m_misfit.mean()
 
     def misfit(self):
-        return torch.sqrt(self.data_misfit().sum()+self.vert_misfit())/(torch.tensor(len(self.data_observed)+self.Rp.shape[0], dtype=self.mvec.dtype))
+        return torch.sqrt(self.data_misfit().mean()+self.vert_misfit()/self.Rp.shape[0])
     
     def damp_matrix(self):
         if self.damping_attempts==0:
@@ -400,18 +401,6 @@ class Inversion(BaseInversion):
             print("{:03d}\tTotal misfit increased, smaller step\t".format(self.iteration))
 
 
-    def invert(self, iter_cap=10, **kwargs):
-        self.setup_matrices()
-        self.iter_cap = iter_cap
-        self.n_local=0
-        while not self.stop_inversion:
-            self.run_iteration()
-            
-        mres = self.model.copy()
-        mres.values = mres.modelize(self.mvec)[:self.model.n_ptypes]
-        self.model = mres
-        return mres
-        
     @property
     def stop_inversion(self):
         if super().stop_inversion:
@@ -648,69 +637,6 @@ class LCI(Inversion):
 class SCI(LCI):
     def make_smoothness_matrix(self):
         from scipy.spatial import Delaunay
-
-        # assert len(self.x) == len(self.y), "x and y must have the same length"
-        # assert len(self.x) == len(self.inv_list), "x and y must match the number of sites"
-
-        # points = np.vstack((self.x, self.y)).T
-        # import matplotlib.pyplot as plt
-        # fig, ax = plt.subplots(1,3, figsize=(6,10))
-        # ax[0].scatter(self.x, self.y)
-        # for i, (x, y) in enumerate(zip(self.x, self.y)):
-        #     ax[0].text(x, y, str(i), fontsize=13, ha='center', va='center', color='red')
-        # #plt.show()
-        # tri = Delaunay(points)
-        # connected_pairs = []
-        # for simplex in tri.simplices:
-        #     simplex.sort()
-        #     p1 = int(simplex[0]), int(simplex[1])
-        #     p2 = int(simplex[0]), int(simplex[2])
-        #     p3 = int(simplex[1]), int(simplex[2])
-        #     if p1 not in connected_pairs:
-        #         connected_pairs.append(p1)
-        #     if p2 not in connected_pairs:
-        #         connected_pairs.append(p2)
-        #     if p3 not in connected_pairs:
-        #         connected_pairs.append(p3)
-
-        # all_dist = np.zeros(len(connected_pairs))
-
-
-        # for i,pair in enumerate(connected_pairs):
-        #     p1 = points[pair[0]]
-        #     p2 = points[pair[1]]
-        #     all_dist[i] = np.linalg.norm(p1 - p2)
-
-        # ax[0].plot(points[connected_pairs, 0].T, points[connected_pairs, 1].T, 'b-', alpha=0.3)
-        # #plt.show()
-
-        # min_dist = np.ones(len(points))*all_dist.max()
-
-        # for i,pair in enumerate(connected_pairs):    
-        #     min_dist[pair[0]] = min(min_dist[pair[0]], all_dist[i])
-        # print(min_dist.mean())
-        # constraint_strength = min_dist.mean() / all_dist
-        # print(constraint_strength)
-        # n_layers = self.inv_list[0].model.n_layers
-        # c_mat = np.zeros((len(connected_pairs), len(points)*n_layers))
-        # for i, pair in enumerate(connected_pairs):
-        #     c_mat[i, ::n_layers][pair[0]] =  constraint_strength[i]
-        #     c_mat[i, ::n_layers][pair[1]] = -constraint_strength[i]
-
-        # c_mat = np.repeat(c_mat, n_layers, axis=0)
-
-        # for i in range(n_layers):
-        #     c_mat[i::n_layers, :] = np.roll(c_mat[i::n_layers, :], i, axis=1)
-
-        # ax[1].imshow((c_mat != 0).astype(int), aspect='auto', cmap='gray', interpolation='nearest')
-        # ax[1].set_xlabel('Model parameters')
-        # ax[1].set_ylabel('Constraints')
-        # ax[1].set_title('Constraint matrix (c_mat)')
-        # plt.colorbar(ax[1].images[0], ax=ax[1])
-        # plt.tight_layout()
-        # # plt.show()
-
-        # from scipy.sparse import coo_matrix
 
         assert len(self.x) == len(self.y), "x and y must have the same length"
         assert len(self.x) == len(self.inv_list), "x and y must match the number of sites"
