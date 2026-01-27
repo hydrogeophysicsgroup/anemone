@@ -229,19 +229,16 @@ class Inversion(BaseInversion):
 
         super().setup_matrices()
         self.Rp = self.model.H()
-        self.Rp = self.Rp.to(self.mvec.dtype)
+        self.Rp = self.Rp.to(rdtype)
         self.C_rp = np.diag(np.ones(self.Rp.shape[0]) / np.log1p(self.vertical_smoothness)**2)
         self.C_rp = self.C_rp.astype(np.float32)
         self.HtH = self.Rp.T @ self.C_rp @ self.Rp
-        #self.HtH = self.HtH.to(self.mvec.dtype)
         self.CtC = self.HtH
         self.damp_exponent = torch.ones(len(self.pslices))*self.damp_exponent_start
         self._model_update(self.mvec)
         self.max_step = torch.ones(len(self.pslices))*self.max_step
         self.min_step = torch.ones(len(self.pslices))*self.min_step
         self.damp_increase = torch.ones(len(self.pslices)).bool()
-        #step_down                        = torch.log(torch.tensor(2.0))
-        #step_up                          = torch.log(torch.tensor(1.2))
         self.n_local=0
 
     def vert_misfit(self):
@@ -250,7 +247,7 @@ class Inversion(BaseInversion):
         return m_misfit.mean()
 
     def misfit(self):
-        return torch.sqrt(self.data_misfit().mean()+self.vert_misfit()/self.Rp.shape[0])
+        return torch.sqrt((self.data_misfit().sum()+self.vert_misfit())/(len(self.data_observed)+self.Rp.shape[0]))
     
     def damp_matrix(self):
         if self.damping_attempts==0:
@@ -375,7 +372,6 @@ class Inversion(BaseInversion):
         for i in range(len(self.damp_exponent)):
             self.damp_exponent[i] = max(self.damp_exponent[i] - 1, 0)
         if self.misfits[-1] == self.new_misfit:
-           # with open('inversion_log.txt', 'a') as f:
             time_new = time.time()
             if hasattr(self, "inv_list") and isinstance(self.inv_list, list):
                 self.log("{:03d}\tData misfit:\t{:2.2f}\tVertical misfit:\t{:2.2f}\tHorizontal misfit:\t{:2.2f}\tTotal misfit:\t{:2.2f}\tStep size:\t{:2.2f}\tLast iteration time:\t{:2.2f}\n".format(
@@ -396,7 +392,6 @@ class Inversion(BaseInversion):
                     self.max_step[0],
                     time_new - time_old
                 ))
-            #self.n_local += 1
         else:
             print("{:03d}\tTotal misfit increased, smaller step\t".format(self.iteration))
 
@@ -412,6 +407,7 @@ class Inversion(BaseInversion):
             return True
         if torch.any(self.max_step == self.min_step):
             print('stop for reaching min step size')
+            self.run_iteration()
             return True
         return False
     
@@ -448,6 +444,7 @@ class LCI(Inversion):
         n = len(self.mvec)
         m_per_inv = len(self.inv_list[0].m)
         RL2 = (sp.sparse.eye(n, format="csr")- sp.sparse.eye(n, k=m_per_inv, format="csr"))[:-m_per_inv]
+        # RL = (sp.sparse.eye(n) - sp.sparse.eye(n, k=m_per_inv)).tocsr()[:-m_per_inv]
         return RL2
 
     def setup_matrices(self):
@@ -472,21 +469,20 @@ class LCI(Inversion):
         data = []
 
         for i in range(n_rows):
-            shift = i // len(self.inv_list[0].m)
+            shift = i // (len(self.inv_list[0].m)-1)
             j = i + shift
 
-            if j < n_cols:
+            if j + 1 < n_cols:
                 rows.append(i)
                 cols.append(j)
                 data.append(1.0)
-
-            if j + 1 < n_cols:
                 rows.append(i)
                 cols.append(j + 1)
                 data.append(-1.0)
 
         self.Rp = sp.sparse.coo_matrix((data, (rows, cols)), shape=(n_rows, n_cols))
         self.Rp = self.Rp.tocsr()
+
         self.C_rp = sp.sparse.eye(self.Rp.shape[0])/log(1.+self.vertical_smoothness)**2
         HtH = self.Rp.T @ self.C_rp @ self.Rp
 
@@ -551,10 +547,6 @@ class LCI(Inversion):
 
         return torch.nan_to_num(torch.tensor(dm, device=self.mvec.device, dtype=self.mvec.dtype))
 
-    def make_smoothness_matrix(self):
-        n = len(self.mvec)
-        m_per_inv = len(self.inv_list[0].m)
-        return (sp.sparse.eye(n)-sp.sparse.eye(n, k=m_per_inv))[:-m_per_inv]
 
     def jacobian(self, mvec):
         if self.one_over_error is None:
