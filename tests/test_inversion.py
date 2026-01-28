@@ -154,7 +154,8 @@ def test_lci():
     thk_true = torch.tensor([20, 30], device=gpu, dtype=rdtype)
 
 
-    res_start = LogResistivity.smooth(torch.ones(len(z)+1)*50., z, device=gpu)
+    res_start = LogResistivity.smooth(torch.ones(len(z)+1)*50., z)
+    res_start.set_device(gpu)
     thick1 = torch.linspace(0, 20, 25).to(rdtype)#[:3]
     inv_list = []
     m_trues=[]
@@ -220,7 +221,7 @@ def test_lci():
 
 if __name__ == '__main__':
     # test_tikhonov_few_layer()
-    # test_tikhonov_smooth()
-    test_fastjacobian()
+    test_tikhonov_smooth()
+    #test_fastjacobian()
     # test_lci()
     pass
