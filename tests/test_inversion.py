@@ -106,12 +106,13 @@ def test_fastjacobian():
 
 
     fastJac = fastjacobian(Inversion)
-    res_start = LogResistivity.smooth(torch.ones(31)*50, torch.logspace(-1,2.2,30)+1)
+    res_start = LogResistivity.smooth(torch.ones(31)*50, torch.logspace(-1,2.6,30)+1)
 
 
     inv = fastJac(d_obs, d_err, res_start, fwrTD)
     inv.data_misfit_acceptance_threshold = 0.9
-    res_mod = inv.invert(iter_cap=10,vc=0.7)        
+    res_mod= inv.invert(iter_cap=10,vc=0.7)
+    doi = inv.doi        
 
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
@@ -120,6 +121,7 @@ def test_fastjacobian():
         
         ax = res_start.plot(axs=axs[:1], color='black', linestyle='--')
         ax = res_mod.plot(axs=axs[:1])
+        axs[0].axhline(y=doi, color='k', linestyle='--', label='DOI')
         mod_true.plot(axs=axs[:1], color='red', label='True model')
 
         d_pred = fwrTD(*res_mod.mod)
@@ -180,7 +182,7 @@ def test_lci():
     from time import time as timer
     bt = timer()
     lci = LCI(inv_list)
-    lci.horizontal_smoothness=0.1
+    lci.horizontal_smoothness=0.3
     lci.vertical_smoothness=1
 
     # lci.smoothness_vert = 1e3
@@ -191,12 +193,11 @@ def test_lci():
     profiler = cProfile.Profile()
     profiler.enable()
 
-    res_mods = lci.invert(iter_cap=10)
-
+    res_mods= lci.invert(iter_cap=2)
+    dois = lci.doi
     profiler.disable()
     stats = pstats.Stats(profiler)
     stats.sort_stats('cumtime').print_stats(20)  # Print top 20 by cumulative time
-
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
         from plog import Log, Section, PieceWiseLine
@@ -214,6 +215,7 @@ def test_lci():
         actual = Section(actual, proj_pnts=[(-1, 0), (i/2, 0), (i+1, 0)])
         result.plot(axs=ax[0], cmap='turbo', vmin=0, vmax=2)
         actual.plot(axs=ax[1], cmap='turbo', vmin=0, vmax=2)
+        ax[0].plot(range(len(res_mods)),dois,'k')
         plt.show()
 
 def test_sci():
@@ -326,6 +328,6 @@ if __name__ == '__main__':
     # test_tikhonov_few_layer()
     # test_tikhonov_smooth()
     #test_fastjacobian()
-    # test_lci()
-    test_sci()
+    test_lci()
+    #test_sci()
     pass

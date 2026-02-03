@@ -229,7 +229,7 @@ class Inversion(BaseInversion):
 
         super().setup_matrices()
         self.Rp = self.model.H()
-        self.Rp = self.Rp.to(rdtype)
+        self.mvec = self.mvec.to(rdtype)
         self.C_rp = np.diag(np.ones(self.Rp.shape[0]) / np.log1p(self.vertical_smoothness)**2)
         self.C_rp = self.C_rp.astype(np.float32)
         self.HtH = self.Rp.T @ self.C_rp @ self.Rp
@@ -410,7 +410,42 @@ class Inversion(BaseInversion):
             self.run_iteration()
             return True
         return False
-    
+
+    def invert(self, **kwargs):
+        self.setup_matrices()
+        self.iter_cap = kwargs.pop('iter_cap', self.iter_cap)
+
+        while not self.stop_inversion:
+            self.run_iteration()
+        self.final_model = self.model.update_values(self.mvec)
+        self.doi = self.calc_doi()
+        return self.final_model
+
+    def calc_doi(self, model=None, threshold=0.8):
+        if model is None:
+            model = self.model
+        self.setup_matrices
+        self._current_mvec=self.m
+        self._dpred=None
+        self.Cdi= torch.diag(self.recip_error_squared).to(rdtype)
+        G = self.jacobian(self.m)
+        delta_data = self.data_error
+        normalize_G = G/delta_data[:, None]
+
+        s = torch.sum(normalize_G, dim=0)
+        # S = torch.flip(torch.cumsum(torch.flip(s)))
+        s_flipped = torch.flip(s, dims=[0])
+        S_flipped = torch.cumsum(s_flipped, dim=0)
+        # S = torch.flip(-S_flipped, dims=[0])
+        i_z = len(S_flipped)-torch.searchsorted(-S_flipped, threshold)
+        z = torch.cumsum(self.model.values[1],dim=0)
+        if i_z>=len(z):
+            return z[-1]
+        else:
+            return z[i_z]
+        return  
+
+
 fastJac = fastjacobian(Inversion)
 
 class LCI(Inversion):
@@ -611,12 +646,62 @@ class LCI(Inversion):
             
         # Split mvec back to each inversion
         mres_list = []
+        doi_list = []
         mvecs = self.mvec.reshape(len(self.inv_list), -1)
         for inv, mvec in zip(self.inv_list, mvecs):
             mres = inv.model.copy()
             mres.values = mres.modelize(mvec)
             mres_list.append(mres.copy())
+            doi_value = inv.calc_doi()
+            doi_list.append(doi_value)
+        self.doi = doi_list
         return mres_list
+    
+    # def calc_doi(self, model=None, threshold=0.8):
+    #     if self.one_over_error is None:
+    #         self.n_sites = len(self.inv_list)
+    #         self.one_over_error = torch.sqrt(self.recip_error_squared).reshape(self.n_sites, -1)[:, None, :]
+    #         self._dobsgrid = self.data_observed.reshape(self.n_sites, -1)
+    #         self._derrgrid = self.data_error.reshape(self.n_sites, -1)**2
+    #     mvecs = self.mvec.reshape(self.n_sites, -1).T
+    #     _,thick = self.inv_list[0].model.mod
+    #     rhos = mvecs.exp()
+    #     # thick = self.inv_list[0].model.thickness
+    #     Ggrid = torch.empty((self.n_sites, len(thick)+1, self._dobsgrid.shape[-1]), dtype=rdtype, device=self.device)
+    #     if self.n_sites<100:
+    #         Ggrid = self.inv_list[0].forward(rhos, thick, jac=True)
+    #     else:
+    #         batch=50
+    #         i=0
+    #         while (i+2)*batch<self.n_sites:
+    #             Ggrid[i*batch:(i+1)*batch] = self.inv_list[0].forward(rhos[:, i*batch:(i+1)*batch], thick, jac=True)
+    #             i += 1
+    #         Ggrid[i*batch:] = self.inv_list[0].forward(rhos[:, i*batch:], thick, jac=True)
+
+
+    #     #Ggrid /= self._dpredgrid.exp()[:, None, :]
+    #     #Ggrid *= rhos.T[:,:,None]
+    #     # r_data = torch.einsum('ijk,ijk->ij', Ggrid, ((self._dobsgrid-self._dpredgrid)/self._derrgrid)[:, None, :])
+    #     #Ggrid *= self.one_over_error
+    #     z_list =  []
+    #     for i,G in enumerate(Ggrid[:]):
+    #         delta_data = self.data_error
+        
+    #         normalize_G = G/delta_data[i*G.shape[1]:(i+1)*G.shape[1]]
+
+    #         s = torch.sum(G, dim=0)
+    #         # S = torch.flip(torch.cumsum(torch.flip(s)))
+    #         s_flipped = torch.flip(s, dims=[0])
+    #         S_flipped = torch.cumsum(s_flipped, dim=0)
+    #         S = torch.flip(S_flipped, dims=[0])
+    #         i_z = len(S_flipped)-torch.searchsorted(S_flipped, threshold)
+    #         z= torch.cumsum(self.inv_list[i].model.values[1],dim=0)
+    #         if i_z>len(z):
+    #             z_list.append(z[-1])
+    #         else:
+    #             z_list.append(z[i_z])
+    #     return z_list 
+
 
     @property
     def stop_inversion(self):
