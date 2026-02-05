@@ -205,12 +205,18 @@ def fastjacobian(cls):
 @nosj
 class Inversion(BaseInversion):
     log = print
-    vertical_smoothness = 0.2
+    vertical_smoothness = 0.5
     one_over_error = None
     n_sites = None
     _GtG = None
     _r_data = None
+    max_step = torch.log(torch.tensor(3.0))
+    min_step = torch.log(torch.tensor(1.1))
     damp_exponent_start = 6
+    diag_normalizer = 5e3
+    damping_factor = 3.0
+    step_down = torch.log(torch.tensor(2.0))
+    step_up   = torch.log(torch.tensor(1.2))
     increase_count = 0
     data_misfits = np.inf
 
@@ -223,13 +229,17 @@ class Inversion(BaseInversion):
 
         super().setup_matrices()
         self.Rp = self.model.H()
+        self.mvec = self.mvec.to(rdtype)
         self.C_rp = np.diag(np.ones(self.Rp.shape[0]) / np.log1p(self.vertical_smoothness)**2)
+        self.C_rp = self.C_rp.astype(np.float32)
         self.HtH = self.Rp.T @ self.C_rp @ self.Rp
-        self.HtH = self.HtH.to(self.mvec.dtype)
         self.CtC = self.HtH
         self.damp_exponent = torch.ones(len(self.pslices))*self.damp_exponent_start
-        #step_down                        = torch.log(torch.tensor(2.0))
-        #step_up                          = torch.log(torch.tensor(1.2))
+        self._model_update(self.mvec)
+        self.max_step = torch.ones(len(self.pslices))*self.max_step
+        self.min_step = torch.ones(len(self.pslices))*self.min_step
+        self.damp_increase = torch.ones(len(self.pslices)).bool()
+        self.n_local=0
 
     def vert_misfit(self):
         r_mod = -self.Rp @ self.mvec
@@ -237,7 +247,7 @@ class Inversion(BaseInversion):
         return m_misfit.mean()
 
     def misfit(self):
-        return torch.sqrt(self.data_misfit().mean()+self.vert_misfit())
+        return torch.sqrt((self.data_misfit().sum()+self.vert_misfit())/(len(self.data_observed)+self.Rp.shape[0]))
     
     def damp_matrix(self):
         if self.damping_attempts==0:
@@ -267,7 +277,10 @@ class Inversion(BaseInversion):
                         else:
                             self.damp[pslice] = 0
         self.damp = torch.clamp(self.damp, min=1.)  # Ensure damping is at least 1
-        return sp.sparse.csr_matrix(self.Imod.multiply(self.damp.cpu().numpy()))# self.damp*self.Imod
+        if sp.sparse.issparse(self.Imod):
+            return sp.sparse.csr_matrix(self.Imod.multiply(self.damp.cpu().numpy()))# self.damp*self.Imod
+        else:
+            return self.damp * self.Imod
 
     def find_damping(self):
         self.damping_attempts = 0
@@ -302,7 +315,7 @@ class Inversion(BaseInversion):
         
 
     def calc_dm(self):
-        Aown = sp.sparse.csr_matrix(self._GtG) + self.CtC + self.damp_matrix()
+        Aown = self._GtG + self.CtC + self.damp_matrix()
         dm = sp.sparse.linalg.spsolve(Aown, self._r_data)
 
         return torch.nan_to_num(torch.tensor(dm, device=self.mvec.device, dtype=self.mvec.dtype))
@@ -359,44 +372,80 @@ class Inversion(BaseInversion):
         for i in range(len(self.damp_exponent)):
             self.damp_exponent[i] = max(self.damp_exponent[i] - 1, 0)
         if self.misfits[-1] == self.new_misfit:
-           # with open('inversion_log.txt', 'a') as f:
             time_new = time.time()
-            self.log("{:03d}\tData misfit:\t{:2.2f}\tVertical misfit:\t{:2.2f}\tHorizontal misfit:\t{:2.2f}\tTotal misfit:\t{:2.2f}\tStep size:\t{:2.2f}\tLast iteration time:\t{:2.2f}\n".format(
-                self.iteration,
-                torch.sqrt(self.data_misfit().sum() / len(self.data_observed)),
-                self.vert_misfit()/self.Rp.shape[0],
-                self.horz_misfit()/self.RL.shape[0],
-                self.misfits[-1],
-                self.max_step[0],
-                time_new - time_old
-            ))
-            self.n_local += 1
+            if hasattr(self, "inv_list") and isinstance(self.inv_list, list):
+                self.log("{:03d}\tData misfit:\t{:2.2f}\tVertical misfit:\t{:2.2f}\tHorizontal misfit:\t{:2.2f}\tTotal misfit:\t{:2.2f}\tStep size:\t{:2.2f}\tLast iteration time:\t{:2.2f}\n".format(
+                    self.iteration,
+                    torch.sqrt(self.data_misfit().sum() / len(self.data_observed)),
+                    self.vert_misfit()/self.Rp.shape[0],
+                    self.horz_misfit()/self.RL.shape[0],
+                    self.misfits[-1],
+                    self.max_step[0],
+                    time_new - time_old
+                ))
+            else:
+                self.log("{:03d}\tData misfit:\t{:2.2f}\tVertical misfit:\t{:2.2f}\tTotal misfit:\t{:2.2f}\tStep size:\t{:2.2f}\tLast iteration time:\t{:2.2f}\n".format(
+                    self.iteration,
+                    torch.sqrt(self.data_misfit().sum() / len(self.data_observed)),
+                    self.vert_misfit()/self.Rp.shape[0],
+                    self.misfits[-1],
+                    self.max_step[0],
+                    time_new - time_old
+                ))
         else:
             print("{:03d}\tTotal misfit increased, smaller step\t".format(self.iteration))
 
 
-    def invert(self, iter_cap=10, **kwargs):
-        self.setup_matrices()
-        self.iter_cap = iter_cap
-        self.n_local=0
-        while not self.stop_inversion:
-            self.run_iteration()
-            
-        mres = self.model.copy()
-        mres.values = mres.modelize(self.mvec)[:self.model.n_ptypes]
-        self.model = mres
-        return mres
-        
     @property
     def stop_inversion(self):
         if super().stop_inversion:
             return True
+        if self.iteration<=1:
+            return False
+        if (abs(self.misfits[-2]-self.misfits[-1]) / self.misfits[-1]) < self.data_misfit_minimum_change and self.misfits[-1]>self.misfits[-2]:
+            self.log(f'misfit change is less than {self.data_misfit_minimum_change}')
+            return True
         if torch.any(self.max_step == self.min_step):
-            self.run_iteration()
             print('stop for reaching min step size')
+            self.run_iteration()
             return True
         return False
-    
+
+    def invert(self, **kwargs):
+        self.setup_matrices()
+        self.iter_cap = kwargs.pop('iter_cap', self.iter_cap)
+
+        while not self.stop_inversion:
+            self.run_iteration()
+        self.final_model = self.model.update_values(self.mvec)
+        self.doi = self.calc_doi()
+        return self.final_model
+
+    def calc_doi(self, model=None, threshold=0.8):
+        if model is None:
+            model = self.model
+        self.setup_matrices
+        self._current_mvec=self.m
+        self._dpred=None
+        self.Cdi= torch.diag(self.recip_error_squared).to(rdtype)
+        G = self.jacobian(self.m)
+        delta_data = self.data_error
+        normalize_G = G/delta_data[:, None]
+
+        s = torch.sum(normalize_G, dim=0)
+        # S = torch.flip(torch.cumsum(torch.flip(s)))
+        s_flipped = torch.flip(s, dims=[0])
+        S_flipped = torch.cumsum(s_flipped, dim=0)
+        # S = torch.flip(-S_flipped, dims=[0])
+        i_z = len(S_flipped)-torch.searchsorted(-S_flipped, threshold)
+        z = torch.cumsum(self.model.values[1],dim=0)
+        if i_z>=len(z):
+            return z[-1]
+        else:
+            return z[i_z]
+        return  
+
+
 fastJac = fastjacobian(Inversion)
 
 class LCI(Inversion):
@@ -405,14 +454,7 @@ class LCI(Inversion):
     n_sites        = None
     _GtG           = None
     _r_data        = None
-    diag_normalizer = 5e3
-    damping_factor = 3.0
-    damp_exponent_start = 6
-    max_step = 3.0
-    min_step = 1.1
     horizontal_smoothness = 0.8
-    increase_count = 0
-    decrease_count = 0
     data_misfits   = np.inf
 
     @property
@@ -437,6 +479,7 @@ class LCI(Inversion):
         n = len(self.mvec)
         m_per_inv = len(self.inv_list[0].m)
         RL2 = (sp.sparse.eye(n, format="csr")- sp.sparse.eye(n, k=m_per_inv, format="csr"))[:-m_per_inv]
+        # RL = (sp.sparse.eye(n) - sp.sparse.eye(n, k=m_per_inv)).tocsr()[:-m_per_inv]
         return RL2
 
     def setup_matrices(self):
@@ -461,21 +504,20 @@ class LCI(Inversion):
         data = []
 
         for i in range(n_rows):
-            shift = i // len(self.inv_list[0].m)
+            shift = i // (len(self.inv_list[0].m)-1)
             j = i + shift
 
-            if j < n_cols:
+            if j + 1 < n_cols:
                 rows.append(i)
                 cols.append(j)
                 data.append(1.0)
-
-            if j + 1 < n_cols:
                 rows.append(i)
                 cols.append(j + 1)
                 data.append(-1.0)
 
         self.Rp = sp.sparse.coo_matrix((data, (rows, cols)), shape=(n_rows, n_cols))
         self.Rp = self.Rp.tocsr()
+
         self.C_rp = sp.sparse.eye(self.Rp.shape[0])/log(1.+self.vertical_smoothness)**2
         HtH = self.Rp.T @ self.C_rp @ self.Rp
 
@@ -533,11 +575,13 @@ class LCI(Inversion):
         self._dpred = self.mforward(self.mvec)
         self.jacobian(self.mvec)
         self._r_data -= self.CtC @ self.cmvec 
+    
+    def calc_dm(self):
+        Aown = sp.sparse.csr_matrix(self._GtG) + self.CtC + self.damp_matrix()
+        dm = sp.sparse.linalg.spsolve(Aown, self._r_data)
 
-    def make_smoothness_matrix(self):
-        n = len(self.mvec)
-        m_per_inv = len(self.inv_list[0].m)
-        return (sp.sparse.eye(n)-sp.sparse.eye(n, k=m_per_inv))[:-m_per_inv]
+        return torch.nan_to_num(torch.tensor(dm, device=self.mvec.device, dtype=self.mvec.dtype))
+
 
     def jacobian(self, mvec):
         if self.one_over_error is None:
@@ -602,24 +646,66 @@ class LCI(Inversion):
             
         # Split mvec back to each inversion
         mres_list = []
+        doi_list = []
         mvecs = self.mvec.reshape(len(self.inv_list), -1)
         for inv, mvec in zip(self.inv_list, mvecs):
             mres = inv.model.copy()
             mres.values = mres.modelize(mvec)
             mres_list.append(mres.copy())
+            doi_value = inv.calc_doi()
+            doi_list.append(doi_value)
+        self.doi = doi_list
         return mres_list
+    
+    # def calc_doi(self, model=None, threshold=0.8):
+    #     if self.one_over_error is None:
+    #         self.n_sites = len(self.inv_list)
+    #         self.one_over_error = torch.sqrt(self.recip_error_squared).reshape(self.n_sites, -1)[:, None, :]
+    #         self._dobsgrid = self.data_observed.reshape(self.n_sites, -1)
+    #         self._derrgrid = self.data_error.reshape(self.n_sites, -1)**2
+    #     mvecs = self.mvec.reshape(self.n_sites, -1).T
+    #     _,thick = self.inv_list[0].model.mod
+    #     rhos = mvecs.exp()
+    #     # thick = self.inv_list[0].model.thickness
+    #     Ggrid = torch.empty((self.n_sites, len(thick)+1, self._dobsgrid.shape[-1]), dtype=rdtype, device=self.device)
+    #     if self.n_sites<100:
+    #         Ggrid = self.inv_list[0].forward(rhos, thick, jac=True)
+    #     else:
+    #         batch=50
+    #         i=0
+    #         while (i+2)*batch<self.n_sites:
+    #             Ggrid[i*batch:(i+1)*batch] = self.inv_list[0].forward(rhos[:, i*batch:(i+1)*batch], thick, jac=True)
+    #             i += 1
+    #         Ggrid[i*batch:] = self.inv_list[0].forward(rhos[:, i*batch:], thick, jac=True)
+
+
+    #     #Ggrid /= self._dpredgrid.exp()[:, None, :]
+    #     #Ggrid *= rhos.T[:,:,None]
+    #     # r_data = torch.einsum('ijk,ijk->ij', Ggrid, ((self._dobsgrid-self._dpredgrid)/self._derrgrid)[:, None, :])
+    #     #Ggrid *= self.one_over_error
+    #     z_list =  []
+    #     for i,G in enumerate(Ggrid[:]):
+    #         delta_data = self.data_error
+        
+    #         normalize_G = G/delta_data[i*G.shape[1]:(i+1)*G.shape[1]]
+
+    #         s = torch.sum(G, dim=0)
+    #         # S = torch.flip(torch.cumsum(torch.flip(s)))
+    #         s_flipped = torch.flip(s, dims=[0])
+    #         S_flipped = torch.cumsum(s_flipped, dim=0)
+    #         S = torch.flip(S_flipped, dims=[0])
+    #         i_z = len(S_flipped)-torch.searchsorted(S_flipped, threshold)
+    #         z= torch.cumsum(self.inv_list[i].model.values[1],dim=0)
+    #         if i_z>len(z):
+    #             z_list.append(z[-1])
+    #         else:
+    #             z_list.append(z[i_z])
+    #     return z_list 
+
 
     @property
     def stop_inversion(self):
         if super().stop_inversion:
-            return True
-        if self.iteration<=1:
-            return False
-        if (abs(self.misfits[-2]-self.misfits[-1]) / self.misfits[-1]) < self.data_misfit_minimum_change and self.misfits[-1]>self.misfits[-2]:
-            self.log(f'misfit change is less than {self.data_misfit_minimum_change}')
-            return True
-        if torch.any(self.max_step == self.min_step):
-            print('stop for reaching min step size')
             return True
         return False
 
@@ -633,44 +719,61 @@ class SCI(LCI):
         assert len(self.x) == len(self.inv_list), "x and y must match the number of sites"
 
         points = np.vstack((self.x, self.y)).T
+        n_points = len(points)
+
+        # --- Delaunay connectivity ---
         tri = Delaunay(points)
-        connected_pairs = []
+
+        connected_pairs = set()
         for simplex in tri.simplices:
-            simplex.sort()
-            p1 = int(simplex[0]), int(simplex[1])
-            p2 = int(simplex[0]), int(simplex[2])
-            p3 = int(simplex[1]), int(simplex[2])
-            if p1 not in connected_pairs:
-                connected_pairs.append(p1)
-            if p2 not in connected_pairs:
-                connected_pairs.append(p2)
-            if p3 not in connected_pairs:
-                connected_pairs.append(p3)
+            simplex = np.sort(simplex)
+            connected_pairs.add((simplex[0], simplex[1]))
+            connected_pairs.add((simplex[0], simplex[2]))
+            connected_pairs.add((simplex[1], simplex[2]))
 
-        all_dist = np.zeros(len(connected_pairs))
+        connected_pairs = list(connected_pairs)
+        n_pairs = len(connected_pairs)
 
+        # --- Edge lengths ---
+        all_dist = np.zeros(n_pairs)
+        for i, (i1, i2) in enumerate(connected_pairs):
+            all_dist[i] = np.linalg.norm(points[i1] - points[i2])
 
-        for i,pair in enumerate(connected_pairs):
-            p1 = points[pair[0]]
-            p2 = points[pair[1]]
-            all_dist[i] = np.linalg.norm(p1 - p2)
-
-        min_dist = np.ones(len(points))*all_dist.max()
-
-        for i,pair in enumerate(connected_pairs):    
-            min_dist[pair[0]] = min(min_dist[pair[0]], all_dist[i])
+        # --- Minimum neighbor distance per node ---
+        min_dist = np.full(n_points, all_dist.max())
+        for d, (i1, i2) in zip(all_dist, connected_pairs):
+            min_dist[i1] = min(min_dist[i1], d)
+            min_dist[i2] = min(min_dist[i2], d)
 
         constraint_strength = min_dist.mean() / all_dist
 
+        # --- Model layout ---
         n_layers = self.inv_list[0].model.n_layers
-        c_mat = np.zeros((len(connected_pairs), len(points)*n_layers))
-        for i, pair in enumerate(connected_pairs):
-            c_mat[i, ::n_layers][pair[0]] =  constraint_strength[i]
-            c_mat[i, ::n_layers][pair[1]] = -constraint_strength[i]
+        n_constraints = n_pairs * n_layers
+        n_params = n_points * n_layers
 
-        c_mat = np.repeat(c_mat, n_layers, axis=0)
+        # --- Sparse assembly ---
+        rows = []
+        cols = []
+        data = []
 
-        for i in range(n_layers):
-            c_mat[i::n_layers, :] = np.roll(c_mat[i::n_layers, :], i, axis=1)
+        for pair_idx, ((p1, p2), w) in enumerate(zip(connected_pairs, constraint_strength)):
+            for layer in range(n_layers):
+                row = pair_idx * n_layers + layer
 
-        return sp.sparse.csr_matrix(c_mat)
+                col1 = p1 * n_layers + layer
+                col2 = p2 * n_layers + layer
+
+                rows.extend([row, row])
+                cols.extend([col1, col2])
+                data.extend([w, -w])
+
+        c_mat = sp.sparse.coo_matrix(
+            (data, (rows, cols)),
+            shape=(n_constraints, n_params)
+        ).tocsr()
+
+        # #ax[2].imshow((c_mat != 0).astype(int), aspect='auto', cmap='gray', interpolation='nearest')
+        # ax[2].spy(c_mat, markersize=1)
+        # plt.show()
+        return c_mat#sp.sparse.csr_matrix(c_mat)
