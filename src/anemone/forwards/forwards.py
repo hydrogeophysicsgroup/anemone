@@ -52,7 +52,6 @@ def logify_forward(cls):
         def __call__(self, *args, **kwargs):
             if not kwargs.get('jac', False):
                 return torch.abs(super().__call__(*args, **kwargs)).log()
-                return torch.abs(super().__call__(*args, **kwargs)).log()
             else:
                 return super().__call__(*args, **kwargs)
     return LogFwr
@@ -236,7 +235,7 @@ class BaseForward:
         elif self.kind == 'mpa':      data = self._mpa_call(*args, **kwargs)
         elif self.kind == 'colecole': data = self._colecole_call(*args, **kwargs)
         elif self.kind == 'cpa':      data = self._cpa_call(*args, **kwargs)        
-        if self.log_scale: data = torch.log(data)
+        if self.log_scale and not kwargs.get('jac', False): data = torch.log(torch.abs(data))
         return data
 
     @staticmethod
