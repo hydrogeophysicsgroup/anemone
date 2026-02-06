@@ -4,12 +4,12 @@ from anemone.physics import rte_nbc_laplace as rtelap
 from anemone.physics import drte_dsigma, calc_dpropmat
 from anemone import constants as c, rdtype, cdtype
 
-from anemone.experiment import integrate_around_loop
+from anemone.system import integrate_around_loop
 import torch
 from numpy import ndarray
 import warnings
 
-from anemone.experiment import lamontagne
+from anemone.system import lamontagne
 from copy import deepcopy
 
 def wv_to_t(t_eval, t_sampled, waveform=None):
