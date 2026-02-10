@@ -432,12 +432,12 @@ class Inversion(BaseInversion):
         delta_data = self.data_error
         normalize_G = G/delta_data[:, None]
 
-        s = torch.sum(normalize_G, dim=0)
+        s = torch.sum(np.abs(normalize_G), dim=0)
         # S = torch.flip(torch.cumsum(torch.flip(s)))
         s_flipped = torch.flip(s, dims=[0])
         S_flipped = torch.cumsum(s_flipped, dim=0)
         # S = torch.flip(-S_flipped, dims=[0])
-        i_z = len(S_flipped)-torch.searchsorted(-S_flipped, threshold)
+        i_z = len(S_flipped)-torch.searchsorted(S_flipped, threshold)
         z = torch.cumsum(self.model.values[1],dim=0)
         if i_z>=len(z):
             return z[-1]

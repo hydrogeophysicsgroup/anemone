@@ -106,10 +106,12 @@ def test_fastjacobian():
 
 
     fastJac = fastjacobian(Inversion)
-    res_start = LogResistivity.smooth(torch.ones(31)*50, torch.logspace(-1,2.6,30)+1)
+    res_start = LogResistivity.smooth(torch.ones(31)*50, torch.tensor(np.cumsum(np.logspace(0, 2.6, 30))))
 
-
+    print(fwrTD)
     inv = fastJac(d_obs, d_err, res_start, fwrTD)
+    inv.setup_matrices()
+    doi=inv.calc_doi()
     inv.data_misfit_acceptance_threshold = 0.9
     res_mod= inv.invert(iter_cap=10,vc=0.7)
     doi = inv.doi        
@@ -327,7 +329,7 @@ def test_sci():
 if __name__ == '__main__':
     # test_tikhonov_few_layer()
     # test_tikhonov_smooth()
-    #test_fastjacobian()
-    test_lci()
+    test_fastjacobian()
+    # test_lci()
     #test_sci()
     pass
