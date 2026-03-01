@@ -511,6 +511,25 @@ def rte_nbc_laplace(sigma, thickness, s, wave_length):
     R = -c.mu0*s*sigma[0]/(H*H)
     return (R+gamma_n)/(1.+R*gamma_n)
 
+def rte_lap(sigma, thickness, s, wave_length):
+    sigma *= c.mu0
+
+    n_layers=len(sigma)
+
+    lambda2 = wave_length**2
+
+    un = torch.sqrt(lambda2 + s*sigma[-1])
+    gamma_n = 0.
+    for i in range(n_layers-2, -1, -1):
+        un1 = (lambda2 + s*sigma[i])**0.5
+        exp2uh = torch.exp(-2.*un1*thickness[i])
+        H = un+un1
+        R = s*(sigma[i-1] - sigma[i])/(H*H)
+        gamma_n = exp2uh*(gamma_n + R)/(1. + gamma_n*R)
+        un = un1*1.
+    H = wave_length + un1
+    R = -s*sigma[0]/(H*H)
+    return (R+gamma_n)/(1.+R*gamma_n)
 
 def rte_raiche1999(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     """ raiche 1999 eq 7 and 8
