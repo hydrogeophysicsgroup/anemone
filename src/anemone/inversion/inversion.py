@@ -419,31 +419,49 @@ class Inversion(BaseInversion):
             self.run_iteration()
         self.final_model = self.model.update_values(self.mvec)
         self.doi = self.calc_doi()
+        # self.doi2 = self.calc_doi_fred()
         return self.final_model
 
-    def calc_doi(self, model=None, threshold=0.8):
-        if model is None:
-            model = self.model
+    # def calc_doi(self, model=None, threshold=0.8):
+    #     if model is None:
+    #         model = self.model
+    #     self.setup_matrices
+    #     self._current_mvec=self.m
+    #     self._dpred=None
+    #     self.Cdi= torch.diag(self.recip_error_squared).to(rdtype)
+    #     G = self.jacobian(self.m)
+    #     delta_data = self.data_error.exp()
+    #     normalize_G = torch.abs(G)/delta_data[:, None]
+
+    #     s = torch.sum(normalize_G, dim=0)
+    #     s_flipped = torch.flip(s, dims=[0])
+    #     S_flipped = torch.cumsum(s_flipped, dim=0)
+    #     i_z = len(S_flipped)-torch.searchsorted(S_flipped, threshold)
+    #     z = torch.cumsum(self.model.values[1],dim=0)
+    #     if i_z>=len(z):
+    #         return z[-1]
+    #     else:
+    #         return z[i_z]
+    #     return 
+
+    def calc_doi(self, mvec=None, threshold=0.8):
         self.setup_matrices
         self._current_mvec=self.m
         self._dpred=None
         self.Cdi= torch.diag(self.recip_error_squared).to(rdtype)
         G = self.jacobian(self.m)
-        delta_data = self.data_error
-        normalize_G = G/delta_data[:, None]
-
-        s = torch.sum(np.abs(normalize_G), dim=0)
-        # S = torch.flip(torch.cumsum(torch.flip(s)))
-        s_flipped = torch.flip(s, dims=[0])
-        S_flipped = torch.cumsum(s_flipped, dim=0)
-        # S = torch.flip(-S_flipped, dims=[0])
-        i_z = len(S_flipped)-torch.searchsorted(S_flipped, threshold)
+        lin_data_err = torch.exp(self.data_error)
         z = torch.cumsum(self.model.values[1],dim=0)
-        if i_z>=len(z):
-            return z[-1]
-        else:
-            return z[i_z]
-        return  
+        err_norm_G = torch.abs(G) / lin_data_err[:, None]
+        sum_norm_G = torch.sum(err_norm_G, dim=0)
+        cum_sens = torch.cumsum(sum_norm_G.flip(0), dim=0).flip(0)
+        if torch.min(cum_sens) > threshold: idx = len(z)-1
+        elif torch.searchsorted(cum_sens.flip(0), threshold, right=True) == 1: idx = len(z)-1
+        else: idx = len(cum_sens) - torch.searchsorted(cum_sens.flip(0), threshold, right=True)
+        x0, x1 = cum_sens[idx], cum_sens[idx - 1]
+        y0, y1 = z[idx].log(), z[idx - 1].log()
+        z_doi = torch.exp(y0 + (threshold - x0) * (y1 - y0) / (x1 - x0))
+        return z_doi #, G, idx, cum_sens
 
 
 fastJac = fastjacobian(Inversion)
