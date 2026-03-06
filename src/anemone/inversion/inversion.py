@@ -446,10 +446,13 @@ class Inversion(BaseInversion):
 
     def calc_doi(self, mvec=None, threshold=0.8):
         self.setup_matrices
-        self._current_mvec=self.m
+        if mvec is None:
+            mvec = self.m
+        self._current_mvec=mvec
+
         self._dpred=None
         self.Cdi= torch.diag(self.recip_error_squared).to(rdtype)
-        G = self.jacobian(self.m)
+        G = self.jacobian(mvec)
         lin_data_err = torch.exp(self.data_error)
         z = torch.cumsum(self.model.values[1],dim=0)
         err_norm_G = torch.abs(G) / lin_data_err[:, None]
@@ -670,7 +673,7 @@ class LCI(Inversion):
             mres = inv.model.copy()
             mres.values = mres.modelize(mvec)
             mres_list.append(mres.copy())
-            doi_value = inv.calc_doi()
+            doi_value = inv.calc_doi(mvec=mvec)
             doi_list.append(doi_value)
         self.doi = doi_list
         return mres_list
