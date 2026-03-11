@@ -23,6 +23,7 @@ class BaseInversion:
     damp_reduction_factor            : float = 2**0.5
     iter_cap                         : int = 50
     final_model                      : BaseModel = None
+    
     description                      : str = "Inversion Class"
 
 
@@ -46,6 +47,7 @@ class BaseInversion:
         self.damp_reduction_factor            = kwargs.get('damp_reduction_factor', self.damp_reduction_factor)
         self.iter_cap                         = kwargs.get('iter_cap', self.iter_cap)
         self.final_model                      = kwargs.get('final_model', self.final_model)
+        self._current_mvec = None
 
 
     def set_device(self, device):
@@ -94,7 +96,7 @@ class BaseInversion:
     
     @property
     def G(self):
-        if not torch.all(self.mvec==self._current_mvec) or self._G is None:
+        if self._current_mvec is None or not torch.all(self.mvec==self._current_mvec) or self._G is None:
             self._model_update(self.mvec)
         return self._G
     
@@ -585,28 +587,30 @@ class LCI(Inversion):
             self.one_over_error = torch.sqrt(self.recip_error_squared).reshape(self.n_sites, -1)[:, None, :]
             self._dobsgrid = self.data_observed.reshape(self.n_sites, -1)
             self._derrgrid = self.data_error.reshape(self.n_sites, -1)**2
+            _,thick = self.inv_list[0].model.mod
+            self.Ggrid = torch.empty((self.n_sites, len(thick)+1, self._dobsgrid.shape[-1]), dtype=rdtype, device=self.device)
         mvecs = mvec.reshape(self.n_sites, -1).T
         _,thick = self.inv_list[0].model.mod
         rhos = mvecs.exp()
         # thick = self.inv_list[0].model.thickness
-        Ggrid = torch.empty((self.n_sites, len(thick)+1, self._dobsgrid.shape[-1]), dtype=rdtype, device=self.device)
+        
         if self.n_sites<100:
-            Ggrid = self.inv_list[0].forward(rhos, thick, jac=True)
+            self.Ggrid = self.inv_list[0].forward(rhos, thick, jac=True)
         else:
             batch=50
             i=0
             while (i+2)*batch<self.n_sites:
-                Ggrid[i*batch:(i+1)*batch] = self.inv_list[0].forward(rhos[:, i*batch:(i+1)*batch], thick, jac=True)
+                self.Ggrid[i*batch:(i+1)*batch] = self.inv_list[0].forward(rhos[:, i*batch:(i+1)*batch], thick, jac=True)
                 i += 1
-            Ggrid[i*batch:] = self.inv_list[0].forward(rhos[:, i*batch:], thick, jac=True)
+            self.Ggrid[i*batch:] = self.inv_list[0].forward(rhos[:, i*batch:], thick, jac=True)
 
 
-        Ggrid /= self._dpredgrid.exp()[:, None, :]
-        Ggrid *= rhos.T[:,:,None]
-        r_data = torch.einsum('ijk,ijk->ij', Ggrid, ((self._dobsgrid-self._dpredgrid)/self._derrgrid)[:, None, :])
-        Ggrid *= self.one_over_error
+        self.Ggrid /= self._dpredgrid.exp()[:, None, :]
+        self.Ggrid *= rhos.T[:,:,None]
+        r_data = torch.einsum('ijk,ijk->ij', self.Ggrid, ((self._dobsgrid-self._dpredgrid)/self._derrgrid)[:, None, :])
+        self.Ggrid *= self.one_over_error
 
-        GtG = Ggrid @ Ggrid.swapaxes(-1,-2)
+        GtG = self.Ggrid @ self.Ggrid.swapaxes(-1,-2)
         GtG_np = GtG.cpu().numpy()  # shape: (n_sites, br, bc)
         n_blocks, br, bc = GtG_np.shape
         
@@ -645,9 +649,13 @@ class LCI(Inversion):
         mres_list = []
         doi_list = []
         mvecs = self.mvec.reshape(len(self.inv_list), -1)
-        for inv, mvec in zip(self.inv_list, mvecs):
+        self.Ggrid /= self.one_over_error
+        for i_site, (inv, mvec) in enumerate(zip(self.inv_list, mvecs)):
             mres = inv.model.copy()
             inv.mvec = mvec
+            inv._current_mvec=mvec
+            inv._G = self.Ggrid[i_site].T
+
             mres.values = mres.modelize(mvec)
             mres_list.append(mres.copy())
             doi_value = inv.calc_doi(mvec=mvec)
