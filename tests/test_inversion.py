@@ -92,13 +92,13 @@ def test_fastjacobian():
     times = torch.logspace(-5,-2, 32)
     fwrTD = logForward.example(times=times, tolerance=1e-6)
 
-    rho = torch.tensor([20, 80, 40])
+    rho = torch.tensor([40, 80, 40])
     thk = torch.tensor([30,40.])
     mod_true = LogResistivity.few_layers(rho, thk)
 
 
     dbdt_true = fwrTD(rho, thk).exp()
-    d_relerr = compute_relstd(fwrTD.times, dbdt_true, current=10.)
+    d_relerr = compute_relstd(fwrTD.times, dbdt_true, current=10.,relative_noise=0.03,noise_level_at_1ms=1e-8)
     d_err = torch.log1p(d_relerr)
     d_obs = dbdt_true + dbdt_true * torch.randn_like(dbdt_true) * d_relerr
 
@@ -106,14 +106,16 @@ def test_fastjacobian():
 
 
     fastJac = fastjacobian(Inversion)
-    res_start = LogResistivity.smooth(torch.ones(31)*50, torch.tensor(np.cumsum(np.logspace(0, 2.6, 30))))
+    res_start = LogResistivity.smooth(torch.ones(31)*40, torch.tensor(np.cumsum(np.logspace(0, 1.3, 30))))
 
-    print(fwrTD)
+    # print(fwrTD)
     inv = fastJac(d_obs, d_err, res_start, fwrTD)
+    # inv = fastJac(dbdt_true.log(), d_err, res_start, fwrTD)
     inv.setup_matrices()
     doi=inv.calc_doi()
     inv.data_misfit_acceptance_threshold = 0.9
-    res_mod= inv.invert(iter_cap=10,vc=0.7)
+    inv.vertical_smoothness=0.4
+    res_mod= inv.invert(iter_cap=10)
     doi = inv.doi        
 
     if __name__ == '__main__':
