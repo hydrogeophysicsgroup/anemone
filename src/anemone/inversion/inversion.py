@@ -654,7 +654,7 @@ class LCI(Inversion):
             mres = inv.model.copy()
             inv.mvec = mvec
             inv._current_mvec=mvec
-            inv._G = self.Ggrid[i_site].T
+            inv._G = torch.nan_to_num(self.Ggrid[i_site]).T
 
             mres.values = mres.modelize(mvec)
             mres_list.append(mres.copy())
