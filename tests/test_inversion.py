@@ -161,7 +161,7 @@ def test_lci():
 
 
     res_start = LogResistivity.smooth(torch.ones(len(z)+1)*50., z)
-    thick1 = torch.linspace(0, 20, 25).to(rdtype)#[:3]
+    thick1 = torch.linspace(0, 20, 500).to(rdtype)#[:3]
     inv_list = []
     m_trues=[]
 
@@ -185,17 +185,19 @@ def test_lci():
     print(f"Created {len(inv_list)} inversions")
     from time import time as timer
     bt = timer()
+    
+    import cProfile
+    import pstats
+    profiler = cProfile.Profile()
+    profiler.enable()
+
     lci = LCI(inv_list)
     lci.horizontal_smoothness=0.3
     lci.vertical_smoothness=1
 
     # lci.smoothness_vert = 1e3
     # lci.smoothness_horiz = 1e2
-    from time import time as timer
-    import cProfile
-    import pstats
-    profiler = cProfile.Profile()
-    profiler.enable()
+
 
     res_mods= lci.invert(iter_cap=2)
     dois = lci.doi
@@ -288,15 +290,16 @@ def test_sci():
     y_positions = r * np.sin(angles)
     from time import time as timer
     bt = timer()
+
+    import cProfile
+    import pstats    
     sci = SCI(inv_list, x = np.array(x_positions), y = np.array(y_positions))
     sci.horizontal_smoothness=0.7
     sci.vertical_smoothness=1
 
     # lci.smoothness_vert = 1e3
     # lci.smoothness_horiz = 1e2
-    from time import time as timer
-    import cProfile
-    import pstats
+
     profiler = cProfile.Profile()
     profiler.enable()
 
@@ -331,7 +334,7 @@ def test_sci():
 if __name__ == '__main__':
     # test_tikhonov_few_layer()
     # test_tikhonov_smooth()
-    test_fastjacobian()
-    # test_lci()
+    # test_fastjacobian()
+    test_lci()
     #test_sci()
     pass

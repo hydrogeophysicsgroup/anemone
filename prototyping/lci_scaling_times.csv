@@ -1,0 +1,7 @@
+models,built-in method torch.einsum,built-in method torch.exp,forwards.py:__call__,forwards.py:_res_call,forwards.py:forward,forwards.py:jacobian,functional.py:einsum,inversion.py:_model_update,inversion.py:data_misfit,inversion.py:data_predicted,inversion.py:invert,inversion.py:jacobian,inversion.py:mforward,inversion.py:misfit,inversion.py:run_iteration,inversion.py:setup_matrices,physics.py:calc_dpropmat,physics.py:calc_prop_matrix,physics.py:drte_dsigma,physics.py:rte_raiche1999
+10,0.645,0.594,3.087,3.087,0.472,2.613,0.651,3.095,2.099,2.099,3.205,2.62,0.474,2.108,2.123,1.012,2.555,1.422,2.565,
+25,1.636,1.584,8.086,8.086,1.206,6.877,1.643,8.093,5.21,5.21,8.289,6.884,1.209,5.216,5.24,2.911,6.758,3.807,6.781,
+50,3.415,,17.18,17.18,3.464,13.712,3.422,17.19,11.164,11.164,17.632,13.721,3.468,11.17,11.212,6.098,13.471,7.947,13.517,3.454
+100,9.034,8.022,44.993,44.992,5.811,39.164,9.043,45.066,27.649,27.657,46.094,39.229,5.829,27.678,27.823,17.565,38.65,23.971,38.752,
+200,17.128,14.373,78.283,78.281,12.603,65.658,17.233,78.458,45.118,45.116,80.083,65.805,12.624,45.154,45.316,33.704,64.469,37.558,64.726,
+500,34.139,32.292,152.215,152.212,21.975,130.212,34.206,152.472,96.382,96.378,156.221,130.46,21.986,96.428,96.86,56.699,127.623,76.267,128.1,
