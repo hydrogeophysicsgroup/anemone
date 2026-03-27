@@ -83,14 +83,15 @@ def test_sci(n_model=25):
     profiler = cProfile.Profile()
     profiler.enable()
 
-    res_mods = sci.invert(iter_cap=4)
+    # m1 = sci.m
+    sci.invert()
 
     profiler.disable()
     return profiler
 
-with open('sci_profile.txt', 'w', encoding='utf-8') as f:
+with open('sci_batch50_reuse.txt', 'w', encoding='utf-8') as f:
 
-    for n_model in [5, 10, 25, 40, 50, 75, 100, 200, 500]:
+    for n_model in [3, 5, 7, 10, 25, 40, 50, 100]:#75, 100, 200, 500]:
         f.write('## {} models\n'.format(n_model))
         prof = test_sci(n_model=n_model)
         stats = pstats.Stats(prof, stream=f)

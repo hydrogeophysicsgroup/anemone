@@ -556,23 +556,80 @@ def rte_raiche1999(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.eps
     rte = (RTEj+Fj) / (1.+RTEj*Fj)
     return torch.nan_to_num(rte)
 
-def calc_prop_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, pad=0):
-    # print('sigma device: ', sigma.device)
-    # print('thickness device: ', thickness.device)
-    # print('omega device: ', omega.device)
-    # print('wave_length device: ', wave_length.device)
-    # print('mu device: ', mu.device)
-    # print('epsilon device: ', epsilon.device)
+def rte_raiche1999_clamped(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    n_layers = len(sigma)
+    lambda2 = wave_length**2
 
+    Fj = torch.zeros((), dtype=torch.complex64, device=sigma.device)
+
+    sj1 = wave_length * torch.sqrt(1 + 1j*omega*c.mu0*sigma[-1]/lambda2)
+
+    for i in range(n_layers-2, -1, -1):
+        sj = wave_length * torch.sqrt(1 + 1j*omega*c.mu0*sigma[i]/lambda2)
+
+        RTEj = 1j*omega*c.mu0*(sigma[i] - sigma[i+1])/(sj + sj1)**2
+
+        arg = -2. * sj * thickness[i]
+        arg_real = torch.clamp(arg.real, -80, 80)
+        arg_imag = torch.clamp(arg.imag, -80, 80)
+        exp2uh = torch.exp(arg_real + 1j*arg_imag)
+
+        num = Fj + RTEj
+        den = 1. + Fj * RTEj
+        den = torch.where(torch.abs(den) < 1e-6, den + 1e-6, den)
+
+        Fj = exp2uh * (num / den)
+        sj1 = sj
+
+    RTEj = 1j*omega*c.mu0*(-sigma[0])/(sj + wave_length)**2
+    rte = (RTEj + Fj) / (1. + RTEj * Fj)
+
+    return torch.nan_to_num(rte)
+
+def rte_smatrix(sigma, thickness, omega, wave_length, mu=c.mu0):
+    n = len(sigma)
+    lambda2 = wave_length**2
+
+    R = torch.zeros((), dtype=torch.complex64, device=sigma.device)
+
+    sj1 = wave_length * torch.sqrt(1 + 1j*omega*mu*sigma[-1]/lambda2)
+
+    for i in range(n-2, -1, -1):
+        sj = wave_length * torch.sqrt(1 + 1j*omega*mu*sigma[i]/lambda2)
+
+        # local reflection coefficient
+        rj = (sj1 - sj) / (sj1 + sj)
+
+        # stable exponential
+        arg = -2 * sj * thickness[i]
+        arg_real = torch.clamp(arg.real, -80, 80)
+        arg_imag = torch.clamp(arg.imag, -80, 80)
+        exp_term = torch.exp(arg_real + 1j * arg_imag)
+
+        num = rj + R * exp_term
+        den = 1 + rj * R * exp_term
+
+        den = torch.where(torch.abs(den) < 1e-6, den + 1e-6, den)
+
+        R = num / den
+
+        # optional stabilization (very effective)
+        R = R / torch.maximum(torch.abs(R), torch.tensor(1.0, device=R.device))
+
+        sj1 = sj
+
+    return R
+
+def calc_prop_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, pad=0):
     thick = torch.vstack([torch.zeros_like(thickness[:1]), thickness])
 
     lambda2 = wave_length**2
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
-    un = torch.sqrt(lambda2 - k2)
-    u0 = freespace_u0(omega, wave_length)
-    un1 = torch.roll(un, 1, dims=0)
-    un1[0] = u0
-    un2 = un*1.
+    un2 = torch.sqrt(lambda2 - k2)
+    # u0 = freespace_u0(omega, wave_length)
+    un1 = torch.roll(un2, 1, dims=0)
+    un1[0] = wave_length
+    # un2 = un*1.
 
     euh_p = torch.exp(un1*thick)
 
@@ -625,7 +682,7 @@ def calc_dpropmat(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsi
     # # print(dsig)
         
     dsigma = sigma.clone()
-    sigma_pert = 0.05*dsigma
+    sigma_pert = 0.02*dsigma
     dsigma[::2] -= sigma_pert[::2]
     dpropmat = calc_prop_matrix(dsigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)
     dpropmat = torch.roll(dpropmat, -pad//2, dims=2)

@@ -89,7 +89,7 @@ class Loop:
         t = torch.linspace(0, 2*torch.pi, n)
         x = r*torch.cos(t)
         y = r*torch.sin(t)
-        z = torch.ones_like(x)*kwargs.get('z', 0.)
+        z = torch.ones_like(x)*kwargs.pop('z', 0.)
         lp = cls(x, y, z, **kwargs)
         lp.area = torch.pi*radius**2
         lp.radius = r

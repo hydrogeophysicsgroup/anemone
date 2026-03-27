@@ -10,7 +10,7 @@ class constants:
     epsilon0 = 8.854187817e-12
     log2 = 0.6931471805599453
 
-default_dtype = 'double'
+default_dtype = 'float'
 if default_dtype=='float':
     rdtype = torch.float32
     cdtype = torch.complex64

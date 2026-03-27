@@ -192,16 +192,16 @@ def fastjacobian(cls):
             assert self.model.free[-1]==False, "FastJacobian only works for models with fixed thicknesses"
 
         def jacobian(self, mvec):
-            self.mvec = mvec*1.
             rho, thick = self.model.modelize(mvec)
-            # rho = torch.from_numpy(rho)
             if isinstance(thick, np.ndarray): thick = torch.from_numpy(thick)
-            G = self.forward(rho, thick, jac=True)#.detach().cpu().numpy()
-            G *= rho[:, None]
-            #self._dpred = torch.tensor(self.data_predicted, device=self.mvec.device, dtype=self.mvec.dtype)
-            G /= self.data_predicted.exp()
+            G = self.forward(rho, thick, jac=True)
+            if self.model.log_scale:
+                G *= rho[:, None]
+            if self.forward.log_scale:
+                G /= self.data_predicted.exp()[None, :]
             return G.T
     return FastJacobian
+
 
 
 @nosj
@@ -454,6 +454,7 @@ class LCI(Inversion):
     _r_data        = None
     horizontal_smoothness = 0.8
     data_misfits   = np.inf
+    reuse_jac = True
 
     @property
     def m(self):
@@ -572,7 +573,7 @@ class LCI(Inversion):
 
         self._dpred = self.mforward(self.mvec)
         self.jacobian(self.mvec)
-        self._r_data -= self.CtC @ self.cmvec 
+        # self._r_data -= self.CtC @ self.cmvec 
     
     def calc_dm(self):
         Aown = sp.sparse.csr_matrix(self._GtG) + self.CtC + self.damp_matrix()
@@ -592,21 +593,33 @@ class LCI(Inversion):
         mvecs = mvec.reshape(self.n_sites, -1).T
         _,thick = self.inv_list[0].model.mod
         rhos = mvecs.exp()
-        # thick = self.inv_list[0].model.thickness
-        
-        if self.n_sites<100:
-            self.Ggrid = self.inv_list[0].forward(rhos, thick, jac=True)
+
+        if self.reuse_jac:
+            mvec0 = mvecs[:, 0]
+            Gsingle = self.inv_list[0].forward(rhos[:, 0], thick, jac=True)
+            self.Ggrid[0] = Gsingle
+            for i_site in range(1, self.n_sites):
+                cvec = mvecs[:, i_site]
+                rel_diff = torch.abs(cvec - mvec0) / torch.abs(mvec0)
+                if torch.all(rel_diff < 1e-1):
+                    self.Ggrid[i_site] = Gsingle
+                else:
+                    mvec0 = cvec
+                    self.Ggrid[i_site] = self.inv_list[i_site].forward(rhos[:, i_site], thick, jac=True)
         else:
             batch=50
-            i=0
-            while (i+2)*batch<self.n_sites:
-                self.Ggrid[i*batch:(i+1)*batch] = self.inv_list[0].forward(rhos[:, i*batch:(i+1)*batch], thick, jac=True)
-                i += 1
-            self.Ggrid[i*batch:] = self.inv_list[0].forward(rhos[:, i*batch:], thick, jac=True)
+            if self.n_sites<batch:
+                self.Ggrid = self.inv_list[0].forward(rhos, thick, jac=True)
+            else:
+                i=0
+                while (i+2)*batch<self.n_sites:
+                    self.Ggrid[i*batch:(i+1)*batch] = self.inv_list[0].forward(rhos[:, i*batch:(i+1)*batch], thick, jac=True)
+                    i += 1
+                self.Ggrid[i*batch:] = self.inv_list[0].forward(rhos[:, i*batch:], thick, jac=True)
 
 
         self.Ggrid /= self._dpredgrid.exp()[:, None, :]
-        self.Ggrid *= rhos.T[:,:,None]
+        self.Ggrid /= rhos.T[:,:,None]
         r_data = torch.einsum('ijk,ijk->ij', self.Ggrid, ((self._dobsgrid-self._dpredgrid)/self._derrgrid)[:, None, :])
         self.Ggrid *= self.one_over_error
 
@@ -733,7 +746,4 @@ class SCI(LCI):
             shape=(n_constraints, n_params)
         ).tocsr()
 
-        # #ax[2].imshow((c_mat != 0).astype(int), aspect='auto', cmap='gray', interpolation='nearest')
-        # ax[2].spy(c_mat, markersize=1)
-        # plt.show()
-        return c_mat#sp.sparse.csr_matrix(c_mat)
+        return c_mat

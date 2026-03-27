@@ -1,5 +1,5 @@
 from anemone.transforms import Hankel, invFourier, CubicSpline, invLaplace, coefficient_bounds
-from anemone.physics import rte_raiche1999 as rte, freespace_u0 as u0, colecole, mpa2colecole, colecole2mpa
+from anemone.physics import rte_raiche1999_clamped as rte, freespace_u0 as u0, colecole, mpa2colecole, colecole2mpa
 from anemone.physics import rte_nbc_laplace as rtelap
 from anemone.physics import drte_dsigma, calc_dpropmat
 from anemone import constants as c, rdtype, cdtype
@@ -659,7 +659,7 @@ class VMDForward(BaseForward):
                 return intg.squeeze()
             hkl1 = Hankel(wvlngth_integrand, 0, smp_per_decade=10, device=self.device)
             hkl1._recenter_function(self.rx_dist)
-            Hr = ((hkl1.func(hkl1.lamda))@(hkl1.fc+0j))/self.rx_dist
+            Hr = ((hkl1.func(hkl1.lamda))@(hkl1.fc.to(rdtype)+0j))/self.rx_dist
             if self.filterfunc is not None:
                 Hr *= self.filterfunc.omega_filter(self.omega.squeeze())
             if self.waveform is not None:
@@ -758,7 +758,6 @@ class Forward(BaseForward):
         if self.H2t is None and do_setup: 
             self.setup()
             self.device=device
-            self.H2t = self.H2t.to(self.device).to(cdtype)
             self.omega = self.omega.to(self.device).to(cdtype)
             self.lamda = self.lamda.to(self.device).to(cdtype)
 
@@ -804,32 +803,32 @@ class Forward(BaseForward):
 
         self.H2t, self.omega, self.lamda = make_H2t(self.t2t, self.geomz, self.omega1, self.lamda1, tolerance=self.tolerance)
 
-        self.H2t    = self.H2t.to(self.device).to(cdtype)
-        self.H2t   /= torch.sqrt(self.omega)
+        self.H2t    = 2.*self.H2t.to(self.device).real.to(rdtype)
+        self.H2t   /= torch.sqrt(self.omega.real.to(rdtype))
         self.omega *= c.sqrt_twopi
         self.rho    = None
         self.thick  = None
 
-
     def forward(self):
         if self.H2t is None: self.setup()
         with torch.no_grad():
-            cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze()
-            res = torch.einsum('ik,...k->i...', self.H2t.real*2, cRTE.real).real
+            cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze().real.to(rdtype)
+            res = torch.einsum('ik,...k->i...', self.H2t, cRTE)#.real
             if len(res.shape)>1: res = res.mT
             return res
 
     def jacobian(self):
         # dRTE = drte_dsigma(self.sigma.to(torch.complex64), self.thick.to(torch.complex64), self.omegajac, self.lamdajac).squeeze()
-        dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lamda).squeeze()
-        
-        if len(dRTE.shape)>2:
-            Gr = torch.einsum('ijk,lk->jil', dRTE, self.H2t).real
-            Gr /= (self.rho.real.squeeze().T**2)[:,:,None]
-        else:
-            Gr = torch.einsum('ik,...k->i...', dRTE.real, self.H2t.real) - torch.einsum('ik,jk->ij', dRTE.imag, self.H2t.imag)
-            Gr /= (self.rho.real.squeeze()**2)[:,None]
-        return Gr
+        with torch.no_grad():
+            dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lamda).squeeze().real.to(rdtype)
+            
+            if len(dRTE.shape)>2:
+                Gr = torch.einsum('ijk,lk->jil', dRTE, self.H2t)
+                # Gr /= (self.rho.real.squeeze().T**2)[:,:,None]
+            else:
+                Gr = torch.einsum('ik,...k->i...', dRTE, self.H2t)
+                # Gr /= (self.rho.real.squeeze()**2)[:,None]
+            return Gr
     
     def _res_call(self, rho, thickness, jac=False):
         with torch.no_grad():
@@ -871,8 +870,8 @@ class Forward(BaseForward):
         t2t = torch.vstack([newfwr.t2t, tmpother.t2t])
         newfwr.H2t, newfwr.omega, newfwr.lamda = make_H2t(t2t, newfwr.geomz, tmp_omega, tmp_lamda, tolerance=tol)
 
-        newfwr.H2t       = newfwr.H2t.to(newfwr.device).to(cdtype)
-        newfwr.H2t      /= torch.sqrt(newfwr.omega)
+        newfwr.H2t       = 2.*newfwr.H2t.to(newfwr.device).to(rdtype)
+        newfwr.H2t      /= torch.sqrt(newfwr.omega.real)
         newfwr.omega    *= c.sqrt_twopi
         newfwr.rho       = None
         newfwr.thick     = None
