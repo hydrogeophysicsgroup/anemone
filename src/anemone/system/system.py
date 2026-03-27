@@ -330,7 +330,7 @@ class Waveform:
         wv = torch.tensor([0, 1, 1, 0], dtype=rdtype)
         return cls(t, wv)
 
-@nosj
+# @nosj
 class SystemResponse:
     time      : Tensor
     dSRdt     : Tensor
@@ -338,8 +338,10 @@ class SystemResponse:
         np_time = time.numpy()
         dtime = torch.from_numpy(np.diff(np_time, prepend=np_time[0]))
         amplitude = dSRdt * dtime
-        Waveform(time, dSRdt)
+        super().__init__(time, dSRdt)
         self.d2wdt2 = amplitude
+        self.time = time
+        self.amplitude = amplitude
 
 @nosj
 class ButterworthFilter:

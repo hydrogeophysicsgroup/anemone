@@ -110,13 +110,14 @@ class BaseForward:
         self.waveform = waveform
 
         
-        
 
         self.filterfunc = filterfunc
         self.device = times.device
         if waveform is not None:
             if self.waveform.time.max()<self.tmin:
                 self.tmin += -self.waveform.time.max()
+            else:
+                self.tmin /= 100.
             self.tmax += -self.waveform.time.min()
             waveform.time = waveform.time.to(self.device)
             waveform.amplitude = waveform.amplitude.to(self.device)
@@ -814,7 +815,7 @@ class Forward(BaseForward):
         if self.H2t is None: self.setup()
         with torch.no_grad():
             cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze()
-            res = torch.einsum('ik,...k->i...', self.H2t, cRTE).real
+            res = torch.einsum('ik,...k->i...', self.H2t.real*2, cRTE.real).real
             if len(res.shape)>1: res = res.mT
             return res
 
