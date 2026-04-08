@@ -12,22 +12,22 @@ import warnings
 from anemone.system import lamontagne
 from copy import deepcopy
 
-def wv_to_t(t_eval, t_sampled, waveform=None):
+def waveform_matrix(t_eval, t_sampled, waveform=None):
     t_eval = t_eval.to(rdtype)
     t_sampled = t_sampled.to(rdtype)
 
-    logT = torch.log(t_sampled)#.cpu()
-    dT = logT[1]-logT[0]
     if waveform is None:
-        t2t = lamontagne((torch.log(t_eval)[:,None]-logT[None,:])/dT)
+        t2t = interpolation_matrix(t_sampled, t_eval)
     else:
+        logT = torch.log(t_sampled)#.cpu()
+        dT = logT[1]-logT[0]
         t2t = torch.zeros(t_eval.shape+t_sampled.shape, device=t_sampled.device, dtype=t_eval.dtype)
 
         for t_wv,k_wv in zip(waveform.time, waveform.d2wdt2):
             t2t += k_wv*torch.nan_to_num(lamontagne((torch.log(t_eval-t_wv)[:,None]-logT[None,:])/dT))
     return t2t
 
-def intMat(t_in, t_out):
+def interpolation_matrix(t_in, t_out):
     t_out = t_out.to(t_in.dtype)
     logT = torch.log(t_in)#.cpu()
     dT = logT[1]-logT[0]
@@ -670,11 +670,11 @@ class VMDForward(BaseForward):
             self.cbft=invFourier(frq_integrand, device=self.device, tolerance=self.tolerance)
             def t2t_func(t_in):
                 if self.t_end is not None:
-                    waveform_matrix = wv_to_t(t_in, t_in, waveform=self.waveform)
+                    waveform_matrix = waveform_matrix(t_in, t_in, waveform=self.waveform)
                     gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
                     return gate_matrix @ waveform_matrix
                 else:
-                    return wv_to_t(self.times, t_in, waveform=self.waveform)
+                    return waveform_matrix(self.times, t_in, waveform=self.waveform)
             
             Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
         else:
@@ -684,34 +684,41 @@ class VMDForward(BaseForward):
 
 def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
     import numpy as np
-
     t_indices = np.arange(t2t.shape[0])
-    t1 = (t2t[0, :, None]*geomz.real[None, :]).numpy()
-    
+
+    if geomz.ndim > 1:
+        g_indices = np.arange(geomz.shape[0])
+    else:
+        g_indices = np.array([0])
+        geomz = geomz[None, :]
+
+    t1 = (t2t[0, :, None]*geomz[0].real[None, :]).numpy()
+
     from anemone.physics import rte_halfspace
     rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:,None], lmb[None,:]).squeeze().cpu().numpy()
 
     if tolerance is not None:
         full_mask = np.zeros_like(t1, dtype=bool)
-        for i in t_indices:
-            t1 = (t2t[i, :, None]*geomz.real[None, :]).numpy()*rte_ref
-            t1_shape = t1.shape
-            t1sort = np.abs(t1).flatten()
-            # indices = np.arange(len(t1sort))
+        for i_g in g_indices:
+            c_geomz = geomz[i_g]
+            for i_t in t_indices:
+                t1 = (t2t[i_t, :, None].real*c_geomz.real[None, :]).numpy()*rte_ref
+                t1_shape = t1.shape
+                t1sort = np.abs(t1).flatten()
 
-            sort_idx = np.argsort(t1sort)
-            t1sort = t1sort[sort_idx]
-            t1cumsum = np.cumsum(t1sort)
-            t1cumsum /= t1cumsum[-1]
-            idx = np.searchsorted(t1cumsum, tolerance)#-1
+                sort_idx = np.argsort(t1sort)
+                t1sort = t1sort[sort_idx]
+                t1cumsum = np.cumsum(t1sort)
+                t1cumsum /= t1cumsum[-1]
+                idx = np.searchsorted(t1cumsum, tolerance)+1
 
-            mask = np.zeros_like(t1sort, dtype=bool)
-            mask[idx:] = True
+                mask = np.zeros_like(t1sort, dtype=bool)
+                mask[idx:] = True
 
 
-            inv_sort = np.argsort(sort_idx)
-            mask = mask[inv_sort].reshape(t1_shape)
-            full_mask += mask
+                inv_sort = np.argsort(sort_idx)
+                mask = mask[inv_sort].reshape(t1_shape)
+                full_mask += mask
     else:
         full_mask = np.ones_like(t1, dtype=bool)
 
@@ -723,21 +730,18 @@ def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
     lamda_i = lamda_i[full_mask]
 
 
-    H2t = np.zeros(t2t.shape[:1]+(full_mask.sum(),), dtype=complex)
+    H2t = np.zeros(t2t.shape[:1]+geomz.shape[:-1]+(full_mask.sum(),), dtype=complex)
 
-    for i in range(t2t.shape[0]):
-        t1 = (t2t[i, :, None]*geomz.real[None, :]).numpy()
-        H2t[i] = t1[full_mask].flatten()
+    for i_t in range(t2t.shape[0]):
+        for i_g in g_indices:
+            t1 = (t2t[i_t, :, None]*geomz[i_g].real[None, :]).numpy()
+            H2t[i_t, i_g] = t1[full_mask].flatten()
 
-    H2tweight = np.abs(H2t).sum(0)#.numpy()
-
-    idx_H2t = np.argsort(H2tweight)[::-1]
-    H2t = H2t[:, idx_H2t]
-
+    H2t = H2t.squeeze()
     Omega,Lambda = np.meshgrid(omega.squeeze().cpu().numpy(), lmb.squeeze().cpu().numpy(), indexing='ij')
     Omega = Omega[full_mask]
     Lambda = Lambda[full_mask]
-    return torch.tensor(H2t), torch.tensor(Omega[idx_H2t])+0j, torch.tensor(Lambda[idx_H2t])+0j
+    return torch.tensor(H2t), torch.from_numpy(Omega), torch.from_numpy(Lambda)
 
 
 @nosj
@@ -786,11 +790,11 @@ class Forward(BaseForward):
         self.cbft=invFourier(frq_integrand, device=self.device)
         def t2t_func(t_in):
             if self.t_end is not None:
-                waveform_matrix = wv_to_t(t_in, t_in, waveform=self.waveform)
+                waveform_matrix = waveform_matrix(t_in, t_in, waveform=self.waveform)
                 gate_matrix = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
                 return gate_matrix @ waveform_matrix
             else:
-                return wv_to_t(self.times, t_in, waveform=self.waveform)
+                return waveform_matrix(self.times, t_in, waveform=self.waveform)
 
         
         Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
@@ -815,7 +819,7 @@ class Forward(BaseForward):
         if self.H2t is None: self.setup()
         with torch.no_grad():
             cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze()
-            res = torch.einsum('ik,...k->i...', self.H2t.real*2, cRTE.real).real
+            res = 2*self.H2t.real@cRTE.real
             if len(res.shape)>1: res = res.mT
             return res
 
