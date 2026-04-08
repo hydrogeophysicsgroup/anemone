@@ -41,9 +41,10 @@ class Receiver:
         else:
             all_points = [coord.numel() for coord in (self.x, self.y, self.z)]
             npoints = max(all_points)
-            self.X = self.x if self.x.numel()!=npoints else torch.ones(npoints)*self.x
-            self.Y = self.y if self.y.numel()!=npoints else torch.ones(npoints)*self.y
-            self.Z = self.z if self.z.numel()!=npoints else torch.ones(npoints)*self.z
+
+            self.X = self.x if self.x.numel()==npoints else torch.ones(npoints)*self.x
+            self.Y = self.y if self.y.numel()==npoints else torch.ones(npoints)*self.y
+            self.Z = self.z if self.z.numel()==npoints else torch.ones(npoints)*self.z
 
     def _grid(self):
         X,Y,Z = torch.meshgrid(self.x, self.y, self.z, indexing='ij')
@@ -59,8 +60,6 @@ class Receiver:
                             self.X.flatten(), 
                             self.Y.flatten(), 
                             self.Z.flatten())), 0, -1))
-
-
 
     def __len__(self):
         return self.X.numel()
