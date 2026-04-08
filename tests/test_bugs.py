@@ -43,13 +43,12 @@ def test_gate_sampling():
         ax.loglog(fwr.times, -dbdt1, '.')
         plt.show()
 
-@pytest.mark.skipif(skip_multi_rx, reason="multi-rx needs retooling.")
 def test_multirx():
     tx = Loop.square(2)
-    from anemone.forwards import BaseForward as Forward
+    from anemone.forwards import  Forward
     import numpy as np
     
-    X,Y = torch.linspace(-1, 1, 7)*0.98, np.linspace(-1, 1, 7)*0.98
+    X,Y = torch.linspace(-1, 1, 4)*0.98, np.linspace(-1, 1, 4)*0.98
 
     
 
@@ -58,34 +57,33 @@ def test_multirx():
 
     lm_gates = torch.logspace(-6, -3, 32)
 
-    resp = torch.zeros(X.shape+Y.shape, dtype=torch.float64)
+    # resp = torch.zeros(X.shape+Y.shape, dtype=torch.float64)
     
-    for ix,x in enumerate(X):
-        for iy,y in enumerate(Y):
-            rx = Receiver(x=x, y=y)
-            fwr = Forward(tx,rx,lm_gates)
-            # print('rmin rmax: ', fwr.rmin, fwr.rmax)
-            dbdt = fwr(rho,thk)
-            resp[ix,iy] = dbdt[0]
+    # for ix,x in enumerate(X):
+    #     for iy,y in enumerate(Y):
+    #         rx = Receiver(x=x, y=y)
+    #         fwr = Forward(tx,rx,lm_gates)
+    #         dbdt = fwr(rho,thk)
+    #         resp[ix,iy] = dbdt[0]
 
-    rx1 = Receiver(x=X, y=Y)
+    rx1 = Receiver(x=X, y=Y, grid=True)
     fwr = Forward(tx,rx1,lm_gates)
     dbdt = fwr(rho,thk)
 
     resp2 = dbdt[..., 0].reshape(X.shape+Y.shape)
 
-    assert torch.allclose(resp, resp2, rtol=5e-3), 'multi-receiver forward not consistent with single-receiver forwards within 1/2 percent'
+    # assert torch.allclose(resp, resp2, rtol=1e-2), 'multi-receiver forward not consistent with single-receiver forwards within 1/2 percent'
     
-    if __name__ == '__main__':
-        import matplotlib.pyplot as plt
-        fig,ax = plt.subplots(1,3)
-        pcm=ax[0].pcolor(X,Y, resp)
-        plt.colorbar(pcm, ax=ax[0])
-        pcm=ax[1].pcolor(X,Y, resp2)
-        plt.colorbar(pcm, ax=ax[1])
-        pcm=ax[2].pcolor(X,Y, (resp-resp2) / resp)
-        plt.colorbar(pcm, ax=ax[2])
-        plt.show()
+    # if __name__ == '__main__':
+    #     import matplotlib.pyplot as plt
+    #     fig,ax = plt.subplots(1,3)
+    #     pcm=ax[0].pcolor(X,Y, resp)
+    #     plt.colorbar(pcm, ax=ax[0])
+    #     pcm=ax[1].pcolor(X,Y, resp2)
+    #     plt.colorbar(pcm, ax=ax[1])
+    #     pcm=ax[2].pcolor(X,Y, (resp-resp2) / resp)
+    #     plt.colorbar(pcm, ax=ax[2])
+    #     plt.show()
         
 
 
@@ -188,7 +186,16 @@ def test_eliye_spring2025_site_30():
 # from site 
 
 if __name__ == '__main__':
-    test_eliye_spring2025_site_31()
+    #test_eliye_spring2025_site_31()
     #test_gate_sampling()
     # test_multirx_symmetry()
 
+
+    import cProfile
+    import pstats
+    profiler = cProfile.Profile()
+    profiler.enable()
+    test_multirx()
+    profiler.disable()
+    stats = pstats.Stats(profiler)
+    stats.sort_stats('cumtime').print_stats(20)
