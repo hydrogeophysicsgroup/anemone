@@ -29,13 +29,15 @@ class Receiver:
     y       : Tensor
     z       : Tensor
     grid    : bool = True
+    weighting  : Tensor = None
 
-    def __init__(self, x=0., y=0., z=0., grid=False) -> None:
+    def __init__(self, x=0., y=0., z=0., grid=False, weighting=None) -> None:
         self.x = torch.tensor(x, dtype=rdtype) if not isinstance(x, Tensor) else x.to(rdtype)
         self.y = torch.tensor(y, dtype=rdtype) if not isinstance(y, Tensor) else y.to(rdtype)
         self.z = torch.tensor(z, dtype=rdtype) if not isinstance(z, Tensor) else z.to(rdtype)
         self.grid = grid
-        
+        self.weighting = torch.tensor(weighting, dtype=rdtype) if weighting is not None else None
+
         if self.grid:
             self._grid()
         else:
@@ -197,6 +199,8 @@ class Loop:
             phi = lamontagne((torch.log(cr)-logR)/dR)
             cs =  -y1 * phi * dx / cr
             geomz += cs.sum(axis=1, keepdims=False)
+        if hasattr(rx, 'weighting') and rx.weighting is not None:
+            geomz = torch.einsum('i,ij...->j...', rx.weighting, geomz)
         return geomz.to(R.device)
 
     def _geomz_circle(self, rx, R):
