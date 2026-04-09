@@ -130,7 +130,10 @@ class BaseInversion:
 
 
     def mforward(self, mvec):
-        return self.forward(*self.model.modelize(mvec))
+        mparam = self.model.modelize(mvec)
+        if hasattr(self.forward, 'device'):
+            mparam = [x.to(self.forward.device) for x in mparam]
+        return self.forward(*mparam)
 
     @property
     def stop_inversion(self):
@@ -563,6 +566,9 @@ class LCI(Inversion):
         mvecs = mvec.reshape(self.n_sites, -1).T
         _, thickness = self.inv_list[0].model.mod
         rhos = mvecs.exp()
+        if hasattr(self.inv_list[0].forward, 'device'):
+            rhos = rhos.to(self.inv_list[0].forward.device)
+            thickness = thickness.to(self.inv_list[0].forward.device)
         self._dpredgrid = self.inv_list[0].forward(rhos, thickness)
         return self._dpredgrid.flatten()
     
@@ -593,6 +599,10 @@ class LCI(Inversion):
         mvecs = mvec.reshape(self.n_sites, -1).T
         _,thick = self.inv_list[0].model.mod
         rhos = mvecs.exp()
+        
+        if hasattr(self.inv_list[0].forward, 'device'):
+            rhos = rhos.to(self.inv_list[0].forward.device)
+            thick = thick.to(self.inv_list[0].forward.device)
 
         if self.reuse_jac:
             mvec0 = mvecs[:, 0]
@@ -619,7 +629,7 @@ class LCI(Inversion):
 
 
         self.Ggrid /= self._dpredgrid.exp()[:, None, :]
-        self.Ggrid /= rhos.T[:,:,None]
+        self.Ggrid /= rhos.cpu().T[:,:,None]
         r_data = torch.einsum('ijk,ijk->ij', self.Ggrid, ((self._dobsgrid-self._dpredgrid)/self._derrgrid)[:, None, :])
         self.Ggrid *= self.one_over_error
 

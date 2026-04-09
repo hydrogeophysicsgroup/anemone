@@ -126,7 +126,7 @@ def test_fastjacobian():
         plt.show()
 
 def test_lci():
-    gpu = torch.device('cpu')
+    gpu = torch.device('cuda')
     print('number of threads: ', torch.get_num_threads())
     logForward = logify_forward(Forward)
 
@@ -134,13 +134,16 @@ def test_lci():
     t2 = torch.logspace(-5, -3, 31)
     tx = Loop.square(3)
     rx = Receiver(x=10.)
+    
     wv1 = Waveform(torch.tensor([-0.5e-3, -0.9e-3, 0., 0.5e-6]), torch.tensor([0, 1, 1, 0]))
     wv2 = Waveform(torch.tensor([-1e-3, -1.5e-3, 0., 0.5e-5]), torch.tensor([0, 1, 1, 0]))
 
     fwr1 = logForward(tx, rx, t1, waveform=wv1, tolerance=1e-6, do_setup=False)
     fwr2 = logForward(tx, rx, t2, waveform=wv2, tolerance=1e-6, do_setup=False)
+    # fwr2.set_device(gpu)
 
     fwr = fwr1 + fwr2
+    fwr.set_device(gpu)
 
 
     z = torch.cumsum(torch.logspace(0, np.log10(50.), 20), 0)
@@ -153,7 +156,7 @@ def test_lci():
 
 
     res_start = LogResistivity.smooth(torch.ones(len(z)+1)*50., z)
-    thick1 = torch.linspace(0, 20, 50).to(rdtype)#[:3]
+    thick1 = torch.linspace(0, 20, 5000).to(rdtype)#[:3]
     inv_list = []
     m_trues=[]
     from time import time as timer
@@ -172,6 +175,7 @@ def test_lci():
         dbdt = this_fwr(crho, thk).exp()
         d_err = compute_relstd(fwr.times, dbdt, current=10.)
         d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log()
+        this_fwr.set_device(gpu)
         tmp_inv = fastJac(d_obs, torch.log1p(d_err), res_start.copy(), this_fwr)
 
         # tmp_inv.setup_matrices()
@@ -186,7 +190,7 @@ def test_lci():
     lci = LCI(inv_list)
     lci.horizontal_smoothness=0.3
     lci.vertical_smoothness=0.3
-    lci.reuse_jac = False
+    lci.reuse_jac = True
 
     # lci.smoothness_vert = 1e3
     # lci.smoothness_horiz = 1e2

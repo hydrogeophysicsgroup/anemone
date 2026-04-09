@@ -544,6 +544,11 @@ def rte_raiche1999(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.eps
     lambda2 = wave_length**2
     
     Fj = 0.
+    # print('omega dev: ', omega.device)
+    # print('lambda dev: ', lambda2.device)
+    # print('sigma dev: ', sigma.device)
+    # # print('mu0 dev: ', c.mu0.device)
+
     sj1 = wave_length*(1 + 1j*omega*c.mu0*sigma[-1]/lambda2)**0.5
 
     for i in range(n_layers-2, -1, -1):

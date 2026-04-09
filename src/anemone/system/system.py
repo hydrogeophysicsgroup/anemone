@@ -100,7 +100,7 @@ class Loop:
         half = side / 2.
         x = torch.tensor([-half,  half, half, -half, -half], dtype=rdtype)
         y = torch.tensor([-half, -half, half,  half, -half], dtype=rdtype)
-        z = torch.ones_like(x, dtype=rdtype)*kwargs.get('z', 0.)
+        z = torch.ones_like(x, dtype=rdtype)*kwargs.pop('z', 0.)
         lp = cls(x, y, z)
         lp.area = side*side
         return lp
@@ -110,7 +110,7 @@ class Loop:
         half = side / 2.
         x = torch.tensor([-side, 0, 0, side, side, 0, 0, -side, -side])
         y = torch.tensor([-half, -half, half, half, -half, -half, half, half, -half])
-        z = torch.ones_like(x)*kwargs.get('z', 0.)
+        z = torch.ones_like(x)*kwargs.pop('z', 0.)
         return cls(x, y, z)
     
     @classmethod
