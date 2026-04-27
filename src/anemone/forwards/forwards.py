@@ -845,22 +845,25 @@ class Forward(BaseForward):
 
 
     def forward(self):
-        if self.H2t is None: self.setup()
+        if self.H2t is None: 
+            self.setup()
+            self.H2t = self.H2t.to(self.device).to(rdtype)
+
         with torch.no_grad():
-            cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze()
-            res = 2*self.H2t.real@cRTE.real
+            cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze().to(rdtype)
+            res = torch.einsum('ik,...k->i...', self.H2t.real, cRTE)
             if len(res.shape)>1: res = res.mT
             return res
 
     def jacobian(self):
         # dRTE = drte_dsigma(self.sigma.to(torch.complex64), self.thick.to(torch.complex64), self.omegajac, self.lamdajac).squeeze()
-        dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lamda).squeeze()
+        dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lamda).squeeze().real.T
         
         if len(dRTE.shape)>2:
-            Gr = torch.einsum('ijk,lk->jil', dRTE, self.H2t).real
+            Gr = torch.einsum('ijk,lk->jil', dRTE.real, self.H2t.real).real
             Gr /= (self.rho.real.squeeze().T**2)[:,:,None]
         else:
-            Gr = torch.einsum('ik,...k->i...', dRTE.real, self.H2t.real) - torch.einsum('ik,jk->ij', dRTE.imag, self.H2t.imag)
+            Gr = torch.einsum('ik,...k->i...', self.H2t, dRTE).T
             Gr /= (self.rho.real.squeeze()**2)[:,None]
         return Gr
     
