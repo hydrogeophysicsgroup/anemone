@@ -125,7 +125,8 @@ def test_fastjacobian():
         axs[1].loglog(fwrTD.times, d_pred.exp(), '-', label='Predicted')
         plt.show()
 
-def test_lci():
+def test_lci(n_mods=100):
+    # n_mod
     gpu = torch.device('cuda')
     print('number of threads: ', torch.get_num_threads())
     logForward = logify_forward(Forward)
@@ -146,7 +147,7 @@ def test_lci():
     fwr.set_device(gpu)
 
 
-    z = torch.cumsum(torch.logspace(0, np.log10(50.), 20), 0)
+    z = torch.cumsum(torch.logspace(0, np.log10(50.), 30), 0)
     z /= z.max()
 
     z *= 80.
@@ -154,28 +155,47 @@ def test_lci():
     rho_true = torch.tensor([75., 5., 60.], device=gpu, dtype=rdtype)
     thk_true = torch.tensor([20, 30], device=gpu, dtype=rdtype)
 
+    n_mod_ones = torch.ones(n_mods, device=gpu, dtype=rdtype)
+    rho2d = rho_true[:, None]*n_mod_ones[None,:]
+    thk2d = thk_true[:, None]*n_mod_ones[None,:]
+
+
 
     res_start = LogResistivity.smooth(torch.ones(len(z)+1)*50., z)
-    thick1 = torch.linspace(0, 20, 5000).to(rdtype)#[:3]
+    thick1 = torch.linspace(0, 20, n_mods).to(rdtype).to(gpu)
+
+    thk2d[1] += thick1
+
+    dbdts = fwr(rho2d, thk2d)
+
+    plt.figure()
+    plt.plot(dbdts.T)
+    plt.show()
+    print(dbdts.shape)
+    d_errs = compute_relstd(fwr.times, dbdts.exp().T, current=10.).T
+
+
     inv_list = []
     m_trues=[]
     from time import time as timer
     bt = timer()
     
+    this_fwr = fwr.copy()
+    this_fwr.set_device(gpu)
+
     for i,dthick in enumerate(thick1):
-        this_fwr = fwr.copy()
-        thk = thk_true.clone()
-        thk[0] += dthick
-        crho = rho_true.clone()
-        crho[1] += abs(i-len(thick1)//2)*2.
-        crho[2] -= abs((i-5)*70/len(thick1))
-        m_true = LogResistivity.few_layers(torch.clamp(crho, 5), thk)
-        m_trues.append(m_true)
+        # this_fwr = fwr.copy()
+        # thk = thk_true.clone()
+        # thk[0] += dthick
+        # crho = rho_true.clone()
+        # crho[1] += abs(i-len(thick1)//2)*2.
+        # crho[2] -= abs((i-5)*70/len(thick1))
+        # m_true = LogResistivity.few_layers(torch.clamp(crho, 5), thk)
+        # m_trues.append(m_true)
         
-        dbdt = this_fwr(crho, thk).exp()
-        d_err = compute_relstd(fwr.times, dbdt, current=10.)
+        dbdt = dbdts[i].exp()
+        d_err = d_errs[i]
         d_obs = torch.abs(dbdt * (1. + d_err*torch.randn_like(dbdt))).log()
-        this_fwr.set_device(gpu)
         tmp_inv = fastJac(d_obs, torch.log1p(d_err), res_start.copy(), this_fwr)
 
         # tmp_inv.setup_matrices()
@@ -206,19 +226,8 @@ def test_lci():
         from plog import Log, Section, PieceWiseLine
 
         fig,ax = plt.subplots(2,1)
-        result = []
-        actual = []
-        _,thick = res_mods[0].values
-        z = np.cumsum(thick)
-        for i, (mtrue, res_mod) in enumerate(zip(m_trues, res_mods)):
-            result.append(Log.standard(res_mod.values[0].cpu().log10(), z, 'rho', xy=(i,0)))
-            cres,thick = mtrue.mod
-            actual.append(Log.standard(cres.cpu().log10(), np.cumsum(thick.cpu()), 'rho', xy=(i,0)))
-        result = Section(result, proj_pnts=[(-1, 0), (i/2, 0), (i+1, 0)])
-        actual = Section(actual, proj_pnts=[(-1, 0), (i/2, 0), (i+1, 0)])
-        result.plot(axs=ax[0], cmap='turbo', vmin=0, vmax=2)
-        actual.plot(axs=ax[1], cmap='turbo', vmin=0, vmax=2)
-        ax[0].plot(range(len(res_mods)),dois,'k')
+        pcm=ax[0].matshow(lci.mvec.reshape(n_mods, -1).exp().log10().T, aspect='auto', cmap='turbo')
+
         plt.show()
 
 def test_sci():
