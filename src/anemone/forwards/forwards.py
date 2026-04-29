@@ -828,7 +828,7 @@ class Forward(BaseForward):
                 Gr = torch.einsum('ijk,lk->jil', dRTE, self.H2t)
                 # Gr /= (self.rho.real.squeeze().T**2)[:,:,None]
             else:
-                Gr = torch.einsum('ik,...k->i...', dRTE, self.H2t)
+                Gr = torch.einsum('ik,...k->i...', self.H2t, dRTE)
                 # Gr /= (self.rho.real.squeeze()**2)[:,None]
             return Gr
     
