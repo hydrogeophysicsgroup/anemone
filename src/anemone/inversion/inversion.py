@@ -179,11 +179,13 @@ class Tikhonov(BaseInversion):
     def setup_matrices(self):
         from math import log
         super().setup_matrices()
-        self.HtH = self.model.H().T @ (self.model.H() * log(1.+self.vertical_smoothness/100.)**-2)
+        self.HtH = self.model.H().T @ (self.model.H() * log(1.+self.vertical_smoothness)**-2)
 
     def calc_dm(self):
         r_data = self.G.T @ self.Cdi @ (self.data_observed-self.data_predicted)
-        Aown = self.GtG + self.damp_matrix + self.HtH
+        damp_mask = (self.GtG.diagonal() < 0.01*self.HtH.diagonal()).to(self.GtG.dtype)
+        c_damp = damp_mask @ self.damp_matrix
+        Aown = self.GtG + c_damp + self.HtH
         return solve(Aown, r_data)
 
 
@@ -235,7 +237,7 @@ class Inversion(BaseInversion):
         super().setup_matrices()
         self.Rp = self.model.H()
         self.mvec = self.mvec.to(rdtype)
-        self.C_rp = np.diag(np.ones(self.Rp.shape[0]) / np.log1p(self.vertical_smoothness/100.)**2)
+        self.C_rp = np.diag(np.ones(self.Rp.shape[0]) / np.log1p(self.vertical_smoothness)**2)
         self.C_rp = self.C_rp.astype(np.float32)
         self.HtH = self.Rp.T @ self.C_rp @ self.Rp
         self.CtC = self.HtH
@@ -283,9 +285,12 @@ class Inversion(BaseInversion):
                             self.damp[pslice] = 0
         #self.damp = torch.clamp(self.damp, min=1.)  # Ensure damping is at least 1
         
+
         if sp.sparse.issparse(self.Imod):
+            self.damp *= (self.GtG.diagonal()>0.05*self.CtC.diagonal()).astype(float)
             return sp.sparse.csr_matrix(self.Imod.multiply(self.damp.cpu().numpy()))# self.damp*self.Imod
         else:
+            self.damp *= (self.GtG.diagonal()>0.05*self.CtC.diagonal()).to(float)
             return self.damp * self.Imod
 
     def find_damping(self):
@@ -521,12 +526,12 @@ class LCI(Inversion):
         self.Rp = sp.sparse.coo_matrix((data, (rows, cols)), shape=(n_rows, n_cols))
         self.Rp = self.Rp.tocsr()
 
-        self.C_rp = sp.sparse.eye(self.Rp.shape[0])/log(1.+self.vertical_smoothness/100.)**2
+        self.C_rp = sp.sparse.eye(self.Rp.shape[0])/log(1.+self.vertical_smoothness)**2
         HtH = self.Rp.T @ self.C_rp @ self.Rp
 
         # Horizontal constraints
         self.RL= self.make_smoothness_matrix()
-        self.C_rl = sp.sparse.eye(self.RL.shape[0])/log(1.+self.horizontal_smoothness/100.)**2
+        self.C_rl = sp.sparse.eye(self.RL.shape[0])/log(1.+self.horizontal_smoothness)**2
         LtL = self.RL.T @ self.C_rl @ self.RL
         
         self.CtC = (HtH + LtL)

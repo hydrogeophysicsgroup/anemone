@@ -3,6 +3,8 @@ from anemone.forwards import Forward, logify_forward
 from anemone.system import Loop, Receiver, Waveform, FilterChain, ButterworthFilter
 from anemone.experiment import compute_relstd
 
+import matplotlib.pyplot as plt
+
 def test_tikhonov_few_layer():
     logForward = logify_forward(Forward)
 
@@ -31,7 +33,7 @@ def test_tikhonov_few_layer():
     res_start = LogResistivity.few_layers([2*torch.tensor([20,21,20], dtype=torch.double)], torch.tensor([30,30]))
     inv = BaseInversion(d_obs, d_err, res_start, fwrTD)
     inv.data_misfit_acceptance_threshold = 0.9
-    res_mod = inv.invert(iter_cap=10)        
+    res_mod = inv.invert(iter_cap=25)        
 
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
@@ -70,7 +72,7 @@ def test_tikhonov_smooth():
 
     inv = Tikhonov(d_obs, d_err, res_start, fwrTD)
     inv.data_misfit_acceptance_threshold = 0.9
-    res_mod = inv.invert(iter_cap=10)        
+    res_mod = inv.invert(iter_cap=25)        
 
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
@@ -168,10 +170,10 @@ def test_lci(n_mods=100):
 
     dbdts = fwr(rho2d, thk2d)
 
-    plt.figure()
-    plt.plot(dbdts.T)
-    plt.show()
-    print(dbdts.shape)
+    # plt.figure()
+    # plt.plot(dbdts.T)
+    # plt.show()
+    # print(dbdts.shape)
     d_errs = compute_relstd(fwr.times, dbdts.exp().T, current=10.).T
 
 
@@ -208,22 +210,22 @@ def test_lci(n_mods=100):
     profiler.enable()
 
     lci = LCI(inv_list)
-    lci.horizontal_smoothness=0.3
-    lci.vertical_smoothness=0.3
+    lci.horizontal_smoothness=0.003
+    lci.vertical_smoothness=0.003
     lci.reuse_jac = True
 
     # lci.smoothness_vert = 1e3
     # lci.smoothness_horiz = 1e2
 
 
-    res_mods= lci.invert(iter_cap=5)
+    res_mods= lci.invert(iter_cap=15)
     dois = lci.doi
     profiler.disable()
     stats = pstats.Stats(profiler)
     stats.sort_stats('cumtime').print_stats(20)  # Print top 20 by cumulative time
     if __name__ == '__main__':
         import matplotlib.pyplot as plt
-        from plog import Log, Section, PieceWiseLine
+        # from plog import Log, Section, PieceWiseLine
 
         fig,ax = plt.subplots(2,1)
         pcm=ax[0].matshow(lci.mvec.reshape(n_mods, -1).exp().log10().T, aspect='auto', cmap='turbo')

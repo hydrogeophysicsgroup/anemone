@@ -822,14 +822,14 @@ class Forward(BaseForward):
     def jacobian(self):
         # dRTE = drte_dsigma(self.sigma.to(torch.complex64), self.thick.to(torch.complex64), self.omegajac, self.lamdajac).squeeze()
         with torch.no_grad():
-            dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lamda).squeeze().real.to(rdtype)
+            dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lamda).squeeze().real.to(rdtype).T
             
             if len(dRTE.shape)>2:
                 Gr = torch.einsum('ijk,lk->jil', dRTE, self.H2t)
                 # Gr /= (self.rho.real.squeeze().T**2)[:,:,None]
             else:
-                Gr = torch.einsum('ik,...k->i...', self.H2t, dRTE)
-                # Gr /= (self.rho.real.squeeze()**2)[:,None]
+                Gr = torch.einsum('ik,...k->i...', self.H2t, dRTE).T
+                Gr /= (self.rho.real.squeeze()**2)[:,None]
             return Gr
     
     def _res_call(self, rho, thickness, jac=False):
