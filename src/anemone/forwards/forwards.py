@@ -1,5 +1,5 @@
 from anemone.transforms import Hankel, invFourier, CubicSpline, invLaplace, coefficient_bounds
-from anemone.physics import rte_raiche1999_clamped as rte, freespace_u0 as u0, colecole, mpa2colecole, colecole2mpa
+from anemone.physics import rte_raiche1999 as rte, freespace_u0 as u0, colecole, mpa2colecole, colecole2mpa
 from anemone.physics import rte_nbc_laplace as rtelap
 from anemone.physics import drte_dsigma, calc_dpropmat
 from anemone import constants as c, rdtype, cdtype
@@ -801,11 +801,13 @@ class Forward(BaseForward):
         else:
             self.t2t *= self.omega1.squeeze()
 
+        self.t2t /= torch.sqrt(self.omega1.real)
         self.H2t, self.omega, self.lamda = make_H2t(self.t2t, self.geomz, self.omega1, self.lamda1, tolerance=self.tolerance)
 
         self.H2t    = 2.*self.H2t.to(self.device).real.to(rdtype)
-        self.H2t   /= torch.sqrt(self.omega.real.to(rdtype))
         self.omega *= c.sqrt_twopi
+
+
         self.rho    = None
         self.thick  = None
 
@@ -826,23 +828,26 @@ class Forward(BaseForward):
                 Gr = torch.einsum('ijk,lk->jil', dRTE, self.H2t)
                 # Gr /= (self.rho.real.squeeze().T**2)[:,:,None]
             else:
-                Gr = torch.einsum('ik,...k->i...', dRTE, self.H2t)
+                Gr = torch.einsum('ik,...k->i...', self.H2t, dRTE)
                 # Gr /= (self.rho.real.squeeze()**2)[:,None]
             return Gr
     
     def _res_call(self, rho, thickness, jac=False):
         with torch.no_grad():
             if not isinstance(rho, torch.Tensor):       rho       = torch.tensor(rho)
-            if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)        
+            if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)    
+            # if hasattr(self, 'device'):
+            #     rho = rho.to(self.device)
+            #     thickness = thickness.to(self.device)
             self.rho = ((rho+0j)[..., None, None]).to(cdtype)
             if rho.ndim > thickness.ndim:
                 thickness = thickness[:, None, ...]
             self.thick = ((thickness+0j)[..., None, None]).to(cdtype)
             if jac:
                 G = self.jacobian()
-                return G*c.mu0
+                return G.cpu()*c.mu0
             else:            
-                return self.forward()*c.mu0      
+                return self.forward().cpu()*c.mu0      
         
     def __add__(self, other):
         newfwr = self.copy()
@@ -868,10 +873,11 @@ class Forward(BaseForward):
         tmp_omega = newfwr.omega1.squeeze().clone()
         tmpother.setup()
         t2t = torch.vstack([newfwr.t2t, tmpother.t2t])
+        # t2t /= torch.sqrt(tmp_omega)
         newfwr.H2t, newfwr.omega, newfwr.lamda = make_H2t(t2t, newfwr.geomz, tmp_omega, tmp_lamda, tolerance=tol)
 
         newfwr.H2t       = 2.*newfwr.H2t.to(newfwr.device).to(rdtype)
-        newfwr.H2t      /= torch.sqrt(newfwr.omega.real)
+        # newfwr.H2t      /= torch.sqrt(newfwr.omega.real)
         newfwr.omega    *= c.sqrt_twopi
         newfwr.rho       = None
         newfwr.thick     = None
@@ -881,3 +887,9 @@ class Forward(BaseForward):
         newfwr.times = torch.cat([newfwr.times, other.times])
 
         return newfwr
+    
+    def set_device(self, device):
+        self.H2t   = self.H2t.to(device)
+        self.omega = self.omega.to(device)
+        self.lamda = self.lamda.to(device)
+        self.device=device

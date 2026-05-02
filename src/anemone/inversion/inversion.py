@@ -130,7 +130,10 @@ class BaseInversion:
 
 
     def mforward(self, mvec):
-        return self.forward(*self.model.modelize(mvec))
+        mparam = self.model.modelize(mvec)
+        if hasattr(self.forward, 'device'):
+            mparam = [x.to(self.forward.device) for x in mparam]
+        return self.forward(*mparam)
 
     @property
     def stop_inversion(self):
@@ -176,7 +179,7 @@ class Tikhonov(BaseInversion):
     def setup_matrices(self):
         from math import log
         super().setup_matrices()
-        self.HtH = self.model.H().T @ (self.model.H() * log(1.+self.vertical_smoothness)**-2)
+        self.HtH = self.model.H().T @ (self.model.H() * log(1.+self.vertical_smoothness/100.)**-2)
 
     def calc_dm(self):
         r_data = self.G.T @ self.Cdi @ (self.data_observed-self.data_predicted)
@@ -232,7 +235,7 @@ class Inversion(BaseInversion):
         super().setup_matrices()
         self.Rp = self.model.H()
         self.mvec = self.mvec.to(rdtype)
-        self.C_rp = np.diag(np.ones(self.Rp.shape[0]) / np.log1p(self.vertical_smoothness)**2)
+        self.C_rp = np.diag(np.ones(self.Rp.shape[0]) / np.log1p(self.vertical_smoothness/100.)**2)
         self.C_rp = self.C_rp.astype(np.float32)
         self.HtH = self.Rp.T @ self.C_rp @ self.Rp
         self.CtC = self.HtH
@@ -278,7 +281,8 @@ class Inversion(BaseInversion):
                             self.damp_exponent[i] -=1
                         else:
                             self.damp[pslice] = 0
-        self.damp = torch.clamp(self.damp, min=1.)  # Ensure damping is at least 1
+        #self.damp = torch.clamp(self.damp, min=1.)  # Ensure damping is at least 1
+        
         if sp.sparse.issparse(self.Imod):
             return sp.sparse.csr_matrix(self.Imod.multiply(self.damp.cpu().numpy()))# self.damp*self.Imod
         else:
@@ -485,8 +489,8 @@ class LCI(Inversion):
         if not isinstance(self.data_misfits, list): self.data_misfits = [self.data_misfits]
         self.mvec = self.m.to(torch.float)        
         self.device =self.mvec.device
-        self.step_down                        = torch.log(torch.tensor(2.0))
-        self.step_up                          = torch.log(torch.tensor(1.2))
+        if not hasattr(self, 'step_down'): self.step_down = torch.log(torch.tensor(2.0))
+        if not hasattr(self, 'step_up'):   self.step_up   = torch.log(torch.tensor(1.2))
 
 
         self.Cdi = self.recip_error_squared.to(torch.float)
@@ -517,12 +521,12 @@ class LCI(Inversion):
         self.Rp = sp.sparse.coo_matrix((data, (rows, cols)), shape=(n_rows, n_cols))
         self.Rp = self.Rp.tocsr()
 
-        self.C_rp = sp.sparse.eye(self.Rp.shape[0])/log(1.+self.vertical_smoothness)**2
+        self.C_rp = sp.sparse.eye(self.Rp.shape[0])/log(1.+self.vertical_smoothness/100.)**2
         HtH = self.Rp.T @ self.C_rp @ self.Rp
 
         # Horizontal constraints
         self.RL= self.make_smoothness_matrix()
-        self.C_rl = sp.sparse.eye(self.RL.shape[0])/log(1.+self.horizontal_smoothness)**2
+        self.C_rl = sp.sparse.eye(self.RL.shape[0])/log(1.+self.horizontal_smoothness/100.)**2
         LtL = self.RL.T @ self.C_rl @ self.RL
         
         self.CtC = (HtH + LtL)
@@ -563,6 +567,9 @@ class LCI(Inversion):
         mvecs = mvec.reshape(self.n_sites, -1).T
         _, thickness = self.inv_list[0].model.mod
         rhos = mvecs.exp()
+        if hasattr(self.inv_list[0].forward, 'device'):
+            rhos = rhos.to(self.inv_list[0].forward.device)
+            thickness = thickness.to(self.inv_list[0].forward.device)
         self._dpredgrid = self.inv_list[0].forward(rhos, thickness)
         return self._dpredgrid.flatten()
     
@@ -593,6 +600,10 @@ class LCI(Inversion):
         mvecs = mvec.reshape(self.n_sites, -1).T
         _,thick = self.inv_list[0].model.mod
         rhos = mvecs.exp()
+        
+        if hasattr(self.inv_list[0].forward, 'device'):
+            rhos = rhos.to(self.inv_list[0].forward.device)
+            thick = thick.to(self.inv_list[0].forward.device)
 
         if self.reuse_jac:
             mvec0 = mvecs[:, 0]
@@ -619,7 +630,7 @@ class LCI(Inversion):
 
 
         self.Ggrid /= self._dpredgrid.exp()[:, None, :]
-        self.Ggrid /= rhos.T[:,:,None]
+        self.Ggrid /= rhos.cpu().T[:,:,None]
         r_data = torch.einsum('ijk,ijk->ij', self.Ggrid, ((self._dobsgrid-self._dpredgrid)/self._derrgrid)[:, None, :])
         self.Ggrid *= self.one_over_error
 
