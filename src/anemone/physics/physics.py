@@ -667,71 +667,71 @@ def rte_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon
     _,rte = calc_dpropmat(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
     return torch.nan_to_num(rte)
 
-# def drte_dsigma(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
-#     if isinstance(mu, float):
-#         mu = torch.ones_like(sigma)*mu
-#     if isinstance(epsilon, float):
-#         epsilon = torch.ones_like(sigma)*epsilon
-#     dsigma,_ = calc_dpropmat(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
-#     return torch.nan_to_num(dsigma)
-
 def drte_dsigma(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
-    """
-    https://github.com/hydrogeophysicsgroup/TEM1D/blob/main/TEM1DRESP.for#L860C1-L942C12
-    """    
-    n_layers=len(sigma)
+    if isinstance(mu, float):
+        mu = torch.ones_like(sigma)*mu
+    if isinstance(epsilon, float):
+        epsilon = torch.ones_like(sigma)*epsilon
+    dsigma,_ = calc_dpropmat(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
+    return torch.nan_to_num(dsigma).T
 
-    u = (wave_length**2 +  1j*omega*mu*sigma)**0.5
-    G = torch.zeros_like(u)
-    R = torch.zeros_like(u)
-    E = torch.zeros_like(u)
+# def drte_dsigma(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+#     """
+#     https://github.com/hydrogeophysicsgroup/TEM1D/blob/main/TEM1DRESP.for#L860C1-L942C12
+#     """    
+#     n_layers=len(sigma)
 
-    drte_du = torch.zeros_like(u)
+#     u = (wave_length**2 +  1j*omega*mu*sigma)**0.5
+#     G = torch.zeros_like(u)
+#     R = torch.zeros_like(u)
+#     E = torch.zeros_like(u)
+
+#     drte_du = torch.zeros_like(u)
    
-    for i in range(n_layers-2, -1, -1):
-        H = u[i] + u[i+1]
-        R[i+1] = mu*1j*omega*(sigma[i] - sigma[i+1]) / H**2
-        E[i] = torch.exp(-2.*u[i]*thickness[i])
-        G[i] = E[i] * (G[i+1] + R[i]) / (1. + G[i+1] * R[i])
+#     for i in range(n_layers-2, -1, -1):
+#         H = u[i] + u[i+1]
+#         R[i+1] = mu*1j*omega*(sigma[i] - sigma[i+1]) / H**2
+#         E[i] = torch.exp(-2.*u[i]*thickness[i])
+#         G[i] = E[i] * (G[i+1] + R[i]) / (1. + G[i+1] * R[i])
     
-    for i_p in range(len(sigma)-1):
+#     for i_p in range(len(sigma)-1):
 
-        H = u[i_p] + u[i_p+1]
-        DT = 2.*u[i_p+1] / H*H
-        H = 1.+G[i_p+1]*R[i_p]
-        DG = -2.*thickness[i_p]*G[i_p] + DT*E[i_p]*(1.-G[i_p+1]*G[i_p+1])/(H*H)
+#         H = u[i_p] + u[i_p+1]
+#         DT = 2.*u[i_p+1] / H*H
+#         H = 1.+G[i_p+1]*R[i_p]
+#         DG = -2.*thickness[i_p]*G[i_p] + DT*E[i_p]*(1.-G[i_p+1]*G[i_p+1])/(H*H)
         
-        if i_p==0:
-            drte_du[i_p] = DG
-            continue
+#         if i_p==0:
+#             drte_du[i_p] = DG
+#             continue
 
         
-        i_p1 = i_p-1
+#         i_p1 = i_p-1
 
-        H = u[i_p1] + u[i_p1+1]
-        DT = 2.*u[i_p1+1] / H*H
-        H = 1.+G[i_p1+1]*R[i_p1]
-        DG = DG * ( 1. + R[i_p1+1]*R[i_p1+1]) + DT*(1. - G[i_p1+1]*G[i_p1+1])*E[i_p1] / (H*H)
+#         H = u[i_p1] + u[i_p1+1]
+#         DT = 2.*u[i_p1+1] / H*H
+#         H = 1.+G[i_p1+1]*R[i_p1]
+#         DG = DG * ( 1. + R[i_p1+1]*R[i_p1+1]) + DT*(1. - G[i_p1+1]*G[i_p1+1])*E[i_p1] / (H*H)
 
-        if i_p1==0:
-            drte_du[i_p] = DG
-            continue
+#         if i_p1==0:
+#             drte_du[i_p] = DG
+#             continue
 
-        i_p2 = i_p-2
-        for i in range(i_p2, -1, -1):
-            H = 1. + G[i+1]*R[i+1]
-            DG = DG * E[i] * (1. - R[i+1]*R[i+1]) / (H*H)
-        drte_du[i_p] = DG
+#         i_p2 = i_p-2
+#         for i in range(i_p2, -1, -1):
+#             H = 1. + G[i+1]*R[i+1]
+#             DG = DG * E[i] * (1. - R[i+1]*R[i+1]) / (H*H)
+#         drte_du[i_p] = DG
     
-    H = u[-1] + u[-2]
-    DT = 2.*u[-2] / H*H
-    DG = -2.*E[-2]*DT
-    for i in range(n_layers-3, -1, -1):
-        H = 1. + G[i+1]*R[i+1]
-        DG = DG * E[i] * (1. - R[i+1]*R[i+1]) / (H*H)
-    drte_du[-1] = DG
+#     H = u[-1] + u[-2]
+#     DT = 2.*u[-2] / H*H
+#     DG = -2.*E[-2]*DT
+#     for i in range(n_layers-3, -1, -1):
+#         H = 1. + G[i+1]*R[i+1]
+#         DG = DG * E[i] * (1. - R[i+1]*R[i+1]) / (H*H)
+#     drte_du[-1] = DG
     
-    return (0.5*drte_du *mu*1j*omega / u).squeeze().T
+#     return (0.5*drte_du *mu*1j*omega / u).squeeze().T
 
 def rte_halfspace(sigma, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     if isinstance(mu, float):
@@ -750,3 +750,62 @@ def dbdt_center_of_circular_loop_halfspace(time, rho, r):
     term2 = (2.0/c.sqrt_pi)*tau*(3.0 + 2.0*tau**2)*torch.exp(-tau**2)
     dbdt = (term1 - term2)/(sigma*r**3)
     return dbdt
+
+def drte_dsigma(sigma, thickness, omega, wave_length):
+    """
+    Analytic drte/dsigma via Fortran TEM1DRESP.for (Raiche 1999).
+    https://github.com/hydrogeophysicsgroup/TEM1D/blob/main/TEM1DRESP.for#L860C1-L942C12
+
+    Index convention (Fortran -> Python):
+      W(0..NLAY): W(0)=wave_length (air), W(1..NLAY)=u for conductors+halfspace.
+      IPARM=1..NLAY, IPP=IPARM used directly as array index into W/G/R/E.
+      sigma[0..NLAY-1] = Fortran SIGS(1..NLAY), SIGS(0)=0 (air).
+    Layer axis is 0.
+    """
+    NLAY = len(sigma)
+
+    # --- Build extended W(0..NLAY): prepend air wavenumber W(0)=wave_length ---
+    u_cond = (wave_length**2 + 1j*omega*c.mu0*sigma)**0.5         
+    u = torch.cat([wave_length.expand_as(u_cond[:1]), u_cond], dim=0)
+
+    G = torch.zeros_like(u)
+    R = torch.zeros_like(u)
+    E = torch.zeros_like(u)
+
+    # --- Forward pass: vectorise R and E, keep G sequential (Möbius chain) ---
+    H_fwd = u[:-1] + u[1:]                                             
+    dsigs = torch.cat([-sigma[:1], sigma[:-1] - sigma[1:]], dim=0)     # SIGS(i)-SIGS(i+1)
+    R[1:] = c.mu0*1j*omega * dsigs / H_fwd**2
+
+    thks = torch.cat([torch.zeros_like(thickness[:1]), thickness], dim=0)  
+    E[:-1] = torch.exp(-2.*u[:-1]*thks)
+
+    for i in range(NLAY - 1, -1, -1):
+        G[i] = E[i] * (G[i+1] + R[i+1]) / (1. + G[i+1] * R[i+1])
+
+
+    denom_k  = (1. + G[1:-1]*R[1:-1])**2
+
+    # P[k] = E[k]*(1-R[k+1]^2) / (1+G[k+1]*R[k+1])^2
+    P  = E[:-2] * (1. - R[1:-1]**2) / denom_k
+    CP = torch.cat([torch.ones_like(P[:1]),
+                    torch.cumprod(P, dim=0)], dim=0)               # (NLAY,   ...)
+
+    # B[k] = DT_neg[k]*(1-G[k+1]^2)*E[k] / (1+G[k+1]*R[k+1])^2
+    DT_neg = -2.*u[:-2] / (u[:-2] + u[1:-1])**2
+    B = DT_neg * (1. - G[1:-1]**2) * E[:-2] / denom_k
+
+    # DG_IPP[j] for IPP=j+1 in 1..NLAY-1
+    H_ipp   = u[1:-1] + u[2:]
+    DG_IPP  = (-2.*thks[1:]*G[1:-1]
+               + 2.*u[2:]/H_ipp**2 * E[1:-1]*(1. - G[2:]**2)
+                                              / (1. + G[2:]*R[2:])**2)
+
+    # Combine: drte_du[IPP] = DG_IPP * CP[IPP] + B * CP[IPP-1]
+    drte_du = torch.zeros_like(u)
+    drte_du[1:NLAY] = DG_IPP * CP[1:] + B * CP[:-1]
+
+    # Halfspace IPP=NLAY: E[NLAY-1] * DT_neg_half * CP[NLAY-1]
+    drte_du[NLAY] = E[-2] * (-2.*u[-2] / (u[-1] + u[-2])**2) * CP[-1]
+
+    return (drte_du[1:] * 0.5*c.mu0*1j*omega / u_cond).squeeze().T
