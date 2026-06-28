@@ -351,6 +351,10 @@ class ButterworthFilter:
     fcut : float
     order : int = 1
 
+    @property
+    def tau(self):
+        return 1./(c.twopi*self.fcut)
+
     def omega_filter(self, omega):
         return self.__call__(omega/c.twopi)
     
@@ -360,7 +364,13 @@ class ButterworthFilter:
         elif self.order==2: recip_resp = (s**2 + s*2**(1/2) + 1)
         elif self.order==3: recip_resp = (s**2 + s + 1)*(1+s)
         elif self.order==4: recip_resp = (s**2 + 1.84776*s+1)*(s**2 + 0.76537*s+1)
-        return 1./recip_resp
+        return (1./recip_resp)
+    
+    def stepoff_response(self, t):
+        amp = torch.exp(-t/self.tau)
+        amp[t<0.] = 1.
+        return amp**self.order
+    
 
 from typing import List
 
@@ -382,6 +392,31 @@ class FilterChain:
     
     def __iter__(self):
         return iter(self.filters)
+    
+    def stepoff_response(self, t):
+        N = len(self)
+        omegas = c.twopi*torch.tensor([cfilter.fcut for cfilter in self.filters])
+        if len(np.unique(omegas.numpy())) != N:
+            raise ValueError("All cutoff frequencies in 'omegas' must be distinct.")
+        
+        # Initialize the summation term
+        summation_term = torch.zeros_like(t, dtype=float)
+        
+        
+        for i in range(N):
+            w_i = omegas[i]
+            
+            # Isolate all w_j where j != i
+            w_j = omegas[omegas!=w_i]
+            
+            # Calculate the product coefficient for this specific filter
+            C_i = torch.prod(w_j / (w_j - w_i))
+            
+            # Add this filter's exponential decay curve to the total summation
+            summation_term += C_i * torch.exp(-w_i * t)
+            
+        return summation_term
+
     
 
 if __name__ == "__main__":
