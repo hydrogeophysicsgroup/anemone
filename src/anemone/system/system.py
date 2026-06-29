@@ -401,6 +401,8 @@ class FilterChain:
         
         # Initialize the summation term
         summation_term = torch.zeros_like(t, dtype=float)
+        summation_term[t<=0.] = 1.
+        i_step = t>0
         
         
         for i in range(N):
@@ -413,8 +415,7 @@ class FilterChain:
             C_i = torch.prod(w_j / (w_j - w_i))
             
             # Add this filter's exponential decay curve to the total summation
-            summation_term += C_i * torch.exp(-w_i * t)
-            
+            summation_term[i_step] += C_i * torch.exp(-w_i * t[i_step])
         return summation_term
 
     
