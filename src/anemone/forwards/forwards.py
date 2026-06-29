@@ -730,7 +730,7 @@ def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
     lamda_i = lamda_i[full_mask]
 
 
-    H2t = np.zeros(t2t.shape[:1]+geomz.shape[:-1]+(full_mask.sum(),), dtype=float)
+    H2t = np.zeros(t2t.shape[:1]+geomz.shape[:-1]+(full_mask.sum(),), dtype=complex)
 
     for i_t in range(t2t.shape[0]):
         for i_g in g_indices:
@@ -791,7 +791,7 @@ class Forward(BaseForward):
         if self.H2t is None and do_setup: 
             self.setup()
             self.device=device
-            self.H2t = self.H2t.to(self.device).to(rdtype)
+            # self.H2t = self.H2t.to(self.device).to(rdtype)
             self.omega = self.omega.to(self.device).to(rdtype)
             self.lamda = self.lamda.to(self.device).to(rdtype)
 
@@ -835,9 +835,9 @@ class Forward(BaseForward):
         else:
             self.t2t *= self.omega1.squeeze()
         self.t2t /= torch.sqrt(self.omega1.squeeze())
-        self.H2t, self.omega, self.lamda = make_H2t(self.t2t.real, self.geomz.real, self.omega1.real, self.lamda1.real, tolerance=self.tolerance)
+        self.H2t, self.omega, self.lamda = make_H2t(self.t2t, self.geomz.real, self.omega1.real, self.lamda1.real, tolerance=self.tolerance)
 
-        self.H2t    = 2.*self.H2t.real.to(self.device).to(rdtype)
+        self.H2t    = self.H2t#.real.to(self.device).to(rdtype)
         # self.H2t   /= torch.sqrt(self.omega)
         self.omega *= c.sqrt_twopi
         self.rho    = None
@@ -847,11 +847,11 @@ class Forward(BaseForward):
     def forward(self):
         if self.H2t is None: 
             self.setup()
-            self.H2t = self.H2t.to(self.device).to(rdtype)
+            # self.H2t = self.H2t.to(self.device).to(rdtype)
 
         with torch.no_grad():
-            cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze().to(rdtype)
-            res = torch.einsum('ik,...k->i...', self.H2t.real, cRTE)
+            cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze()#.to(rdtype)
+            res = torch.einsum('ik,...k->i...', self.H2t, cRTE)
             if len(res.shape)>1: res = res.mT
             return res
 
