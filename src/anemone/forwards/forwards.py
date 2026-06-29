@@ -47,6 +47,11 @@ def gating_matrix(t_sampled, t_st, t_end, n_eval=1000):
         gate_matrix += lamontagne((t_eval[:, None]-logT[None, :])/dT)
     return gate_matrix/n_eval
 
+def stepoff_response(t):
+    amp = torch.zeros_like(t)
+    amp[t<0.] = 1.
+    return amp
+
 def logify_forward(cls):
     class LogFwr(cls):
         def __call__(self, *args, **kwargs):
@@ -58,6 +63,7 @@ def logify_forward(cls):
 
 from nosj import nosj
 from anemone.system import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
+import biotsavart
 
 @nosj
 class BaseForward:
@@ -123,16 +129,39 @@ class BaseForward:
             waveform.amplitude = waveform.amplitude.to(self.device)
             waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
 
+
         self.tolerance=tolerance
         
         self.tmin /= 2.
         self.tmax *= 2.
+
+        bfield = float(biotsavart.calc_bfield(source.xyz, receiver.xyz)[..., -1])
+
+        if self.t_end is not None:
+            t_primary = torch.logspace(self.tmin.log10(), self.tmax.log10(), 16*(int((self.tmax/self.tmin).log10())+1))
+        else:
+            t_primary = self.times*1.
+        
+        if waveform is not None:
+            if self.filterfunc is None:
+                primary    = bfield * stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) 
+            else:
+                primary =  bfield * (self.filterfunc.stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) @ self.waveform.d2wdt2)
+        else:
+            primary  = bfield * (stepoff_response(t_primary) if self.filterfunc is None else self.filterfunc.stepoff_response(t_primary))
+
+        if self.t_end is not None:
+            primary_ft = CubicSpline(t_primary, primary, torch.log10)
+            primary = primary_ft.integrate(self.t_st, self.t_end, normalize=True)
+        self.primary = primary
+       
 
         if self.device is not None:
             for attr_name in self.__dict__:
                 attr_value = getattr(self, attr_name)
                 if torch.is_tensor(attr_value):
                     setattr(self, attr_name, attr_value.to(self.device))
+
         
         self.omega = kwargs.get('omega', None)
         self.lamda = kwargs.get('lamda', None)
@@ -235,7 +264,8 @@ class BaseForward:
         if   self.kind == 'res':      data = self._res_call(*args, **kwargs)
         elif self.kind == 'mpa':      data = self._mpa_call(*args, **kwargs)
         elif self.kind == 'colecole': data = self._colecole_call(*args, **kwargs)
-        elif self.kind == 'cpa':      data = self._cpa_call(*args, **kwargs)        
+        elif self.kind == 'cpa':      data = self._cpa_call(*args, **kwargs)
+        data += self.primary      
         if self.log_scale and not kwargs.get('jac', False): data = torch.log(torch.abs(data))
         return data
 
@@ -409,232 +439,6 @@ class ForwardFD(BaseForward):
         else:
             return H.T
 
-    
-def waveform_matrix_with_primary(t_in, t_out, waveform):
-    t_out = t_out.to(rdtype)
-    t_in  = t_in.to(rdtype)
-
-    logT = torch.log(t_in)
-    dT = torch.diff(logT, prepend=logT[1:2]-2*logT[:1])
-    # dT = logT[1]-logT[0]
-    #dT = torch.roll(dT, 1)  # Shift to align with t_in
-
-    t2t = torch.zeros(t_out.shape+(len(t_in)+1,), device=t_in.device, dtype=t_out.dtype)
-
-    for t_wv,k_wv in zip(waveform.time, waveform.d2wdt2):
-        c_t_eval = t_out - t_wv
-        positive_time = c_t_eval > 0.
-        t2t[~positive_time , 0] -= k_wv
-        t2t[ positive_time, 1:] += k_wv*lamontagne((torch.log(c_t_eval[positive_time])[:,None]-logT[None,:])/dT[None,:])
-        
-        # t_negative = -1.*c_t_eval
-        # positive_time = t_negative >= 0.
-        # t2t[positive_time, 1:] -= k_wv*torch.nan_to_num(lamontagne((torch.log(t_negative[positive_time])[:,None]-logT[None,:])/dT[None,:]))
-        # t2t[~positive_time, 0] -= k_wv
-    return t2t
-
-class BstepLaplace(ForwardLaplace):
-    geomz = None
-    t2t   = None
-
-    def __init__(self, source, receiver, times, tolerance=None):
-        self.source = source
-        self.receiver = receiver
-        self.times = times if isinstance(times, torch.Tensor) else torch.tensor(times)
-        self.t_eval = self.times
-        self.rmin = self.source.min_horizontal_distance(self.receiver).to(times.device)
-        self.rmax = self.source.max_horizontal_distance(self.receiver).to(times.device)
-        self.srcz = torch.tensor([source.z[0]], dtype=rdtype)
-        if receiver.z.numel()>1:
-            self.rz = receiver.z.flatten()[0]
-            assert torch.all(receiver.z==self.rz), "Receiver z coordinates are not the same"
-        else:
-            self.rz = self.receiver.z
-        self.pfield_dz = torch.abs(self.srcz-self.rz)
-        self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)    
-        self.device = times.device
-        self.tolerance = tolerance
-
-    def forward(self):
-        def wvlngth_integrand(wave_length):
-            self.lmb = wave_length[None, :, None]
-            def s_integrand(s):
-                """ Hz from horizontal electric dipole. """
-                self.s_lap = s[None, None, :]
-                if self.sfield_rte is None: self.sfield_rte = torch.exp(-self.lmb*self.sfield_dz)
-                intg = rtelap(self.sigma, self.thick, self.s_lap, self.lmb)*self.sfield_rte
-                intg /= -self.s_lap
-                return torch.squeeze(intg).real
-            res = invLaplace(s_integrand, device=self.device, n_coefficients=16)(self.t_eval)
-            res[None, ...] *= self.lmb / c.fourpi
-            return res.swapaxes(-2,-1)
-        if self.geomz is None:
-            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=16, tolerance=self.tolerance)
-            def geomz_r(r):
-                return self.source.geomz(self.receiver, r).to(rdtype).to(self.device)
-            Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
-            self.sfield_rte = None
-        else:
-            Hstep = torch.einsum('...i,i->...', wvlngth_integrand(self.lmb.squeeze()), self.geomz)
-        return Hstep
-        
-    def __call__(self, rho, thickness):
-        self.rho = rho
-        self.thick = thickness
-        return self.forward().squeeze()*c.mu0
-    
-class BstepHankel(BaseForward):
-    geomz=None
-    sfield_rte=None
-    lmb=None
-    tout=None
-    def __init__(self, source, receiver, tmin, tmax, tolerance=None):
-        self.source = source
-        self.receiver = receiver
-        self.tmin = tmin
-        self.tmax = tmax
-        self.rmin = self.source.min_horizontal_distance(self.receiver).to(tmin.device)
-        self.rmax = self.source.max_horizontal_distance(self.receiver).to(tmin.device)
-        self.srcz = torch.tensor([source.z[0]], dtype=rdtype)
-        self.device = tmin.device
-        if receiver.z.numel()>1:
-            self.rz = receiver.z.flatten()[0]
-            assert torch.all(receiver.z==self.rz), "Receiver z coordinates are not the same"
-        else:
-            self.rz = self.receiver.z
-        self.pfield_dz = torch.abs(self.srcz-self.rz)
-        self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)
-        self.tolerance = tolerance
-    
-    def calc_bstep(self):
-        def frq_integrand(f):
-            omega = c.twopi*f[None,:,None]
-
-            def wvlngth_integrand(wave_length):
-                if self.sfield_rte is None: self.sfield_rte = torch.exp(-wave_length*self.sfield_dz)
-                intg = rte(self.sigma, self.thick, omega, wave_length[None,None,:])*self.sfield_rte*wave_length
-                return intg
-            
-            if self.geomz is None:
-                hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10, tolerance=self.tolerance)
-                def geomz_r(r):
-                    return self.source.geomz(self.receiver, r).to(rdtype).to(self.device)
-                Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
-                self.sfield_rte = None
-            else:
-                Hstep = (wvlngth_integrand(self.lmb.squeeze())@self.geomz).squeeze()
-            Hstep /= -1j*omega.squeeze()
-            return Hstep.squeeze()
-        ift = invFourier(frq_integrand, smp_per_decade=16, device=self.device)
-        # ift._recenter_function((self.tmax/self.tmin, 1e12*self.tmax/self.tmin))
-        # print(f"Recentered function to {torch.sqrt((self.tmax/self.tmin)*(self.tmax/self.tmin*1e12))}")
-        self.tout, Hstep = ift.range(self.tmin, self.tmax)
-        return Hstep/c.fourpi
-
-    # def calc_bstep(self):
-
-    #     def wvlngth_integrand(wave_length):
-    #         lmb = wave_length[None, :, None]
-    #         def frq_integrand(f):
-    #             omega = c.twopi*f[None,None, :]
-    #             intg = rte(self.sigma, self.thick, omega, lmb)
-    #             return intg / (-1j*omega.squeeze())
-            
-    #         ift = invFourier(frq_integrand, device=self.device, smp_per_decade=20)
-    #         ift._recenter_function((self.tmin/10, self.tmin*10))
-    #         self.tout, Hstep = ift.range(self.tmin, self.tmax)
-
-
-    #         if self.sfield_rte is None: self.sfield_rte = torch.exp(-lmb*self.sfield_dz)
-    #         Hstep *= self.sfield_rte*lmb/c.fourpi
-    #         return Hstep.swapaxes(-2,-1).squeeze()
-
-    #     if self.geomz is None:
-    #         hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10)
-    #         def geomz_r(r):
-    #             return self.source.geomz(self.receiver, r).to(rdtype).to(self.device)
-    #         Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax, tolerance=self.tolerance)
-    #         self.sfield_rte = None
-    #     else:
-    #         Hstep = (wvlngth_integrand(self.lmb.squeeze())@self.geomz).squeeze()
-    #     return Hstep.squeeze()
-    
-    def get_bstep(self, rho, thickness):
-        self.rho = rho
-        self.thick = thickness
-        # t,bstep = self.calc_bstep()
-        # return t, bstep.squeeze()*c.mu0
-        bstep = self.calc_bstep()
-        return self.tout, bstep.squeeze()*c.mu0
-    
-class OnTimeForward:
-    hankel = None
-    laplace = None
-    t2t = None
-
-    def __init__(self, source, receiver, times, waveform, tolerance=None, t_smp_per_decade=10):
-        self.source = source
-        self.receiver = receiver
-        self.times = times
-        self.tmin = times.min().to(rdtype)
-        self.tmax = times.max().to(rdtype)
-        self.device = times[0].device
-        from biotsavart import Loop, ObsPoint, calc_bfield
-        _loop = Loop(self.source.x.numpy(), self.source.y.numpy(), self.source.z.numpy())
-        _obs = ObsPoint(self.receiver.x.numpy(), self.receiver.y.numpy(), self.receiver.z.numpy())
-        self.pfield = torch.from_numpy(calc_bfield(_loop.xyz, _obs.xyz)[..., 2]).reshape([1])# / c.mu0
-
-        self.rmin = self.source.min_horizontal_distance(self.receiver).to(self.device)
-        self.rmax = self.source.max_horizontal_distance(self.receiver).to(self.device)
-        self.srcz = torch.tensor([source.z[0]], dtype=rdtype)
-        self.rz = self.receiver.z.flatten()[0]
-        self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)
-
-        self.waveform = waveform
-        self.tmin += -self.waveform.time.max()
-        self.tmax += -self.waveform.time.min()
-        waveform.time = waveform.time.to(self.device)
-        waveform.amplitude = waveform.amplitude.to(self.device)
-        waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
-        self.t_smp_per_decade = t_smp_per_decade
-        self.t_switch = torch.tensor([1e-3])
-        
-        
-
-        self.tolerance=tolerance
-        if self.device is not None:
-            for attr_name in self.__dict__:
-                attr_value = getattr(self, attr_name)
-                if torch.is_tensor(attr_value):
-                    setattr(self, attr_name, attr_value.to(self.device))
-        
-    def forward(self):
-        if self.hankel is None:
-            self.hankel = BstepHankel(self.source, self.receiver, self.t_switch, self.tmax)
-
-        t, bstep_hankel = self.hankel.get_bstep(self.rho, self.thick)
-        dt = t[1]/t[0]
-        Ndec = int(torch.log10(t[0]/1e-11)/torch.log10(dt))+1
-        # print(f"Number of decades in Laplace: {Ndec}, dt={dt}, t[0]={t[0]}")
-        self.t_laplace = t[0]*dt**torch.arange(-Ndec, 0)
-
-        if self.laplace is None:
-            self.laplace = BstepLaplace(self.source, self.receiver, self.t_laplace)
-        bstep_laplace = self.laplace(self.rho, self.thick)
-        if self.t2t is None:
-            self.t_in = torch.concat([self.t_laplace, t])
-            self.t2t = waveform_matrix_with_primary(self.t_in, self.times, self.waveform)
-            self.t2t[:,1] = 0.
-        self.bstep = torch.concat([self.pfield, bstep_laplace, bstep_hankel]).real
-        return self.t2t @ self.bstep
-
-    def __call__(self, rho, thickness):
-        self.rho = rho[..., None, None]
-        if rho.ndim > thickness.ndim:
-            thickness = thickness[:, None, ...]
-        self.thick = thickness[..., None, None]
-        return self.forward()
-
 class VMDForward(BaseForward):
     geomz = None
     t2t   = None
@@ -743,36 +547,6 @@ def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
     Lambda = Lambda[full_mask]
     return torch.tensor(H2t), torch.from_numpy(Omega), torch.from_numpy(Lambda)
 
-# def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
-#     if geomz.ndim == 1:
-#         geomz = geomz[None, :]
-
-#     if tolerance is not None:
-#         from anemone.physics import rte_halfspace
-#         rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:, None], lmb[None, :]).squeeze().real
-
-#         # Single-pass max-envelope mask: take the worst-case across all (i_t, i_g) combinations
-#         # instead of looping over each one individually. Slightly more conservative but ~1000x faster.
-#         all_t1 = torch.abs(t2t[:, None, :, None].real * geomz[None, :, None, :].real * rte_ref[None, None, :, :])
-#         max_t1 = all_t1.amax(dim=(0, 1))  # (n_omega, n_lambda)
-#         flat = max_t1.flatten()
-#         sort_idx = torch.argsort(flat)
-#         cumsum = torch.cumsum(flat[sort_idx], dim=0)
-#         cumsum = cumsum / cumsum[-1:]
-#         idx = torch.searchsorted(cumsum, torch.tensor(tolerance)) + 1
-#         full_mask = torch.zeros_like(flat, dtype=torch.bool)
-#         full_mask[idx:] = True
-#         full_mask = full_mask[torch.argsort(sort_idx)].reshape(max_t1.shape)
-#     else:
-#         full_mask = torch.ones(omega.squeeze().shape[0], lmb.squeeze().shape[0], dtype=torch.bool)
-
-#     # Vectorized H2t construction — no Python loops
-#     all_t1 = t2t[:, None, :, None] * geomz[None, :, None, :].real
-#     H2t = all_t1[:, :, full_mask].squeeze()
-
-#     Omega, Lambda = torch.meshgrid(omega.squeeze(), lmb.squeeze(), indexing='ij')
-#     return H2t, Omega[full_mask], Lambda[full_mask]
-
 @nosj
 class Forward(BaseForward): 
     H2t                 : torch.Tensor = None
@@ -820,13 +594,17 @@ class Forward(BaseForward):
         def t2t_func(t_in):
             if self.t_end is not None:
                 wv_mat = waveform_matrix(t_in, t_in, waveform=self.waveform)
-                gate_mat = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
-                return gate_mat @ wv_mat
+                self.gate_mat = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
+                
+                return self.gate_mat @ wv_mat
             else:
+                self.gate_mat = None
                 return waveform_matrix(self.times, t_in, waveform=self.waveform)
 
         
         Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
+
+
 
         if self.filterfunc is not None:
             self.t2t *= self.filterfunc.omega_filter(self.omega1*c.sqrt_twopi)#.squeeze()
