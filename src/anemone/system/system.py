@@ -157,8 +157,10 @@ class Loop:
         return self.x.numel()
     
     def geomz(self, rx, R):
-        if hasattr(self, 'radius') and rx.xyz.numel()==3 and rx.x==0. and rx.y==0.:
-            return self._geomz_circle(rx, R)
+        # if hasattr(self, 'radius') and rx.xyz.numel()==3 and rx.x==0. and rx.y==0.:
+        #     return self._geomz_circle(rx, R)
+        if hasattr(self, 'radius'):
+            return self._geomz_circle_offcenter(rx, R)        
         logR = torch.log(R).cpu()
         dR = logR[1]-logR[0]
 
@@ -213,7 +215,35 @@ class Loop:
         phi = lamontagne((torch.log(radius)-logR)/dR)
         geomz = 2*torch.pi*phi*radius
         return geomz.to(R.device)
-     
+
+    def _geomz_circle_offcenter(self, rx, R):
+        radius = self.radius if isinstance(self.radius, torch.Tensor) else torch.tensor(self.radius, dtype=R.dtype)
+
+        d = torch.sqrt(rx.X**2 + rx.Y**2).flatten()   # (n_rec,)
+
+        logR = torch.log(R).cpu()
+        dR = logR[1] - logR[0]
+
+        N = 1000
+        theta = torch.linspace(0, 2 * torch.pi, N + 1, dtype=rdtype)[:-1]  # (N,)
+        dtheta = 2 * torch.pi / N
+
+        # r: (n_rec, N)
+        r = torch.sqrt(radius**2 + d[:, None]**2 - 2 * radius * d[:, None] * torch.cos(theta[None, :]))
+        integrand_factor = radius * (radius - d[:, None] * torch.cos(theta[None, :])) / r  # (n_rec, N)
+
+        log_r = torch.log(r)  # (n_rec, N)
+        # phi: (n_rec, N, n_R)
+        phi = lamontagne((log_r[:, :, None] - logR[None, None, :]) / dR)
+
+        # geomz: (n_rec, n_R)
+        geomz = (integrand_factor[:, :, None] * phi * dtheta).sum(axis=1)
+
+        if hasattr(rx, 'weighting') and rx.weighting is not None:
+            geomz = torch.einsum('i,ij->j', rx.weighting, geomz)
+
+        return geomz.to(R.device)
+
 def perp_distance_to_line(x,y, line_points):
 	((x1,y1), (x2,y2)) = line_points
 	numerator = torch.abs((x2-x1)*(y1-y) - (x1-x)*(y2-y1))

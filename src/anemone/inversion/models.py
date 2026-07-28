@@ -127,6 +127,21 @@ class BaseModel:
             self.values[i] = np.clip(self.values[i], self.lower_bounds[i], self.upper_bounds[i])*1.
         return self
     
+    def value_z_plot(self, value):
+        if 'thickness' in self.names:
+            thk = self.values[self.names.index('thickness')].cpu()
+        else:
+            thk = self.thickness.cpu()
+        v = self.values[self.names.index(value)]
+        z1 = np.cumsum(thk.numpy())
+        z2 = np.zeros((len(z1)+1,2))
+        z2[1:,0]=z1
+        z2[:-1,1]=z1
+        z2[-1,1] = z1.max()*1.5
+        v2 = np.repeat(v.numpy(), 2).T
+        
+        return v2.flatten(), z2.flatten()
+
     
     def plot(self, axs=None, **kwargs):
         n_params = len(self.values)
@@ -140,13 +155,7 @@ class BaseModel:
             if not isinstance(axs, np.ndarray):axs = [axs]
         for v,ax,pname in zip(self.values, axs, self.names):
             if pname != 'thickness':
-                z1 = np.cumsum(thk.numpy())
-                z2 = np.zeros((len(z1)+1,2))
-                z2[1:,0]=z1
-                z2[:-1,1]=z1
-                z2[-1,1] = z1.max()*1.5
-                v2 = np.repeat(v.numpy(), 2).T
-                
+                v2,z2 = self.value_z_plot(pname)
                 ax.plot(v2.flatten(), z2.flatten(), **kwargs)
                 ax.set_title(pname)
                 ax.set_ylim(z2.max(), z2.min())

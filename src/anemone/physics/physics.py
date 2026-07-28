@@ -809,3 +809,26 @@ def drte_dsigma(sigma, thickness, omega, wave_length):
     drte_du[NLAY] = E[-2] * (-2.*u[-2] / (u[-1] + u[-2])**2) * CP[-1]
 
     return (drte_du[1:] * 0.5*c.mu0*1j*omega / u_cond).squeeze().T
+
+def dbzdt_halfspace_coincident_circle_loop(times, rho, r, I=1., max_terms=2000):
+    """
+    W&H Eq. 4.101
+    """
+    sigma = 1. / rho
+    # Use float64 throughout for extended range
+    times64 = times.double()
+    theta = torch.sqrt(0.25 * c.mu0 * sigma[:, None] / times64[None,:])
+    tr = theta * r
+    x2 = tr ** 2
+
+    term = torch.ones_like(x2) / 5.
+    summation = term.clone()
+    for m in range(max_terms - 1):
+        ratio = -(2*m+4) * (2*m+3) * (2*m+5) * x2 / ((m+1) * (m+2) * (m+3) * (2*m+7))
+        term = term * ratio
+        summation = summation + term
+        if torch.all(torch.abs(term / summation) < 1e-12):
+            break
+
+    dbdt = 2 * I * r * c.mu0 * c.sqrt_pi * tr**3 * summation / times64[None,:]
+    return dbdt.to(times.dtype)

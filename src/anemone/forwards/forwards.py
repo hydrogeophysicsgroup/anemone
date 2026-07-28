@@ -79,6 +79,7 @@ class BaseForward:
     tolerance  : float = None
     omega      : torch.Tensor = None
     lamda      : torch.Tensor = None
+    primary    : torch.Tensor = None
     kind       : str          = 'res'
     log_scale : bool         = False
     description: str          = 'Base Forward Model'
@@ -135,7 +136,7 @@ class BaseForward:
         self.tmin /= 2.
         self.tmax *= 2.
 
-        bfield = float(biotsavart.calc_bfield(source.xyz, receiver.xyz)[..., -1])
+        bfield = torch.from_numpy(biotsavart.calc_bfield(source.xyz, receiver.xyz)[..., -1])
 
         if self.t_end is not None:
             t_primary = torch.logspace(self.tmin.log10(), self.tmax.log10(), 16*(int((self.tmax/self.tmin).log10())+1))
@@ -144,16 +145,24 @@ class BaseForward:
         
         if waveform is not None:
             if self.filterfunc is None:
-                primary    = bfield * stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) 
+                primary =  stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) 
             else:
-                primary =  bfield * (self.filterfunc.stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) @ self.waveform.d2wdt2)
+                primary =  self.filterfunc.stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) @ self.waveform.d2wdt2
         else:
-            primary  = bfield * (stepoff_response(t_primary) if self.filterfunc is None else self.filterfunc.stepoff_response(t_primary))
+            primary  =  stepoff_response(t_primary) if self.filterfunc is None else self.filterfunc.stepoff_response(t_primary)
 
         if self.t_end is not None:
             primary_ft = CubicSpline(t_primary, primary, torch.log10)
             primary = primary_ft.integrate(self.t_st, self.t_end, normalize=True)
-        self.primary = primary
+
+        if hasattr(self.receiver, 'weighting'):
+            bfield = bfield @ self.receiver.weighting
+        
+        if bfield.numel()==1:
+            self.primary = bfield*primary            
+        else:
+            self.primary = (bfield[:,None]*primary[None,:]).mean(0)
+            
        
 
         if self.device is not None:
@@ -641,7 +650,7 @@ class Forward(BaseForward):
             Gr = torch.einsum('ijk,lk->jil', dRTE.real, self.H2t.real).real
             Gr /= (self.rho.real.squeeze().T**2)[:,:,None]
         else:
-            Gr = torch.einsum('ik,...k->i...', self.H2t, dRTE).T
+            Gr = torch.einsum('ik,...k->i...', self.H2t.real, dRTE).T
             Gr /= (self.rho.real.squeeze()**2)[:,None]
         return Gr
     
