@@ -13,8 +13,8 @@ from anemone.system import lamontagne
 from copy import deepcopy
 
 def wv_to_t(t_eval, t_sampled, waveform=None):
-    t_eval = t_eval.to(rdtype)
-    t_sampled = t_sampled.to(rdtype)
+    t_eval = t_eval.to(rdtype())
+    t_sampled = t_sampled.to(rdtype())
 
     logT = torch.log(t_sampled)#.cpu()
     dT = logT[1]-logT[0]
@@ -74,7 +74,7 @@ class BaseForward:
     omega      : torch.Tensor = None
     lamda      : torch.Tensor = None
     kind       : str          = 'res'
-    log_scale : bool         = False
+    log_scale  : bool         = False
     description: str          = 'Base Forward Model'
 
 
@@ -97,7 +97,7 @@ class BaseForward:
 
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(times.device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(times.device)
-        self.srcz = torch.tensor([source.z[0]], dtype=rdtype)
+        self.srcz = torch.tensor([source.z[0]], dtype=rdtype())
         if receiver.z.numel()>1:
             self.rz = receiver.z.flatten()[0]
             assert torch.all(receiver.z==self.rz), "Receiver z coordinates are not the same"
@@ -189,27 +189,27 @@ class BaseForward:
         from anemone.experiment import Loop, Receiver, Waveform
         kwargs.setdefault('source',  Loop.square(40))
         kwargs.setdefault('receiver',  Receiver())
-        kwargs.setdefault('times', torch.logspace(-6, -3, 32, dtype=rdtype))
+        kwargs.setdefault('times', torch.logspace(-6, -3, 32, dtype=rdtype()))
         kwargs.setdefault('waveform', Waveform.example())
         return cls(**kwargs)
 
     def _res_call(self, rho, thickness):
         if not isinstance(rho, torch.Tensor):       rho       = torch.tensor(rho)
         if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)        
-        self.rho = ((rho+0j)[..., None, None]).to(self.device).to(cdtype)
+        self.rho = ((rho+0j)[..., None, None]).to(self.device).to(cdtype())
         if rho.ndim > thickness.ndim:
             thickness = thickness[:, None]
-        self.thick = ((thickness+0j)[..., None, None]).to(self.device).to(cdtype)
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device).to(cdtype())
         return self.forward().squeeze().real*c.mu0
 
     def _colecole_call(self, rho, m, tau,  C, thickness):
-        self.rho   =       rho.to(self.device).to(cdtype)[..., None,None]
-        self.m     =         m.to(self.device).to(cdtype)[..., None,None]
-        self.tau   =       tau.to(self.device).to(cdtype)[..., None,None]
-        self.c     =         C.to(self.device).to(cdtype)[..., None,None]
+        self.rho   =       rho.to(self.device).to(cdtype())[..., None,None]
+        self.m     =         m.to(self.device).to(cdtype())[..., None,None]
+        self.tau   =       tau.to(self.device).to(cdtype())[..., None,None]
+        self.c     =         C.to(self.device).to(cdtype())[..., None,None]
         if rho.ndim > thickness.ndim:
             thickness = thickness[:, None]
-        self.thick = ((thickness+0j)[..., None, None]).to(self.device).to(cdtype)   
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device).to(cdtype())   
     
         return self.forward()*c.mu0        
 
@@ -224,8 +224,8 @@ class BaseForward:
         return self.forward()*c.mu0
     
     def _cpa_call(self, rho, phi, thickness):
-        self.rho   =       rho.to(self.device).to(cdtype)[..., None,None]
-        self.phi     =     phi.to(self.device).to(cdtype)[..., None,None]
+        self.rho   =       rho.to(self.device).to(cdtype())[..., None,None]
+        self.phi     =     phi.to(self.device).to(cdtype())[..., None,None]
         if rho.ndim > thickness.ndim:
             thickness = thickness[:, None]
         self.thick = ((thickness+0j)[..., None, None]).to(self.device)
@@ -293,7 +293,7 @@ class ForwardLaplace(BaseForward):
             self.tmax *= 2.2
 
             self.t_smp_per_decade = t_smp_per_decade
-            self.t_eval = torch.logspace(torch.log10(self.tmin).item(), torch.log10(self.tmax).item(), int(t_smp_per_decade*torch.log10(self.tmax/self.tmin)), dtype=rdtype)
+            self.t_eval = torch.logspace(torch.log10(self.tmin).item(), torch.log10(self.tmax).item(), int(t_smp_per_decade*torch.log10(self.tmax/self.tmin)), dtype=rdtype())
         else:
             self.t_eval = self.times
         self.tolerance=tolerance
@@ -367,7 +367,7 @@ class ForwardFD(BaseForward):
         self.device = freqs.device
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(freqs.device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(freqs.device)
-        self.srcz = torch.tensor([source.z[0]], dtype=rdtype)
+        self.srcz = torch.tensor([source.z[0]], dtype=rdtype())
         self.rz = self.receiver.z.flatten()[0]
         self.pfield_dz = torch.abs(self.srcz-self.rz)#[:, None, None]
         self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)#[:, None, None]
@@ -411,8 +411,8 @@ class ForwardFD(BaseForward):
 
     
 def waveform_matrix_with_primary(t_in, t_out, waveform):
-    t_out = t_out.to(rdtype)
-    t_in  = t_in.to(rdtype)
+    t_out = t_out.to(rdtype())
+    t_in  = t_in.to(rdtype())
 
     logT = torch.log(t_in)
     dT = torch.diff(logT, prepend=logT[1:2]-2*logT[:1])
@@ -444,7 +444,7 @@ class BstepLaplace(ForwardLaplace):
         self.t_eval = self.times
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(times.device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(times.device)
-        self.srcz = torch.tensor([source.z[0]], dtype=rdtype)
+        self.srcz = torch.tensor([source.z[0]], dtype=rdtype())
         if receiver.z.numel()>1:
             self.rz = receiver.z.flatten()[0]
             assert torch.all(receiver.z==self.rz), "Receiver z coordinates are not the same"
@@ -471,7 +471,7 @@ class BstepLaplace(ForwardLaplace):
         if self.geomz is None:
             hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=16, tolerance=self.tolerance)
             def geomz_r(r):
-                return self.source.geomz(self.receiver, r).to(rdtype).to(self.device)
+                return self.source.geomz(self.receiver, r).to(rdtype()).to(self.device)
             Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
             self.sfield_rte = None
         else:
@@ -495,7 +495,7 @@ class BstepHankel(BaseForward):
         self.tmax = tmax
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(tmin.device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(tmin.device)
-        self.srcz = torch.tensor([source.z[0]], dtype=rdtype)
+        self.srcz = torch.tensor([source.z[0]], dtype=rdtype())
         self.device = tmin.device
         if receiver.z.numel()>1:
             self.rz = receiver.z.flatten()[0]
@@ -518,7 +518,7 @@ class BstepHankel(BaseForward):
             if self.geomz is None:
                 hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10, tolerance=self.tolerance)
                 def geomz_r(r):
-                    return self.source.geomz(self.receiver, r).to(rdtype).to(self.device)
+                    return self.source.geomz(self.receiver, r).to(rdtype()).to(self.device)
                 Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
                 self.sfield_rte = None
             else:
@@ -552,7 +552,7 @@ class BstepHankel(BaseForward):
     #     if self.geomz is None:
     #         hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10)
     #         def geomz_r(r):
-    #             return self.source.geomz(self.receiver, r).to(rdtype).to(self.device)
+    #             return self.source.geomz(self.receiver, r).to(rdtype()).to(self.device)
     #         Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax, tolerance=self.tolerance)
     #         self.sfield_rte = None
     #     else:
@@ -576,8 +576,8 @@ class OnTimeForward:
         self.source = source
         self.receiver = receiver
         self.times = times
-        self.tmin = times.min().to(rdtype)
-        self.tmax = times.max().to(rdtype)
+        self.tmin = times.min().to(rdtype())
+        self.tmax = times.max().to(rdtype())
         self.device = times[0].device
         from biotsavart import Loop, ObsPoint, calc_bfield
         _loop = Loop(self.source.x.numpy(), self.source.y.numpy(), self.source.z.numpy())
@@ -586,7 +586,7 @@ class OnTimeForward:
 
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(self.device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(self.device)
-        self.srcz = torch.tensor([source.z[0]], dtype=rdtype)
+        self.srcz = torch.tensor([source.z[0]], dtype=rdtype())
         self.rz = self.receiver.z.flatten()[0]
         self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)
 
@@ -659,7 +659,7 @@ class VMDForward(BaseForward):
                 return intg.squeeze()
             hkl1 = Hankel(wvlngth_integrand, 0, smp_per_decade=10, device=self.device)
             hkl1._recenter_function(self.rx_dist)
-            Hr = ((hkl1.func(hkl1.lamda))@(hkl1.fc.to(rdtype)+0j))/self.rx_dist
+            Hr = ((hkl1.func(hkl1.lamda))@(hkl1.fc.to(rdtype())+0j))/self.rx_dist
             if self.filterfunc is not None:
                 Hr *= self.filterfunc.omega_filter(self.omega.squeeze())
             if self.waveform is not None:
@@ -758,12 +758,12 @@ class Forward(BaseForward):
         if self.H2t is None and do_setup: 
             self.setup()
             self.device=device
-            self.omega = self.omega.to(self.device).to(cdtype)
-            self.lamda = self.lamda.to(self.device).to(cdtype)
+            self.omega = self.omega.to(self.device).to(cdtype())
+            self.lamda = self.lamda.to(self.device).to(cdtype())
 
     def setup(self):
-        self.rho   = 40*torch.ones(2, dtype=cdtype)[:, None, None]
-        self.thick = 20*torch.ones(1, dtype=cdtype)[:, None, None]
+        self.rho   = 40*torch.ones(2, dtype=cdtype())[:, None, None]
+        self.thick = 20*torch.ones(1, dtype=cdtype())[:, None, None]
 
         def frq_integrand(f):
             self.omega = c.twopi*f[None,:,None]
@@ -775,7 +775,7 @@ class Forward(BaseForward):
                 return intg.squeeze()
             hkl1 = Hankel(wvlngth_integrand, 1, device=self.device)
             def geomz_r(r):
-                return self.source.geomz(self.receiver, r).to(rdtype).to(self.device)
+                return self.source.geomz(self.receiver, r).to(rdtype()).to(self.device)
             Hr, self.geomz, self.lamda1 = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
             
             self.geomz *= torch.exp(-self.lamda1*self.sfield_dz)*self.lamda1 / c.fourpi
@@ -793,6 +793,7 @@ class Forward(BaseForward):
 
         
         Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
+        self.t2t = self.t2t.to(cdtype())
 
         if self.filterfunc is not None:
             self.t2t *= self.filterfunc.omega_filter(self.omega1*c.sqrt_twopi)#.squeeze()
@@ -804,7 +805,7 @@ class Forward(BaseForward):
         self.t2t /= torch.sqrt(self.omega1.real)
         self.H2t, self.omega, self.lamda = make_H2t(self.t2t, self.geomz, self.omega1, self.lamda1, tolerance=self.tolerance)
 
-        self.H2t    = 2.*self.H2t.to(self.device).real.to(rdtype)
+        self.H2t    = 2.*self.H2t.to(self.device).real.to(rdtype())
         self.omega *= c.sqrt_twopi
 
 
@@ -814,15 +815,15 @@ class Forward(BaseForward):
     def forward(self):
         if self.H2t is None: self.setup()
         with torch.no_grad():
-            cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze().real.to(rdtype)
-            res = torch.einsum('ik,...k->i...', self.H2t, cRTE)#.real
+            cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze().real.to(rdtype())
+            res = torch.einsum('ik,...k->i...', self.H2t, cRTE)
             if len(res.shape)>1: res = res.mT
             return res
 
     def jacobian(self):
         # dRTE = drte_dsigma(self.sigma.to(torch.complex64), self.thick.to(torch.complex64), self.omegajac, self.lamdajac).squeeze()
         with torch.no_grad():
-            dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lamda).squeeze().real.to(rdtype).T
+            dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lamda).squeeze().real.to(rdtype()).T
             
             if len(dRTE.shape)>2:
                 Gr = torch.einsum('ijk,lk->jil', dRTE, self.H2t)
@@ -839,10 +840,10 @@ class Forward(BaseForward):
             # if hasattr(self, 'device'):
             #     rho = rho.to(self.device)
             #     thickness = thickness.to(self.device)
-            self.rho = ((rho+0j)[..., None, None]).to(cdtype)
+            self.rho = ((rho+0j)[..., None, None]).to(cdtype())
             if rho.ndim > thickness.ndim:
                 thickness = thickness[:, None, ...]
-            self.thick = ((thickness+0j)[..., None, None]).to(cdtype)
+            self.thick = ((thickness+0j)[..., None, None]).to(cdtype())
             if jac:
                 G = self.jacobian()
                 return G.cpu()*c.mu0
@@ -876,7 +877,7 @@ class Forward(BaseForward):
         # t2t /= torch.sqrt(tmp_omega)
         newfwr.H2t, newfwr.omega, newfwr.lamda = make_H2t(t2t, newfwr.geomz, tmp_omega, tmp_lamda, tolerance=tol)
 
-        newfwr.H2t       = 2.*newfwr.H2t.to(newfwr.device).to(rdtype)
+        newfwr.H2t       = 2.*newfwr.H2t.to(newfwr.device).to(rdtype())
         # newfwr.H2t      /= torch.sqrt(newfwr.omega.real)
         newfwr.omega    *= c.sqrt_twopi
         newfwr.rho       = None

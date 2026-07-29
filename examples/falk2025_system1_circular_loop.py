@@ -6,23 +6,13 @@ Created on Thu Jan 30 11:16:44 2025
 """
 
 from timeit import default_timer as tictoc
-from anemone.system import Loop, Receiver, Waveform, FilterChain, ButterworthFilter
-from anemone.forwards import ForwardCentralCircle
+from anemone.system import Loop, Receiver
+from anemone.forwards import Forward
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-if __name__ == "__main__":
-    times = np.geomspace(2.19e-6, 909e-6, 30)
-    radius = 5.
-    resistivities = torch.ones(2)
-    thicknesses = torch.tensor([20.])
-    resistivities = resistivities[:, None]*np.logspace(0, 2, 20)[None, :]
-    from time import time as tictoc
-
-else:
-    radius = 5.
-
+#torch.set_num_threads(1)
 
 a = tictoc()
 
@@ -33,10 +23,13 @@ thick0 = np.array(thicknesses)
 resist = torch.tensor(resist0,dtype=torch.double)  # resistivity in ohm.m
 thick = torch.tensor(thick0, dtype=torch.double)
 
-fwr = ForwardCentralCircle(radius, times)
+radius = 1.#/np.sqrt(np.pi)
+tx = Loop.circle(radius)
+rx = Receiver()
+fwr = Forward(tx, rx, times, tolerance=1e-6)
 
 b = tictoc()
-dbdt = fwr(resist, thick)
+dbdt = fwr(resist, thick).real
 c = tictoc()
 
 int_time = c-b
@@ -45,8 +38,7 @@ imp_time = c-a
 time_calc_int = int_time
 time_calc_imp = imp_time
 
-
-dpred = dbdt.detach().numpy()
+dpred = dbdt.numpy()/np.pi
 
 if __name__ == "__main__":
     plt.figure()
