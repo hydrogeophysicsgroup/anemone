@@ -145,7 +145,7 @@ class BaseForward:
         
         if waveform is not None:
             if self.filterfunc is None:
-                primary =  stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) 
+                primary =  stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) @ self.waveform.d2wdt2
             else:
                 primary =  self.filterfunc.stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) @ self.waveform.d2wdt2
         else:
@@ -155,7 +155,7 @@ class BaseForward:
             primary_ft = CubicSpline(t_primary, primary, torch.log10)
             primary = primary_ft.integrate(self.t_st, self.t_end, normalize=True)
 
-        if hasattr(self.receiver, 'weighting'):
+        if getattr(self.receiver, 'weighting', None) is not None:
             bfield = bfield @ self.receiver.weighting
         
         if bfield.numel()==1:
