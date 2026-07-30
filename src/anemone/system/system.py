@@ -29,21 +29,24 @@ class Receiver:
     y       : Tensor
     z       : Tensor
     grid    : bool = True
+    weighting  : Tensor = None
 
-    def __init__(self, x=0., y=0., z=0., grid=False) -> None:
+    def __init__(self, x=0., y=0., z=0., grid=False, weighting=None) -> None:
         self.x = torch.tensor(x, dtype=rdtype) if not isinstance(x, Tensor) else x.to(rdtype)
         self.y = torch.tensor(y, dtype=rdtype) if not isinstance(y, Tensor) else y.to(rdtype)
         self.z = torch.tensor(z, dtype=rdtype) if not isinstance(z, Tensor) else z.to(rdtype)
         self.grid = grid
-        
+        self.weighting = torch.tensor(weighting, dtype=rdtype) if weighting is not None else None
+
         if self.grid:
             self._grid()
         else:
             all_points = [coord.numel() for coord in (self.x, self.y, self.z)]
             npoints = max(all_points)
-            self.X = self.x if self.x.numel()!=npoints else torch.ones(npoints)*self.x
-            self.Y = self.y if self.y.numel()!=npoints else torch.ones(npoints)*self.y
-            self.Z = self.z if self.z.numel()!=npoints else torch.ones(npoints)*self.z
+
+            self.X = self.x if self.x.numel()==npoints else torch.ones(npoints)*self.x
+            self.Y = self.y if self.y.numel()==npoints else torch.ones(npoints)*self.y
+            self.Z = self.z if self.z.numel()==npoints else torch.ones(npoints)*self.z
 
     def _grid(self):
         X,Y,Z = torch.meshgrid(self.x, self.y, self.z, indexing='ij')
@@ -59,8 +62,6 @@ class Receiver:
                             self.X.flatten(), 
                             self.Y.flatten(), 
                             self.Z.flatten())), 0, -1))
-
-
 
     def __len__(self):
         return self.X.numel()
@@ -156,8 +157,10 @@ class Loop:
         return self.x.numel()
     
     def geomz(self, rx, R):
-        if hasattr(self, 'radius') and rx.xyz.numel()==3 and rx.x==0. and rx.y==0.:
-            return self._geomz_circle(rx, R)
+        # if hasattr(self, 'radius') and rx.xyz.numel()==3 and rx.x==0. and rx.y==0.:
+        #     return self._geomz_circle(rx, R)
+        if hasattr(self, 'radius'):
+            return self._geomz_circle_offcenter(rx, R)        
         logR = torch.log(R).cpu()
         dR = logR[1]-logR[0]
 
@@ -198,6 +201,8 @@ class Loop:
             phi = lamontagne((torch.log(cr)-logR)/dR)
             cs =  -y1 * phi * dx / cr
             geomz += cs.sum(axis=1, keepdims=False)
+        if hasattr(rx, 'weighting') and rx.weighting is not None:
+            geomz = torch.einsum('i,ij...->j...', rx.weighting, geomz)
         return geomz.to(R.device)
 
     def _geomz_circle(self, rx, R):
@@ -210,7 +215,35 @@ class Loop:
         phi = lamontagne((torch.log(radius)-logR)/dR)
         geomz = 2*torch.pi*phi*radius
         return geomz.to(R.device)
-     
+
+    def _geomz_circle_offcenter(self, rx, R):
+        radius = self.radius if isinstance(self.radius, torch.Tensor) else torch.tensor(self.radius, dtype=R.dtype)
+
+        d = torch.sqrt(rx.X**2 + rx.Y**2).flatten()   # (n_rec,)
+
+        logR = torch.log(R).cpu()
+        dR = logR[1] - logR[0]
+
+        N = 1000
+        theta = torch.linspace(0, 2 * torch.pi, N + 1, dtype=rdtype)[:-1]  # (N,)
+        dtheta = 2 * torch.pi / N
+
+        # r: (n_rec, N)
+        r = torch.sqrt(radius**2 + d[:, None]**2 - 2 * radius * d[:, None] * torch.cos(theta[None, :]))
+        integrand_factor = radius * (radius - d[:, None] * torch.cos(theta[None, :])) / r  # (n_rec, N)
+
+        log_r = torch.log(r)  # (n_rec, N)
+        # phi: (n_rec, N, n_R)
+        phi = lamontagne((log_r[:, :, None] - logR[None, None, :]) / dR)
+
+        # geomz: (n_rec, n_R)
+        geomz = (integrand_factor[:, :, None] * phi * dtheta).sum(axis=1)
+
+        if hasattr(rx, 'weighting') and rx.weighting is not None:
+            geomz = torch.einsum('i,ij->j', rx.weighting, geomz)
+
+        return geomz.to(R.device)
+
 def perp_distance_to_line(x,y, line_points):
 	((x1,y1), (x2,y2)) = line_points
 	numerator = torch.abs((x2-x1)*(y1-y) - (x1-x)*(y2-y1))
@@ -330,7 +363,7 @@ class Waveform:
         wv = torch.tensor([0, 1, 1, 0], dtype=rdtype)
         return cls(t, wv)
 
-@nosj
+# @nosj
 class SystemResponse:
     time      : Tensor
     dSRdt     : Tensor
@@ -338,13 +371,19 @@ class SystemResponse:
         np_time = time.numpy()
         dtime = torch.from_numpy(np.diff(np_time, prepend=np_time[0]))
         amplitude = dSRdt * dtime
-        Waveform(time, dSRdt)
+        super().__init__(time, dSRdt)
         self.d2wdt2 = amplitude
+        self.time = time
+        self.amplitude = amplitude
 
 @nosj
 class ButterworthFilter:
     fcut : float
     order : int = 1
+
+    @property
+    def tau(self):
+        return 1./(c.twopi*self.fcut)
 
     def omega_filter(self, omega):
         return self.__call__(omega/c.twopi)
@@ -355,7 +394,13 @@ class ButterworthFilter:
         elif self.order==2: recip_resp = (s**2 + s*2**(1/2) + 1)
         elif self.order==3: recip_resp = (s**2 + s + 1)*(1+s)
         elif self.order==4: recip_resp = (s**2 + 1.84776*s+1)*(s**2 + 0.76537*s+1)
-        return 1./recip_resp
+        return (1./recip_resp)
+    
+    def stepoff_response(self, t):
+        amp = torch.exp(-t/self.tau)
+        amp[t<0.] = 1.
+        return amp**self.order
+    
 
 from typing import List
 
@@ -377,6 +422,32 @@ class FilterChain:
     
     def __iter__(self):
         return iter(self.filters)
+    
+    def stepoff_response(self, t):
+        N = len(self)
+        omegas = c.twopi*torch.tensor([cfilter.fcut for cfilter in self.filters])
+        if len(np.unique(omegas.numpy())) != N:
+            raise ValueError("All cutoff frequencies in 'omegas' must be distinct.")
+        
+        # Initialize the summation term
+        summation_term = torch.zeros_like(t, dtype=float)
+        summation_term[t<=0.] = 1.
+        i_step = t>0
+        
+        
+        for i in range(N):
+            w_i = omegas[i]
+            
+            # Isolate all w_j where j != i
+            w_j = omegas[omegas!=w_i]
+            
+            # Calculate the product coefficient for this specific filter
+            C_i = torch.prod(w_j / (w_j - w_i))
+            
+            # Add this filter's exponential decay curve to the total summation
+            summation_term[i_step] += C_i * torch.exp(-w_i * t[i_step])
+        return summation_term
+
     
 
 if __name__ == "__main__":

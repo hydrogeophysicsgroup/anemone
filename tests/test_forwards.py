@@ -51,7 +51,7 @@ def aarhusInv_stepoff_comparison(ForwardMaker, **kwargs):
     assert torch.allclose(ainv_dbdt.real, dbdt.real, rtol=rtol), f"{name} and aarhusInv step-off do not match within {rtol*100} percent"
 
 def aarhusInv_piecewise_comparison(ForwardMaker, **kwargs):
-    from anemone.experiment import Loop, Receiver, Waveform
+    from anemone.system import Loop, Receiver, Waveform
     name = ForwardMaker.__name__
     
     rtol = kwargs.pop('rtol', 2e-2)
@@ -623,10 +623,9 @@ def test_multirx_forward_shape_check():
     from anemone.forwards import Forward
     multi_rx_forward_shape_check(Forward)
 
-@pytest.mark.skipif(skip_multi_rx, reason="multi-rx needs retooling.")
 def test_multireceiver_forward():
     from anemone.experiment import Loop, Receiver
-    from anemone.forwards import Forward
+    from anemone.forwards import Forward, ForwardLaplace
     import torch
 
 
@@ -636,12 +635,12 @@ def test_multireceiver_forward():
         5.575e-04, 7.035e-04])
 
     lp = Loop.square(40)
-    rx = Receiver(x=torch.linspace(-400, 400, 202), z=10)
+    rx = Receiver(x=torch.linspace(-400, 400, 51), z=10)
 
     rho = torch.tensor([40, 80])
     thick = torch.tensor([10])
 
-    fwr = Forward(lp, rx, times)
+    fwr = ForwardLaplace(lp, rx, times, tolerance=1e-6)
     dbdt = fwr(rho, thick)
 
     if __name__ == '__main__':
@@ -650,6 +649,57 @@ def test_multireceiver_forward():
         ax.semilogy(rx.x, dbdt.real, 'C0.-', label='mforward')
         ax.semilogy(rx.x, -dbdt.real, 'r.-', label='mforward')
         plt.show()
+    assert (rx.x[:, None]+times[None, :]).shape == dbdt.shape, "dbdt shape is not correct"
+
+def test_multireceiver_forward_and_forwardlaplace():
+    from anemone.experiment import Loop, Receiver
+    from anemone.forwards import Forward, ForwardLaplace
+    import torch
+
+
+    times = torch.tensor([9.350e-06, 1.145e-05, 1.458e-05, 1.822e-05, 2.255e-05, 2.867e-05,
+        3.595e-05, 4.460e-05, 5.660e-05, 7.070e-05, 8.630e-05, 1.071e-04,
+        1.381e-04, 1.748e-04, 2.174e-04, 2.775e-04, 3.515e-04, 4.385e-04,
+        5.575e-04, 7.035e-04])
+
+    lp = Loop.square(40)
+    rx = Receiver(x=torch.linspace(-400, 400, 51), z=10)
+
+    rho = torch.tensor([40, 80])
+    thick = torch.tensor([10])
+
+    fwr = ForwardLaplace(lp, rx, times, tolerance=1e-9)
+    dbdt = fwr(rho, thick)
+
+    fwr2 = Forward(lp, rx, times, tolerance=1e-9)
+    dbdt2 = fwr2(rho, thick)
+
+    import time
+
+    bt = time.perf_counter()
+    for _ in range(10):
+        dbdt2 = fwr(rho, thick)    
+    et = time.perf_counter()
+    print(f'Forward1 calculation took {(et-bt)/10:0.3f} s')
+
+    bt = time.perf_counter()
+    for _ in range(10):
+        dbdt2 = fwr2(rho, thick)    
+    et = time.perf_counter()
+    print(f'Forward2 calculation took {(et-bt)/10:0.3f} s')
+    
+    
+
+    if __name__ == '__main__':
+        import matplotlib.pyplot as plt
+        fig,ax = plt.subplots(2,1, sharex=True)
+        ax[0].semilogy(rx.x, dbdt.real, 'C0.-', label='ForwardLaplace')
+        ax[0].semilogy(rx.x, -dbdt.real, 'r.-', label='ForwardLaplace')
+        ax[1].semilogy(rx.x, dbdt2.real, 'C0.-', label='Forward')
+        ax[1].semilogy(rx.x, -dbdt2.real, 'r.-', label='Forward')
+        plt.show()
+
+    assert torch.allclose(dbdt, dbdt2, rtol=1e-2), "Forward and ForwardLaplace results do not match"
     assert (rx.x[:, None]+times[None, :]).shape == dbdt.shape, "dbdt shape is not correct"
 
 @pytest.mark.skipif(skip_multi_rx, reason="multi-rx needs retooling.")
@@ -743,7 +793,7 @@ def test_save():
 if __name__ == '__main__':
     
     #test_halfspace_circle_center_forward()
-    test_colecole_forwardTD()
+    # test_colecole_forwardTD()
     # test_halfspace_circle_center()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     # test_40x40_aarhusInv_piecewise_waveform()
@@ -752,6 +802,7 @@ if __name__ == '__main__':
     #test_mpaforwardTD()
     #test_40x40_aarhusInv_stepoff()
 
+    test_multireceiver_forward_and_forwardlaplace()
     #test_multirx_forward_shape_check()
     # test_multireceiver_frequency_domain()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()

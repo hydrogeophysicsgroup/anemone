@@ -161,7 +161,7 @@ def test_lci():
 
 
     res_start = LogResistivity.smooth(torch.ones(len(z)+1)*50., z)
-    thick1 = torch.linspace(0, 20, 500).to(rdtype)#[:3]
+    thick1 = torch.linspace(0, 20, 100).to(rdtype)#[:3]
     inv_list = []
     m_trues=[]
 

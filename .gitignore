@@ -162,3 +162,5 @@ scripts/plog_opener.cmd
 .vscode/settings.json
 *.png
 # src/anemone/inversion/dolphinv.py
+
+scratch/*

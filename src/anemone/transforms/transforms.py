@@ -312,16 +312,19 @@ class Hankel:
             i_offsets = i_offsets.to(self.device)
 
 
-        FC = torch.zeros_like(self.fc, device=self.device)
+        FC = torch.zeros(geomz.shape[:-1]+self.fc.shape, device=self.device)
+        
+        while self.fc.ndim < FC.ndim:
+            self.fc = self.fc[None, :]
         
         for i, i_offset in enumerate(i_offsets):
             if i_offset == 0:
-                FC += geomz[i]*self.fc / rout[i]
+                FC += geomz[..., i, None]*self.fc / rout[i]
             elif i_offset > 0:
-                FC[:-i_offset] += geomz[i]*self.fc[..., i_offset:] / rout[i]
+                FC[..., :-i_offset] += geomz[..., i, None]*self.fc[..., i_offset:] / rout[i]
             else:
                 i_offset *= -1
-                FC[i_offset:] += geomz[i]*self.fc[..., :-i_offset] / rout[i]
+                FC[..., i_offset:] += geomz[..., i, None]*self.fc[..., :-i_offset] / rout[i]
         
         if self.tolerance is not None:
             idxmin, idxmax = coefficient_bounds(FC.cpu().numpy(), tolerance=self.tolerance)
@@ -330,7 +333,7 @@ class Hankel:
             idx_slice = slice(None, None)
         if FC.dtype != self.func_results.dtype:
             FC = FC.to(self.func_results.dtype)   
-        return torch.einsum('...i,i->...', self.func_results, FC), FC[idx_slice], self.lamda[..., idx_slice]
+        return torch.einsum('ji,...i->j...', self.func_results, FC), FC[idx_slice], self.lamda[..., idx_slice]
 
 class Fourier(Hankel):
     """ A fourier transform for logarithmically sampled data. The implementation uses hankel transforms at the base.
@@ -339,7 +342,7 @@ class Fourier(Hankel):
         
     def __init__(self, func, log10min=-20, log10max=20, smp_per_decade=16, device=None, range=None, tolerance=None):
         def f1(lamda):
-            return func(lamda/c.sqrt_twopi)/torch.sqrt(lamda)
+            return func(lamda/c.sqrt_twopi).T/torch.sqrt(lamda)
         super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device, None)
         self.lambda_included = False
         _, realfc = hankel_coefficients(-0.5, log10min, log10max, smp_per_decade, omega_0=np.pi/5.25, a=0.1)
