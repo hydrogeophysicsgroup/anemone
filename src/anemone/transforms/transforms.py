@@ -342,7 +342,8 @@ class Fourier(Hankel):
         
     def __init__(self, func, log10min=-20, log10max=20, smp_per_decade=16, device=None, range=None, tolerance=None):
         def f1(lamda):
-            return func(lamda/c.sqrt_twopi).T/torch.sqrt(lamda)
+            x = func(lamda/c.sqrt_twopi)
+            return x.permute(*torch.arange(x.ndim - 1, -1, -1))/torch.sqrt(lamda)
         super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device, None)
         self.lambda_included = False
         _, realfc = hankel_coefficients(-0.5, log10min, log10max, smp_per_decade, omega_0=np.pi/5.25, a=0.1)

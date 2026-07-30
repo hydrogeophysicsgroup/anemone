@@ -157,66 +157,93 @@ class Loop:
         return self.x.numel()
     
     def geomz(self, rx, R):
-        # if hasattr(self, 'radius') and rx.xyz.numel()==3 and rx.x==0. and rx.y==0.:
-        #     return self._geomz_circle(rx, R)
         if hasattr(self, 'radius'):
-            return self._geomz_circle_offcenter(rx, R)        
-        logR = torch.log(R).cpu()
-        dR = logR[1]-logR[0]
+            return self._geomz_circle(rx, R)        
+        from numpy.polynomial.legendre import leggauss
 
-        rx_xyz = rx.xyz
+        R = R.cpu().numpy()
+
+        logR = np.log(R)
+        dR   = float(logR[1] - logR[0])
+        n_R  = len(R)
+
+        rx_xyz = rx.xyz.numpy()
         n_rec  = len(rx)
 
-        geomz      = torch.zeros((n_rec, )+R.shape, dtype=rdtype)
+        geomz_out = np.zeros((n_rec, n_R))
 
-        R      = R [None, None, :]
-        
-        lp_xyz = self.xyz[:, None] - rx_xyz[None, :]
-        
-        for i in range(len(self)-1):
-        
-            Rz,iRz = getRz(lp_xyz[i], lp_xyz[i+1])
-            p1 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i])
-            p2 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i+1])
-            x1,y1 = p1[..., 0], p1[..., 1]
-            x2,y2 = p2[..., 0], p2[..., 1]
-            ix = int(100*torch.abs(x2-x1).max())
-            tmpx = torch.linspace(-1, 1, ix)
-            x_samp = tmpx
-            x_samp += 1.
-            length = torch.abs(x2-x1)/2.
+        lp_xyz = self.xyz.numpy()[:, None] - rx_xyz[None, :]  # (n_pts, n_rec, 3)
 
+        # 3-pt GL is exact for degree ≤ 5 polynomials; phi is piecewise degree-5.
+        # Splitting at each phi piece boundary means the polynomial part is
+        # integrated exactly and only the smooth ln(cosh) composition incurs error.
+        gp, gw = leggauss(3)  # (3,)
+        u_breaks = np.array([-2., -1., 0., 1., 2.])
 
-            x_ = (x1[:,None] + length[:,None]*x_samp[None, :])
-            dx = (x_[..., 1] - x_[..., 0])[:,None]
+        for i in range(len(self) - 1):
+            Rz, _ = getRz(lp_xyz[i], lp_xyz[i+1])
+            p1    = np.einsum('...ij,...j->...i', Rz, lp_xyz[i])    # (n_rec, 3)
+            p2    = np.einsum('...ij,...j->...i', Rz, lp_xyz[i+1])  # (n_rec, 3)
+            x1, y1 = p1[..., 0].flatten(), p1[..., 1].flatten()     # (n_rec,)
+            x2     = p2[..., 0].flatten()                            # (n_rec,)
+
+            # Skip receivers closer than 1 cm to the wire (y1 is perp. distance)
+            safe = np.abs(y1) > 1e-3
+            if not safe.any():
+                continue
+
+            y1_s    = y1[safe];  abs_y1_s = np.abs(y1_s)  # (n_safe,)
+            x1_s    = x1[safe];  x2_s     = x2[safe]
+
+            # Change of variable  x = y1·sinh(α)
+            #   r = |y1|·cosh(α),   dx = y1·cosh(α) dα
+            #   ∫ −y1·phi/r dx  =  ∫ −y1²/|y1|·phi dα  =  ∫ −|y1|·phi dα
+            a1 = np.arcsinh(x1_s / y1_s)  # (n_safe,)
+            a2 = np.arcsinh(x2_s / y1_s)  # (n_safe,)
+
+            # beta[j,k] = (log|y1_j| − logR_k) / dR
+            beta = (np.log(abs_y1_s)[:, None] - logR[None, :]) / dR  # (n_safe, n_R)
+
+            # Alpha breakpoints for phi piece boundaries, per (receiver, R).
+            # alpha_break corresponds to u_break via cosh(alpha) = exp((u−beta)·dR).
+            # Set to 0 (lower bound of positive-alpha domain) when breakpoint < 0.
+            with np.errstate(over='ignore'):
+                cosh_b = np.exp(np.minimum(
+                    (u_breaks[None, None, :] - beta[:, :, None]) * dR, 500.
+                ))  # (n_safe, n_R, 5)
+            alpha_breaks = np.where(
+                cosh_b >= 1., np.arccosh(np.maximum(cosh_b, 1.)), 0.
+            )  # (n_safe, n_R, 5)
+
+            def F_pos(a_pos):
+                """∫_0^{a_pos} −|y1|·phi(beta + ln(cosh α)/dR) dα → (n_safe, n_R)"""
+                out = np.zeros((int(safe.sum()), n_R))
+                cap = a_pos[:, None]  # (n_safe, 1)
+                for k in range(4):
+                    lo = np.minimum(alpha_breaks[:, :, k  ], cap)
+                    hi = np.minimum(alpha_breaks[:, :, k+1], cap)
+                    if not (lo < hi).any():
+                        continue
+                    ah = np.where(lo < hi, (hi - lo) / 2., 0.)  # (n_safe, n_R)
+                    am = np.where(lo < hi, (hi + lo) / 2., 0.)  # (n_safe, n_R)
+                    alpha_gl = am[:, :, None] + ah[:, :, None] * gp[None, None, :]
+                    r_gl     = abs_y1_s[:, None, None] * np.cosh(alpha_gl)
+                    u_gl     = (np.log(r_gl) - logR[None, :, None]) / dR
+                    # ah=0 for inactive cells → zero contribution without explicit mask
+                    out += (-abs_y1_s[:, None]
+                            * (lamontagne(u_gl) * ah[:, :, None] * gw[None, None, :]).sum(-1))
+                return out
+
+            # Fundamental theorem: ∫_{a1}^{a2} = sgn(a2)·F_pos(|a2|) − sgn(a1)·F_pos(|a1|)
+            contrib = (  np.sign(a2)[:, None] * F_pos(np.abs(a2))
+                       - np.sign(a1)[:, None] * F_pos(np.abs(a1)))
+            geomz_out[safe] += contrib
             
-            x1 = x1[:, None]
-            x2 = x2[:, None]
-            y1 = y1[:, None, None]
-            x_ = x_[:, :, None]
-            dx = dx[:, None]
-
-
-            cr = torch.sqrt(y1**2 + x_**2)
-            phi = lamontagne((torch.log(cr)-logR)/dR)
-            cs =  -y1 * phi * dx / cr
-            geomz += cs.sum(axis=1, keepdims=False)
         if hasattr(rx, 'weighting') and rx.weighting is not None:
-            geomz = torch.einsum('i,ij...->j...', rx.weighting, geomz)
-        return geomz.to(R.device)
+            geomz_out = np.einsum('i,ij...->j...', rx.weighting, geomz_out)
+        return torch.from_numpy(geomz_out)
 
     def _geomz_circle(self, rx, R):
-        if not isinstance(self.radius, torch.Tensor):
-            radius = torch.ones(1, dtype=R.dtype)*self.radius
-        else:
-            radius = self.radius
-        logR = torch.log(R).cpu()
-        dR = logR[1]-logR[0]
-        phi = lamontagne((torch.log(radius)-logR)/dR)
-        geomz = 2*torch.pi*phi*radius
-        return geomz.to(R.device)
-
-    def _geomz_circle_offcenter(self, rx, R):
         radius = self.radius if isinstance(self.radius, torch.Tensor) else torch.tensor(self.radius, dtype=R.dtype)
 
         d = torch.sqrt(rx.X**2 + rx.Y**2).flatten()   # (n_rec,)
@@ -263,8 +290,8 @@ def box_filter(r, r_min, r_par_max):
     y *= torch.sign(r_par_max)
     return y
 
-def norm(tensor, axis=-1, keepdim=False):
-    return torch.sqrt(torch.sum(tensor**2, axis=axis, keepdim=keepdim))
+def norm(tensor, axis=-1, keepdims=False):
+    return np.sqrt(np.sum(tensor**2, axis=axis, keepdims=keepdims))
 
 
 def getRz(P,Q):
@@ -273,7 +300,7 @@ def getRz(P,Q):
     cos_theta = QP[..., 0] / mQP
     sin_theta = QP[..., 1] / mQP
 
-    Rz = torch.zeros(QP.shape+(3,), dtype=rdtype, device=P.device)
+    Rz = np.zeros(QP.shape+(3,))
 
     Rz[..., 0,0] = cos_theta
     Rz[..., 1,1] = cos_theta
@@ -281,7 +308,7 @@ def getRz(P,Q):
     Rz[..., 1,0] = -sin_theta
     Rz[..., 2,2] = 1.
     
-    return Rz, torch.swapaxes(Rz, -1, -2)
+    return Rz, np.swapaxes(Rz, -1, -2)
 
 
 def integrate_around_loop(lp, rx, hr):

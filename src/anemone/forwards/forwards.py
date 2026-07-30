@@ -496,6 +496,7 @@ class VMDForward(BaseForward):
         return self.dpred
 
 def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
+    print('using old H2t')
     import numpy as np
     t_indices = np.arange(t2t.shape[0])
 
@@ -555,6 +556,127 @@ def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
     Omega = Omega[full_mask]
     Lambda = Lambda[full_mask]
     return torch.tensor(H2t), torch.from_numpy(Omega), torch.from_numpy(Lambda)
+
+# def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
+#     import numpy as np
+
+#     if geomz.ndim > 1:
+#         n_g = geomz.shape[0]
+#     else:
+#         n_g = 1
+#         geomz = geomz[None, :]
+
+#     t2t_real = t2t.real.numpy()    # (n_t, n_omega)
+#     t2t_np   = t2t.numpy()         # (n_t, n_omega) complex
+#     geomz_np = geomz.real.numpy()  # (n_g, n_lmb)
+#     omega_np = omega.squeeze().cpu().numpy()
+#     lmb_np   = lmb.squeeze().cpu().numpy()
+#     n_t      = t2t.shape[0]
+#     n_omega  = omega_np.shape[0]
+#     n_lmb    = lmb_np.shape[0]
+#     n_ol     = n_omega * n_lmb
+
+#     from anemone.physics import rte_halfspace
+#     rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:, None], lmb[None, :]).squeeze().cpu().numpy()
+#     # (n_omega, n_lmb)
+
+#     if tolerance is not None:
+#         full_mask = np.zeros((n_omega, n_lmb), dtype=bool)
+#         positions = np.arange(n_ol)
+
+#         for i_g in range(n_g):
+#             # vectorised over all n_t time samples at once — (n_t, n_omega, n_lmb)
+#             t_g = np.abs(t2t_real[:, :, np.newaxis] *
+#                          geomz_np[i_g][np.newaxis, np.newaxis, :] *
+#                          rte_ref[np.newaxis, :, :])
+#             t_flat    = t_g.reshape(n_t, n_ol)
+#             sort_idx  = np.argsort(t_flat, axis=1)
+#             t_sorted  = np.take_along_axis(t_flat, sort_idx, axis=1)
+#             t_cumsum  = np.cumsum(t_sorted, axis=1)
+#             t_cumsum /= t_cumsum[:, -1:]
+
+#             # vectorised equivalent of searchsorted(...)+1 per row
+#             threshold      = (t_cumsum < tolerance).sum(axis=1, keepdims=True) + 1  # (n_t, 1)
+#             masks_sorted   = positions[np.newaxis, :] >= threshold                  # (n_t, n_ol)
+
+#             inv_sort       = np.argsort(sort_idx, axis=1)
+#             masks_unsorted = np.take_along_axis(masks_sorted, inv_sort, axis=1)
+#             full_mask     |= masks_unsorted.any(axis=0).reshape(n_omega, n_lmb)
+#     else:
+#         full_mask = np.ones((n_omega, n_lmb), dtype=bool)
+
+#     n_selected = full_mask.sum()
+#     H2t = np.zeros((n_t, n_g, n_selected), dtype=complex)
+#     for i_g in range(n_g):
+#         # (n_t, n_omega, n_lmb) boolean-indexed -> (n_t, n_selected), no inner time loop
+#         t_g = t2t_np[:, :, np.newaxis] * geomz_np[i_g][np.newaxis, np.newaxis, :]
+#         H2t[:, i_g, :] = t_g[:, full_mask]
+
+#     H2t = H2t.squeeze()
+#     Omega, Lambda = np.meshgrid(omega_np, lmb_np, indexing='ij')
+#     Omega  = Omega[full_mask]
+#     Lambda = Lambda[full_mask]
+#     return torch.tensor(H2t), torch.from_numpy(Omega), torch.from_numpy(Lambda)
+
+# def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
+#     print('using new H2t')
+#     import numpy as np
+
+#     if geomz.ndim > 1:
+#         n_g = geomz.shape[0]
+#     else:
+#         n_g = 1
+#         geomz = geomz[None, :]
+
+#     t2t_real = t2t.real.numpy()
+#     t2t_np   = t2t.numpy()
+#     geomz_np = geomz.real.numpy()
+#     omega_np = omega.squeeze().cpu().numpy()
+#     lmb_np   = lmb.squeeze().cpu().numpy()
+#     n_t      = t2t.shape[0]
+#     n_omega  = omega_np.shape[0]
+#     n_lmb    = lmb_np.shape[0]
+#     n_ol     = n_omega * n_lmb
+
+#     from anemone.physics import rte_halfspace
+#     rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:, None], lmb[None, :]).squeeze().cpu().numpy()
+
+#     if tolerance is not None:
+#         full_mask  = np.zeros((n_omega, n_lmb), dtype=bool)
+#         row_arange = np.arange(n_t)
+
+#         for i_g in range(n_g):
+#             t_g    = np.abs(t2t_real[:, :, np.newaxis] *
+#                             geomz_np[i_g][np.newaxis, np.newaxis, :] *
+#                             rte_ref[np.newaxis, :, :])
+#             t_flat   = t_g.reshape(n_t, n_ol)
+#             # sort values only — no argsort needed since threshold is applied by value
+#             t_sorted = np.sort(t_flat, axis=1)
+#             t_cumsum = np.cumsum(t_sorted, axis=1)
+#             t_cumsum /= t_cumsum[:, -1:]
+
+#             threshold_idx = (t_cumsum < tolerance).sum(axis=1) + 1   # (n_t,)
+#             safe_idx      = np.minimum(threshold_idx, n_ol - 1)
+#             threshold_val = t_sorted[row_arange, safe_idx]            # (n_t,)
+#             threshold_val[threshold_idx >= n_ol] = np.inf
+
+#             # compare against original (unsorted) values — no inverse permutation needed
+#             mask = t_flat >= threshold_val[:, np.newaxis]             # (n_t, n_ol)
+#             full_mask |= mask.any(axis=0).reshape(n_omega, n_lmb)
+#     else:
+#         full_mask = np.ones((n_omega, n_lmb), dtype=bool)
+
+#     n_selected = full_mask.sum()
+#     H2t = np.zeros((n_t, n_g, n_selected), dtype=complex)
+#     for i_g in range(n_g):
+#         t_g = t2t_np[:, :, np.newaxis] * geomz_np[i_g][np.newaxis, np.newaxis, :]
+#         H2t[:, i_g, :] = t_g[:, full_mask]
+
+#     H2t = H2t.squeeze()
+#     Omega, Lambda = np.meshgrid(omega_np, lmb_np, indexing='ij')
+#     Omega  = Omega[full_mask]
+#     Lambda = Lambda[full_mask]
+#     return torch.tensor(H2t), torch.from_numpy(Omega), torch.from_numpy(Lambda)
 
 @nosj
 class Forward(BaseForward): 

@@ -640,7 +640,7 @@ def test_multireceiver_forward():
     rho = torch.tensor([40, 80])
     thick = torch.tensor([10])
 
-    fwr = ForwardLaplace(lp, rx, times, tolerance=1e-6)
+    fwr = Forward(lp, rx, times, tolerance=1e-6)
     dbdt = fwr(rho, thick)
 
     if __name__ == '__main__':
@@ -801,8 +801,8 @@ if __name__ == '__main__':
     # test_colecole_forwardTD()
     #test_mpaforwardTD()
     #test_40x40_aarhusInv_stepoff()
-
-    test_multireceiver_forward_and_forwardlaplace()
+    test_multireceiver_forward()
+    # test_multireceiver_forward_and_forwardlaplace()
     #test_multirx_forward_shape_check()
     # test_multireceiver_frequency_domain()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
