@@ -164,3 +164,4 @@ scripts/plog_opener.cmd
 # src/anemone/inversion/dolphinv.py
 
 scratch/*
+*.npy

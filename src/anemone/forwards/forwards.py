@@ -495,188 +495,64 @@ class VMDForward(BaseForward):
         self.dpred = Ht.real
         return self.dpred
 
+
 def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
-    print('using old H2t')
     import numpy as np
-    t_indices = np.arange(t2t.shape[0])
 
     if geomz.ndim > 1:
-        g_indices = np.arange(geomz.shape[0])
+        n_g = geomz.shape[0]
     else:
-        g_indices = np.array([0])
+        n_g = 1
         geomz = geomz[None, :]
 
-    t1 = (t2t[0, :, None]*geomz[0].real[None, :]).numpy()
+    t2t_real = t2t.real.numpy()
+    t2t_np   = t2t.numpy()
+    geomz_np = geomz.real.numpy()
+    omega_np = omega.squeeze().cpu().numpy()
+    lmb_np   = lmb.squeeze().cpu().numpy()
+    n_t      = t2t.shape[0]
+    n_omega  = omega_np.shape[0]
+    n_lmb    = lmb_np.shape[0]
+    n_ol     = n_omega * n_lmb
 
     from anemone.physics import rte_halfspace
-    rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:,None], lmb[None,:]).squeeze().cpu().numpy()
+    rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:, None], lmb[None, :]).squeeze().cpu().numpy()
 
     if tolerance is not None:
-        full_mask = np.zeros_like(t1, dtype=bool)
-        for i_g in g_indices:
-            c_geomz = geomz[i_g]
-            for i_t in t_indices:
-                t1 = (t2t[i_t, :, None].real*c_geomz.real[None, :]).numpy()*rte_ref
-                t1_shape = t1.shape
-                t1sort = np.abs(t1).flatten()
+        full_mask  = np.zeros((n_omega, n_lmb), dtype=bool)
+        row_arange = np.arange(n_t)
 
-                sort_idx = np.argsort(t1sort)
-                t1sort = t1sort[sort_idx]
-                t1cumsum = np.cumsum(t1sort)
-                t1cumsum /= t1cumsum[-1]
-                idx = np.searchsorted(t1cumsum, tolerance)+1
+        for i_g in range(n_g):
+            t_g    = np.abs(t2t_real[:, :, np.newaxis] *
+                            geomz_np[i_g][np.newaxis, np.newaxis, :] *
+                            rte_ref[np.newaxis, :, :])
+            t_flat   = t_g.reshape(n_t, n_ol)
+            # sort values only — no argsort needed since threshold is applied by value
+            t_sorted = np.sort(t_flat, axis=1)
+            t_cumsum = np.cumsum(t_sorted, axis=1)
+            t_cumsum /= t_cumsum[:, -1:]
 
-                mask = np.zeros_like(t1sort, dtype=bool)
-                mask[idx:] = True
+            threshold_idx = (t_cumsum < tolerance).sum(axis=1) + 1   # (n_t,)
+            safe_idx      = np.minimum(threshold_idx, n_ol - 1)
+            threshold_val = t_sorted[row_arange, safe_idx]            # (n_t,)
+            threshold_val[threshold_idx >= n_ol] = np.inf
 
-
-                inv_sort = np.argsort(sort_idx)
-                mask = mask[inv_sort].reshape(t1_shape)
-                full_mask += mask
+            mask = t_flat >= threshold_val[:, np.newaxis]             # (n_t, n_ol)
+            full_mask |= mask.any(axis=0).reshape(n_omega, n_lmb)
     else:
-        full_mask = np.ones_like(t1, dtype=bool)
+        full_mask = np.ones((n_omega, n_lmb), dtype=bool)
 
-    omega_i = np.arange(omega.squeeze().shape[0])
-    lamda_i = np.arange(lmb.squeeze().shape[0])
-    omega_i, lamda_i = np.meshgrid(omega_i, lamda_i, indexing='ij')
-
-    omega_i = omega_i[full_mask]
-    lamda_i = lamda_i[full_mask]
-
-
-    H2t = np.zeros(t2t.shape[:1]+geomz.shape[:-1]+(full_mask.sum(),), dtype=complex)
-
-    for i_t in range(t2t.shape[0]):
-        for i_g in g_indices:
-            t1 = (t2t[i_t, :, None]*geomz[i_g].real[None, :]).numpy()
-            H2t[i_t, i_g] = t1[full_mask].flatten()
+    n_selected = full_mask.sum()
+    H2t = np.zeros((n_t, n_g, n_selected), dtype=complex)
+    for i_g in range(n_g):
+        t_g = t2t_np[:, :, np.newaxis] * geomz_np[i_g][np.newaxis, np.newaxis, :]
+        H2t[:, i_g, :] = t_g[:, full_mask]
 
     H2t = H2t.squeeze()
-    Omega,Lambda = np.meshgrid(omega.squeeze().cpu().numpy(), lmb.squeeze().cpu().numpy(), indexing='ij')
-    Omega = Omega[full_mask]
+    Omega, Lambda = np.meshgrid(omega_np, lmb_np, indexing='ij')
+    Omega  = Omega[full_mask]
     Lambda = Lambda[full_mask]
     return torch.tensor(H2t), torch.from_numpy(Omega), torch.from_numpy(Lambda)
-
-# def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
-#     import numpy as np
-
-#     if geomz.ndim > 1:
-#         n_g = geomz.shape[0]
-#     else:
-#         n_g = 1
-#         geomz = geomz[None, :]
-
-#     t2t_real = t2t.real.numpy()    # (n_t, n_omega)
-#     t2t_np   = t2t.numpy()         # (n_t, n_omega) complex
-#     geomz_np = geomz.real.numpy()  # (n_g, n_lmb)
-#     omega_np = omega.squeeze().cpu().numpy()
-#     lmb_np   = lmb.squeeze().cpu().numpy()
-#     n_t      = t2t.shape[0]
-#     n_omega  = omega_np.shape[0]
-#     n_lmb    = lmb_np.shape[0]
-#     n_ol     = n_omega * n_lmb
-
-#     from anemone.physics import rte_halfspace
-#     rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:, None], lmb[None, :]).squeeze().cpu().numpy()
-#     # (n_omega, n_lmb)
-
-#     if tolerance is not None:
-#         full_mask = np.zeros((n_omega, n_lmb), dtype=bool)
-#         positions = np.arange(n_ol)
-
-#         for i_g in range(n_g):
-#             # vectorised over all n_t time samples at once — (n_t, n_omega, n_lmb)
-#             t_g = np.abs(t2t_real[:, :, np.newaxis] *
-#                          geomz_np[i_g][np.newaxis, np.newaxis, :] *
-#                          rte_ref[np.newaxis, :, :])
-#             t_flat    = t_g.reshape(n_t, n_ol)
-#             sort_idx  = np.argsort(t_flat, axis=1)
-#             t_sorted  = np.take_along_axis(t_flat, sort_idx, axis=1)
-#             t_cumsum  = np.cumsum(t_sorted, axis=1)
-#             t_cumsum /= t_cumsum[:, -1:]
-
-#             # vectorised equivalent of searchsorted(...)+1 per row
-#             threshold      = (t_cumsum < tolerance).sum(axis=1, keepdims=True) + 1  # (n_t, 1)
-#             masks_sorted   = positions[np.newaxis, :] >= threshold                  # (n_t, n_ol)
-
-#             inv_sort       = np.argsort(sort_idx, axis=1)
-#             masks_unsorted = np.take_along_axis(masks_sorted, inv_sort, axis=1)
-#             full_mask     |= masks_unsorted.any(axis=0).reshape(n_omega, n_lmb)
-#     else:
-#         full_mask = np.ones((n_omega, n_lmb), dtype=bool)
-
-#     n_selected = full_mask.sum()
-#     H2t = np.zeros((n_t, n_g, n_selected), dtype=complex)
-#     for i_g in range(n_g):
-#         # (n_t, n_omega, n_lmb) boolean-indexed -> (n_t, n_selected), no inner time loop
-#         t_g = t2t_np[:, :, np.newaxis] * geomz_np[i_g][np.newaxis, np.newaxis, :]
-#         H2t[:, i_g, :] = t_g[:, full_mask]
-
-#     H2t = H2t.squeeze()
-#     Omega, Lambda = np.meshgrid(omega_np, lmb_np, indexing='ij')
-#     Omega  = Omega[full_mask]
-#     Lambda = Lambda[full_mask]
-#     return torch.tensor(H2t), torch.from_numpy(Omega), torch.from_numpy(Lambda)
-
-# def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
-#     print('using new H2t')
-#     import numpy as np
-
-#     if geomz.ndim > 1:
-#         n_g = geomz.shape[0]
-#     else:
-#         n_g = 1
-#         geomz = geomz[None, :]
-
-#     t2t_real = t2t.real.numpy()
-#     t2t_np   = t2t.numpy()
-#     geomz_np = geomz.real.numpy()
-#     omega_np = omega.squeeze().cpu().numpy()
-#     lmb_np   = lmb.squeeze().cpu().numpy()
-#     n_t      = t2t.shape[0]
-#     n_omega  = omega_np.shape[0]
-#     n_lmb    = lmb_np.shape[0]
-#     n_ol     = n_omega * n_lmb
-
-#     from anemone.physics import rte_halfspace
-#     rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:, None], lmb[None, :]).squeeze().cpu().numpy()
-
-#     if tolerance is not None:
-#         full_mask  = np.zeros((n_omega, n_lmb), dtype=bool)
-#         row_arange = np.arange(n_t)
-
-#         for i_g in range(n_g):
-#             t_g    = np.abs(t2t_real[:, :, np.newaxis] *
-#                             geomz_np[i_g][np.newaxis, np.newaxis, :] *
-#                             rte_ref[np.newaxis, :, :])
-#             t_flat   = t_g.reshape(n_t, n_ol)
-#             # sort values only — no argsort needed since threshold is applied by value
-#             t_sorted = np.sort(t_flat, axis=1)
-#             t_cumsum = np.cumsum(t_sorted, axis=1)
-#             t_cumsum /= t_cumsum[:, -1:]
-
-#             threshold_idx = (t_cumsum < tolerance).sum(axis=1) + 1   # (n_t,)
-#             safe_idx      = np.minimum(threshold_idx, n_ol - 1)
-#             threshold_val = t_sorted[row_arange, safe_idx]            # (n_t,)
-#             threshold_val[threshold_idx >= n_ol] = np.inf
-
-#             # compare against original (unsorted) values — no inverse permutation needed
-#             mask = t_flat >= threshold_val[:, np.newaxis]             # (n_t, n_ol)
-#             full_mask |= mask.any(axis=0).reshape(n_omega, n_lmb)
-#     else:
-#         full_mask = np.ones((n_omega, n_lmb), dtype=bool)
-
-#     n_selected = full_mask.sum()
-#     H2t = np.zeros((n_t, n_g, n_selected), dtype=complex)
-#     for i_g in range(n_g):
-#         t_g = t2t_np[:, :, np.newaxis] * geomz_np[i_g][np.newaxis, np.newaxis, :]
-#         H2t[:, i_g, :] = t_g[:, full_mask]
-
-#     H2t = H2t.squeeze()
-#     Omega, Lambda = np.meshgrid(omega_np, lmb_np, indexing='ij')
-#     Omega  = Omega[full_mask]
-#     Lambda = Lambda[full_mask]
-#     return torch.tensor(H2t), torch.from_numpy(Omega), torch.from_numpy(Lambda)
 
 @nosj
 class Forward(BaseForward): 
@@ -696,67 +572,66 @@ class Forward(BaseForward):
         if self.H2t is None and do_setup: 
             self.setup()
             self.device=device
-            # self.H2t = self.H2t.to(self.device).to(rdtype)
             self.omega = self.omega.to(self.device).to(rdtype)
             self.lamda = self.lamda.to(self.device).to(rdtype)
 
     def setup(self):
-        self.rho   = 40*torch.ones(2, dtype=cdtype)[:, None, None]
-        self.thick = 20*torch.ones(1, dtype=cdtype)[:, None, None]
+        with torch.no_grad():
+            self.rho   = 40*torch.ones(2, dtype=cdtype)[:, None, None]
+            self.thick = 20*torch.ones(1, dtype=cdtype)[:, None, None]
 
-        def frq_integrand(f):
-            self.omega = c.twopi*f[None,:,None]
-            def wvlngth_integrand(wave_length):
-                """ Hz from horizontal electric dipole. """
-                self.lamda = wave_length[None, None, :]          
-                self.sfield_rte = torch.exp(-self.lamda*self.sfield_dz)*self.lamda / c.fourpi
-                intg = rte(1./self.rho, self.thick, self.omega, self.lamda)*self.sfield_rte
-                return intg.squeeze()
-            hkl1 = Hankel(wvlngth_integrand, 1, device=self.device)
-            def geomz_r(r):
-                return self.source.geomz(self.receiver, r).to(rdtype).to(self.device)
-            Hr, self.geomz, self.lamda1 = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
-            
-            self.geomz *= torch.exp(-self.lamda1*self.sfield_dz)*self.lamda1 / c.fourpi
-            return Hr.squeeze()
-        
-
-        self.cbft=invFourier(frq_integrand, device=self.device)
-        def t2t_func(t_in):
-            if self.t_end is not None:
-                wv_mat = waveform_matrix(t_in, t_in, waveform=self.waveform)
-                self.gate_mat = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
+            def frq_integrand(f):
+                self.omega = c.twopi*f[None,:,None]
+                def wvlngth_integrand(wave_length):
+                    """ Hz from horizontal electric dipole. """
+                    self.lamda = wave_length[None, None, :]          
+                    self.sfield_rte = torch.exp(-self.lamda*self.sfield_dz)*self.lamda / c.fourpi
+                    intg = rte(1./self.rho, self.thick, self.omega, self.lamda)*self.sfield_rte
+                    return intg.squeeze()
+                hkl1 = Hankel(wvlngth_integrand, 1, device=self.device)
+                def geomz_r(r):
+                    return self.source.geomz(self.receiver, r).to(rdtype).to(self.device)
+                Hr, self.geomz, self.lamda1 = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
                 
-                return self.gate_mat @ wv_mat
+                self.geomz *= torch.exp(-self.lamda1*self.sfield_dz)*self.lamda1 / c.fourpi
+                return Hr.squeeze()
+            
+
+            self.cbft=invFourier(frq_integrand, device=self.device)
+            def t2t_func(t_in):
+                if self.t_end is not None:
+                    wv_mat = waveform_matrix(t_in, t_in, waveform=self.waveform)
+                    self.gate_mat = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
+                    
+                    return self.gate_mat @ wv_mat
+                else:
+                    self.gate_mat = None
+                    return waveform_matrix(self.times, t_in, waveform=self.waveform)
+
+            
+            Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
+
+
+
+            if self.filterfunc is not None:
+                self.t2t *= self.filterfunc.omega_filter(self.omega1*c.sqrt_twopi)#.squeeze()
+            if self.waveform is not None:
+                self.t2t /= -1j*c.sqrt_twopi
             else:
-                self.gate_mat = None
-                return waveform_matrix(self.times, t_in, waveform=self.waveform)
+                self.t2t *= self.omega1.squeeze()
+            self.t2t /= torch.sqrt(self.omega1.squeeze())
+            self.H2t, self.omega, self.lamda = make_H2t(self.t2t, self.geomz.real, self.omega1.real, self.lamda1.real, tolerance=self.tolerance)
 
-        
-        Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
-
-
-
-        if self.filterfunc is not None:
-            self.t2t *= self.filterfunc.omega_filter(self.omega1*c.sqrt_twopi)#.squeeze()
-        if self.waveform is not None:
-            self.t2t /= -1j*c.sqrt_twopi
-        else:
-            self.t2t *= self.omega1.squeeze()
-        self.t2t /= torch.sqrt(self.omega1.squeeze())
-        self.H2t, self.omega, self.lamda = make_H2t(self.t2t, self.geomz.real, self.omega1.real, self.lamda1.real, tolerance=self.tolerance)
-
-        self.H2t    = self.H2t#.real.to(self.device).to(rdtype)
-        # self.H2t   /= torch.sqrt(self.omega)
-        self.omega *= c.sqrt_twopi
-        self.rho    = None
-        self.thick  = None
+            if self.filterfunc is None:
+                self.H2t    = self.H2t.real.to(self.device).to(rdtype)
+            self.omega *= c.sqrt_twopi
+            self.rho    = None
+            self.thick  = None
 
 
     def forward(self):
         if self.H2t is None: 
             self.setup()
-            # self.H2t = self.H2t.to(self.device).to(rdtype)
 
         with torch.no_grad():
             cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze()#.to(rdtype)
@@ -765,7 +640,6 @@ class Forward(BaseForward):
             return res
 
     def jacobian(self):
-        # dRTE = drte_dsigma(self.sigma.to(torch.complex64), self.thick.to(torch.complex64), self.omegajac, self.lamdajac).squeeze()
         dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lamda).squeeze().real.T
         
         if len(dRTE.shape)>2:

@@ -13,11 +13,12 @@ profiler = cProfile.Profile()
 profiler.enable()
 
 tx = Loop.square(40.)
-rx = Receiver(x=np.linspace(-1.,1.,51), y=np.linspace(-1.,1.,51), z=0., grid=True)
-rx.weighting = np.ones_like(rx.X.flatten())
-rx.weighting /= len(rx.weighting)
+# rx = Receiver(x=np.linspace(-1.,1.,51), y=np.linspace(-1.,1.,51), z=0., grid=True)
+# rx.weighting = np.ones_like(rx.X.flatten())
+# rx.weighting /= len(rx.weighting)
 
 times = torch.logspace(-6, -3, 32)
+rx = Receiver()
 
 
 fwr = Forward(tx, rx, times)
