@@ -86,6 +86,7 @@ class BaseInversion:
         self._G = self.jacobian(self.mvec)
         self._GtG = self._G.T @ self.Cdi @ self._G
         self._r_data = (self._G.T @ self.Cdi @ (self.data_observed - self._dpred))
+        self._linearization_mvec = self.mvec.clone()
         
 
     @property
@@ -120,7 +121,7 @@ class BaseInversion:
     def setup_matrices(self):
         self.mvec = self.m*1.
         self._current_mvec = self.mvec*1.1 if torch.all(self.mvec!=0) else torch.ones_like(self.mvec)# make sure the jacobian is calculated at least once
-        self.Cdi = torch.diag(self.recip_error_squared).to(rdtype)
+        self.Cdi = torch.diag(self.recip_error_squared).to(rdtype())
         self.Imod = torch.eye(len(self.mvec), device=self.mvec.device)
         self._G = None
         
@@ -184,7 +185,7 @@ class Tikhonov(BaseInversion):
     def calc_dm(self):
         r_data = self.G.T @ self.Cdi @ (self.data_observed-self.data_predicted)
         damp_mask = (self.GtG.diagonal() < 0.01*self.HtH.diagonal()).to(self.GtG.dtype)
-        c_damp = damp_mask @ self.damp_matrix
+        c_damp = torch.diag(self.damp_matrix.diagonal() * damp_mask)
         Aown = self.GtG + c_damp + self.HtH
         return solve(Aown, r_data)
 
@@ -236,7 +237,7 @@ class Inversion(BaseInversion):
 
         super().setup_matrices()
         self.Rp = self.model.H()
-        self.mvec = self.mvec.to(rdtype)
+        self.mvec = self.mvec.to(rdtype())
         self.C_rp = np.diag(np.ones(self.Rp.shape[0]) / np.log1p(self.vertical_smoothness)**2)
         self.C_rp = self.C_rp.astype(np.float32)
         self.HtH = self.Rp.T @ self.C_rp @ self.Rp
@@ -287,10 +288,8 @@ class Inversion(BaseInversion):
         
 
         if sp.sparse.issparse(self.Imod):
-            self.damp *= (self.GtG.diagonal()>0.05*self.CtC.diagonal()).astype(float)
             return sp.sparse.csr_matrix(self.Imod.multiply(self.damp.cpu().numpy()))# self.damp*self.Imod
         else:
-            self.damp *= (self.GtG.diagonal()>0.05*self.CtC.diagonal()).to(float)
             return self.damp * self.Imod
 
     def find_damping(self):
@@ -331,20 +330,30 @@ class Inversion(BaseInversion):
 
         return torch.nan_to_num(torch.tensor(dm, device=self.mvec.device, dtype=self.mvec.dtype))
 
+    def _linearize_current_model(self):
+        self._model_update(self.mvec)
+
     
     def run_iteration(self):
         import time
         time_old = time.time()
+        if not hasattr(self, '_linearization_mvec') or not torch.equal(self.mvec, self._linearization_mvec):
+            self._linearize_current_model()
         self.iteration += 1
         self.damping_attempts = 0
         self.test_damping = [True]*len(self.pslices)
 
 
         dM = self.find_damping()
-        self.mvec      = self.mvec+torch.nan_to_num(dM)
+        accepted_mvec = self.mvec
+        accepted_dpred = self._dpred
+        accepted_dpredgrid = getattr(self, '_dpredgrid', None)
+
+        self.mvec = self.mvec + torch.nan_to_num(dM)
+        self._dpred = self.mforward(self.mvec)
+        self._current_mvec = self.mvec.clone()
         self.new_misfit = self.misfit()
         self.n_local += 1
-        self.data_predicted
         
         misfit_increased =  self.new_misfit > self.misfits[-1]
         misfit_change_small = (abs(self.misfits[-1] - self.new_misfit) / self.new_misfit < self.data_misfit_minimum_change)
@@ -356,7 +365,11 @@ class Inversion(BaseInversion):
                 self.max_step[i] -= self.step_down
             self.iteration -= 1
             self.n_local = 0
-            self.mvec = self.mvec-dM
+            self.mvec = accepted_mvec
+            self._dpred = accepted_dpred
+            self._current_mvec = accepted_mvec.clone()
+            if accepted_dpredgrid is not None:
+                self._dpredgrid = accepted_dpredgrid
             self.damp_exponent[:] += 2
         elif self.n_local > 2:
             for i, _ in enumerate(self.pslices):
@@ -388,8 +401,8 @@ class Inversion(BaseInversion):
                 self.log("{:03d}\tData misfit:\t{:2.2f}\tVertical misfit:\t{:2.2f}\tHorizontal misfit:\t{:2.2f}\tTotal misfit:\t{:2.2f}\tStep size:\t{:2.2f}\tLast iteration time:\t{:2.2f}\n".format(
                     self.iteration,
                     torch.sqrt(self.data_misfit().sum() / len(self.data_observed)),
-                    self.vert_misfit()/self.Rp.shape[0],
-                    self.horz_misfit()/self.RL.shape[0],
+                    np.sqrt(self.vert_misfit()/self.Rp.shape[0]),
+                    np.sqrt(self.horz_misfit()/self.RL.shape[0]),
                     self.misfits[-1],
                     self.max_step[0],
                     time_new - time_old
@@ -463,7 +476,7 @@ class LCI(Inversion):
     _r_data        = None
     horizontal_smoothness = 0.8
     data_misfits   = np.inf
-    reuse_jac = True
+    reuse_jac = False
 
     @property
     def m(self):
@@ -560,9 +573,9 @@ class LCI(Inversion):
         return #super().setup_matrices()
 
     def horz_misfit(self):
-        r_mod = -self.RL * self.mvec
+        r_mod = -(self.RL @ self.mvec)
         m_misfit = r_mod @ self.C_rl @ r_mod
-        return m_misfit.mean()
+        return m_misfit
 
     def misfit(self):
         return torch.sqrt((self.data_misfit().sum()+self.vert_misfit()+self.horz_misfit())/(len(self.data_observed)+self.RL.shape[0]+self.Rp.shape[0]))
@@ -579,13 +592,17 @@ class LCI(Inversion):
         return self._dpredgrid.flatten()
     
     def _model_update(self, mvec):
-        self.n_model_updates += 1
         self.mvec = mvec
         self._current_mvec = self.mvec*1.
 
         self._dpred = self.mforward(self.mvec)
+        self._linearize_current_model()
+
+    def _linearize_current_model(self):
+        self.n_model_updates += 1
         self.jacobian(self.mvec)
-        # self._r_data -= self.CtC @ self.cmvec 
+        self._r_data -= self.CtC @ self.cmvec
+        self._linearization_mvec = self.mvec.clone()
     
     def calc_dm(self):
         Aown = sp.sparse.csr_matrix(self._GtG) + self.CtC + self.damp_matrix()
@@ -601,7 +618,7 @@ class LCI(Inversion):
             self._dobsgrid = self.data_observed.reshape(self.n_sites, -1)
             self._derrgrid = self.data_error.reshape(self.n_sites, -1)**2
             _,thick = self.inv_list[0].model.mod
-            self.Ggrid = torch.empty((self.n_sites, len(thick)+1, self._dobsgrid.shape[-1]), dtype=rdtype, device=self.device)
+            self.Ggrid = torch.empty((self.n_sites, len(thick)+1, self._dobsgrid.shape[-1]), dtype=rdtype(), device=self.device)
         mvecs = mvec.reshape(self.n_sites, -1).T
         _,thick = self.inv_list[0].model.mod
         rhos = mvecs.exp()
@@ -635,7 +652,7 @@ class LCI(Inversion):
 
 
         self.Ggrid /= self._dpredgrid.exp()[:, None, :]
-        self.Ggrid /= rhos.cpu().T[:,:,None]
+        self.Ggrid *= rhos.cpu().T[:,:,None]
         r_data = torch.einsum('ijk,ijk->ij', self.Ggrid, ((self._dobsgrid-self._dpredgrid)/self._derrgrid)[:, None, :])
         self.Ggrid *= self.one_over_error
 
@@ -673,6 +690,9 @@ class LCI(Inversion):
         self.n_local=0
         while not self.stop_inversion:
             self.run_iteration()
+
+        if not torch.equal(self.mvec, self._linearization_mvec):
+            self._linearize_current_model()
             
         # Split mvec back to each inversion
         mres_list = []

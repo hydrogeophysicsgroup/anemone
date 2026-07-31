@@ -799,7 +799,9 @@ def drte_dsigma(sigma, thickness, omega, wave_length):
     # Halfspace IPP=NLAY: E[NLAY-1] * DT_neg_half * CP[NLAY-1]
     drte_du[NLAY] = E[-2] * (-2.*u[-2] / (u[-1] + u[-2])**2) * CP[-1]
 
-    return (drte_du[1:] * 0.5*c.mu0*1j*omega / u_cond).squeeze().T
+    drte_dsigma = (drte_du[1:] * 0.5*c.mu0*1j*omega / u_cond).squeeze()
+
+    return drte_dsigma
 
 def dbzdt_halfspace_coincident_circle_loop(times, rho, r, I=1., max_terms=2000):
     """

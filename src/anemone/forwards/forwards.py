@@ -274,7 +274,8 @@ class BaseForward:
         elif self.kind == 'mpa':      data = self._mpa_call(*args, **kwargs)
         elif self.kind == 'colecole': data = self._colecole_call(*args, **kwargs)
         elif self.kind == 'cpa':      data = self._cpa_call(*args, **kwargs)
-        data += self.primary      
+        if not kwargs.get('jac', False):
+            data += self.primary
         if self.log_scale and not kwargs.get('jac', False): data = torch.log(torch.abs(data))
         return data
 
@@ -450,8 +451,8 @@ class ForwardFD(BaseForward):
 
     
 def waveform_matrix_with_primary(t_in, t_out, waveform):
-    t_out = t_out.to(rdtype)
-    t_in  = t_in.to(rdtype)
+    t_out = t_out.to(rdtype())
+    t_in  = t_in.to(rdtype())
 
     logT = torch.log(t_in)
     dT = torch.diff(logT, prepend=logT[1:2]-2*logT[:1])
@@ -483,7 +484,7 @@ class BstepLaplace(ForwardLaplace):
         self.t_eval = self.times
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(times.device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(times.device)
-        self.srcz = torch.tensor([source.z[0]], dtype=rdtype)
+        self.srcz = torch.tensor([source.z[0]], dtype=rdtype())
         if receiver.z.numel()>1:
             self.rz = receiver.z.flatten()[0]
             assert torch.all(receiver.z==self.rz), "Receiver z coordinates are not the same"
@@ -510,7 +511,7 @@ class BstepLaplace(ForwardLaplace):
         if self.geomz is None:
             hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=16, tolerance=self.tolerance)
             def geomz_r(r):
-                return self.source.geomz(self.receiver, r).to(rdtype).to(self.device)
+                return self.source.geomz(self.receiver, r).to(rdtype()).to(self.device)
             Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
             self.sfield_rte = None
         else:
@@ -534,7 +535,7 @@ class BstepHankel(BaseForward):
         self.tmax = tmax
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(tmin.device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(tmin.device)
-        self.srcz = torch.tensor([source.z[0]], dtype=rdtype)
+        self.srcz = torch.tensor([source.z[0]], dtype=rdtype())
         self.device = tmin.device
         if receiver.z.numel()>1:
             self.rz = receiver.z.flatten()[0]
@@ -557,7 +558,7 @@ class BstepHankel(BaseForward):
             if self.geomz is None:
                 hkl1 = Hankel(wvlngth_integrand, 1, device=self.device, smp_per_decade=10, tolerance=self.tolerance)
                 def geomz_r(r):
-                    return self.source.geomz(self.receiver, r).to(rdtype).to(self.device)
+                    return self.source.geomz(self.receiver, r).to(rdtype()).to(self.device)
                 Hstep, self.geomz, self.lmb = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
                 self.sfield_rte = None
             else:
@@ -615,8 +616,8 @@ class OnTimeForward:
         self.source = source
         self.receiver = receiver
         self.times = times
-        self.tmin = times.min().to(rdtype)
-        self.tmax = times.max().to(rdtype)
+        self.tmin = times.min().to(rdtype())
+        self.tmax = times.max().to(rdtype())
         self.device = times[0].device
         from biotsavart import Loop, ObsPoint, calc_bfield
         _loop = Loop(self.source.x.numpy(), self.source.y.numpy(), self.source.z.numpy())
@@ -625,7 +626,7 @@ class OnTimeForward:
 
         self.rmin = self.source.min_horizontal_distance(self.receiver).to(self.device)
         self.rmax = self.source.max_horizontal_distance(self.receiver).to(self.device)
-        self.srcz = torch.tensor([source.z[0]], dtype=rdtype)
+        self.srcz = torch.tensor([source.z[0]], dtype=rdtype())
         self.rz = self.receiver.z.flatten()[0]
         self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)
 
@@ -851,7 +852,7 @@ class Forward(BaseForward):
             self.H2t, self.omega, self.lamda = make_H2t(self.t2t, self.geomz.real, self.omega1.real, self.lamda1.real, tolerance=self.tolerance)
 
             if self.filterfunc is None:
-                self.H2t    = 2.*self.H2t.real.to(self.device).to(rdtype)
+                self.H2t    = 2.*self.H2t.real.to(self.device).to(rdtype())
             self.omega *= c.sqrt_twopi
             self.rho    = None
             self.thick  = None
@@ -861,22 +862,25 @@ class Forward(BaseForward):
             self.setup()
 
         with torch.no_grad():
-            cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze().real.to(rdtype())
+            cRTE = rte(self.sigma, self.thick, self.omega, self.lamda).squeeze()
+            if self.H2t.dtype==rdtype():
+                cRTE = cRTE.real.to(rdtype())
             res = torch.einsum('ik,...k->i...', self.H2t, cRTE)
             if len(res.shape)>1: res = res.mT
             return res
 
     def jacobian(self):
-        # dRTE = drte_dsigma(self.sigma.to(torch.complex64), self.thick.to(torch.complex64), self.omegajac, self.lamdajac).squeeze()
         with torch.no_grad():
-            dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lamda).squeeze().real.to(rdtype()).T
+            dRTE = drte_dsigma(self.sigma, self.thick, self.omega, self.lamda)
+            if self.H2t.dtype==rdtype():
+                dRTE = dRTE.real.to(rdtype())
             
             if len(dRTE.shape)>2:
                 Gr = torch.einsum('ijk,lk->jil', dRTE, self.H2t)
-                # Gr /= (self.rho.real.squeeze().T**2)[:,:,None]
+                Gr /= -(self.rho.real.squeeze().T**2)[:,:,None]
             else:
                 Gr = torch.einsum('ik,...k->i...', self.H2t, dRTE).T
-                Gr /= (self.rho.real.squeeze()**2)[:,None]
+                Gr /= -(self.rho.real.squeeze()**2)[:,None]
             return Gr
     
     def _res_call(self, rho, thickness, jac=False):
@@ -923,7 +927,8 @@ class Forward(BaseForward):
         # t2t /= torch.sqrt(tmp_omega)
         newfwr.H2t, newfwr.omega, newfwr.lamda = make_H2t(t2t, newfwr.geomz, tmp_omega, tmp_lamda, tolerance=tol)
 
-        newfwr.H2t       = 2.*newfwr.H2t.to(newfwr.device).to(rdtype())
+        if newfwr.filterfunc is None:
+            newfwr.H2t       = 2.*newfwr.H2t.real.to(newfwr.device).to(rdtype())
         # newfwr.H2t      /= torch.sqrt(newfwr.omega.real)
         newfwr.omega    *= c.sqrt_twopi
         newfwr.rho       = None
@@ -932,6 +937,7 @@ class Forward(BaseForward):
         newfwr.t1slc = slice(None, len(newfwr.times))
         newfwr.t2slc = slice(len(newfwr.times), None)
         newfwr.times = torch.cat([newfwr.times, other.times])
+        newfwr.primary = torch.cat([newfwr.primary, other.primary])
 
         return newfwr
     

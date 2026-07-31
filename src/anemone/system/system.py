@@ -252,7 +252,7 @@ class Loop:
         dR = logR[1] - logR[0]
 
         N = 1000
-        theta = torch.linspace(0, 2 * torch.pi, N + 1, dtype=rdtype)[:-1]  # (N,)
+        theta = torch.linspace(0, 2 * torch.pi, N + 1, dtype=rdtype())[:-1]  # (N,)
         dtheta = 2 * torch.pi / N
 
         # r: (n_rec, N)
