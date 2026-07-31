@@ -1,0 +1,279 @@
+## 5 models
+         24654 function calls (24233 primitive calls) in 0.682 seconds
+
+   Ordered by: cumulative time
+   List reduced from 565 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.001    0.001    0.682    0.682 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:483(setup_matrices)
+        1    0.000    0.000    0.517    0.517 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:568(_model_update)
+        2    0.000    0.000    0.514    0.257 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:52(__call__)
+        2    0.000    0.000    0.514    0.257 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:233(__call__)
+        2    0.000    0.000    0.514    0.257 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:833(_res_call)
+        1    0.001    0.001    0.443    0.443 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:584(jacobian)
+        1    0.000    0.000    0.441    0.441 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:821(jacobian)
+        1    0.000    0.000    0.434    0.434 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:670(drte_dsigma)
+        1    0.046    0.046    0.433    0.433 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:600(calc_dpropmat)
+        3    0.071    0.024    0.250    0.083 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:559(calc_prop_matrix)
+        1    0.002    0.002    0.154    0.154 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:675(make_smoothness_matrix)
+     28/1    0.000    0.000    0.150    0.150 <frozen importlib._bootstrap>:1002(_find_and_load)
+     28/1    0.000    0.000    0.150    0.150 <frozen importlib._bootstrap>:967(_find_and_load_unlocked)
+     27/1    0.000    0.000    0.149    0.149 <frozen importlib._bootstrap>:659(_load_unlocked)
+     19/1    0.000    0.000    0.149    0.149 <frozen importlib._bootstrap_external>:844(exec_module)
+     46/1    0.000    0.000    0.147    0.147 <frozen importlib._bootstrap>:220(_call_with_frames_removed)
+     41/1    0.003    0.000    0.147    0.147 {built-in method builtins.exec}
+        1    0.000    0.000    0.147    0.147 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\scipy\spatial\__init__.py:1(<module>)
+       53    0.001    0.000    0.103    0.002 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\functional.py:225(einsum)
+       53    0.102    0.002    0.102    0.002 {built-in method torch.einsum}
+
+
+
+
+## 10 models
+         8956 function calls (8952 primitive calls) in 1.160 seconds
+
+   Ordered by: cumulative time
+   List reduced from 276 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.002    0.002    1.160    1.160 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:483(setup_matrices)
+        1    0.000    0.000    1.128    1.128 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:568(_model_update)
+        2    0.000    0.000    1.125    0.563 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:52(__call__)
+        2    0.000    0.000    1.125    0.563 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:233(__call__)
+        2    0.001    0.000    1.125    0.563 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:833(_res_call)
+        1    0.001    0.001    0.989    0.989 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:584(jacobian)
+        1    0.001    0.001    0.986    0.986 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:821(jacobian)
+        1    0.047    0.047    0.972    0.972 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:670(drte_dsigma)
+        1    0.046    0.046    0.922    0.922 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:600(calc_dpropmat)
+        3    0.148    0.049    0.538    0.179 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:559(calc_prop_matrix)
+       53    0.002    0.000    0.213    0.004 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\functional.py:225(einsum)
+       53    0.212    0.004    0.212    0.004 {built-in method torch.einsum}
+       26    0.200    0.008    0.200    0.008 {built-in method torch.exp}
+       11    0.144    0.013    0.144    0.013 {built-in method torch.roll}
+        1    0.000    0.000    0.139    0.139 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:560(mforward)
+        1    0.000    0.000    0.138    0.138 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:813(forward)
+        1    0.057    0.057    0.137    0.137 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:534(rte_raiche1999)
+        7    0.102    0.015    0.102    0.015 {built-in method torch.sqrt}
+        4    0.085    0.021    0.085    0.021 {built-in method torch.zeros}
+       62    0.000    0.000    0.071    0.001 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\_tensor.py:33(wrapped)
+
+
+
+
+## 25 models
+         17475 function calls (17471 primitive calls) in 3.492 seconds
+
+   Ordered by: cumulative time
+   List reduced from 276 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.004    0.004    3.492    3.492 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:483(setup_matrices)
+        1    0.000    0.000    3.439    3.439 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:568(_model_update)
+        2    0.000    0.000    3.436    1.718 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:52(__call__)
+        2    0.000    0.000    3.436    1.718 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:233(__call__)
+        2    0.001    0.000    3.436    1.718 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:833(_res_call)
+        1    0.001    0.001    2.573    2.573 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:584(jacobian)
+        1    0.003    0.003    2.571    2.571 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:821(jacobian)
+        1    0.000    0.000    2.541    2.541 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:670(drte_dsigma)
+        1    0.136    0.136    2.533    2.533 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:600(calc_dpropmat)
+        3    0.436    0.145    1.543    0.514 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:559(calc_prop_matrix)
+        1    0.000    0.000    0.866    0.866 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:560(mforward)
+        1    0.000    0.000    0.864    0.864 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:813(forward)
+        1    0.493    0.493    0.862    0.862 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:534(rte_raiche1999)
+       26    0.644    0.025    0.644    0.025 {built-in method torch.exp}
+       53    0.002    0.000    0.525    0.010 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\functional.py:225(einsum)
+       53    0.523    0.010    0.523    0.010 {built-in method torch.einsum}
+       11    0.361    0.033    0.361    0.033 {built-in method torch.roll}
+       62    0.001    0.000    0.310    0.005 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\_tensor.py:33(wrapped)
+        7    0.304    0.043    0.304    0.043 {built-in method torch.sqrt}
+        4    0.190    0.047    0.190    0.047 {built-in method torch.zeros}
+
+
+
+
+## 40 models
+         26224 function calls (26220 primitive calls) in 4.994 seconds
+
+   Ordered by: cumulative time
+   List reduced from 276 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.005    0.005    4.994    4.994 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:483(setup_matrices)
+        1    0.000    0.000    4.948    4.948 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:568(_model_update)
+        2    0.000    0.000    4.946    2.473 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:52(__call__)
+        2    0.000    0.000    4.946    2.473 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:233(__call__)
+        2    0.001    0.000    4.946    2.473 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:833(_res_call)
+        1    0.001    0.001    4.417    4.417 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:584(jacobian)
+        1    0.002    0.002    4.414    4.414 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:821(jacobian)
+        1    0.000    0.000    4.362    4.362 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:670(drte_dsigma)
+        1    0.491    0.491    4.350    4.350 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:600(calc_dpropmat)
+        3    0.622    0.207    2.368    0.789 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:559(calc_prop_matrix)
+       53    0.002    0.000    1.047    0.020 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\functional.py:225(einsum)
+       53    1.045    0.020    1.045    0.020 {built-in method torch.einsum}
+       26    0.795    0.031    0.795    0.031 {built-in method torch.exp}
+        1    0.000    0.000    0.531    0.531 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:560(mforward)
+        1    0.001    0.001    0.531    0.531 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:813(forward)
+        1    0.214    0.214    0.527    0.527 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:534(rte_raiche1999)
+       11    0.513    0.047    0.513    0.047 {built-in method torch.roll}
+        4    0.461    0.115    0.461    0.115 {built-in method torch.zeros}
+        7    0.427    0.061    0.427    0.061 {built-in method torch.sqrt}
+       62    0.000    0.000    0.328    0.005 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\_tensor.py:33(wrapped)
+
+
+
+
+## 50 models
+         32114 function calls (32110 primitive calls) in 5.523 seconds
+
+   Ordered by: cumulative time
+   List reduced from 276 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.008    0.008    5.523    5.523 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:483(setup_matrices)
+        1    0.000    0.000    5.450    5.450 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:568(_model_update)
+        2    0.000    0.000    5.445    2.723 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:52(__call__)
+        2    0.000    0.000    5.445    2.723 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:233(__call__)
+        2    0.001    0.000    5.445    2.723 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:833(_res_call)
+        1    0.002    0.002    4.657    4.657 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:584(jacobian)
+        1    0.003    0.003    4.652    4.652 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:821(jacobian)
+        1    0.000    0.000    4.585    4.585 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:670(drte_dsigma)
+        1    0.230    0.230    4.570    4.570 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:600(calc_dpropmat)
+        3    0.721    0.240    2.705    0.902 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:559(calc_prop_matrix)
+       53    0.002    0.000    1.185    0.022 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\functional.py:225(einsum)
+       53    1.183    0.022    1.183    0.022 {built-in method torch.einsum}
+       26    1.102    0.042    1.102    0.042 {built-in method torch.exp}
+        1    0.000    0.000    0.793    0.793 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:560(mforward)
+        1    0.000    0.000    0.792    0.792 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:813(forward)
+        1    0.351    0.351    0.789    0.789 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:534(rte_raiche1999)
+        7    0.552    0.079    0.552    0.079 {built-in method torch.sqrt}
+       11    0.541    0.049    0.541    0.049 {built-in method torch.roll}
+       62    0.000    0.000    0.375    0.006 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\_tensor.py:33(wrapped)
+        4    0.335    0.084    0.335    0.084 {built-in method torch.zeros}
+
+
+
+
+## 75 models
+         46676 function calls (46672 primitive calls) in 7.718 seconds
+
+   Ordered by: cumulative time
+   List reduced from 276 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.011    0.011    7.718    7.718 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:483(setup_matrices)
+        1    0.000    0.000    7.586    7.586 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:568(_model_update)
+        2    0.000    0.000    7.575    3.787 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:52(__call__)
+        2    0.000    0.000    7.575    3.787 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:233(__call__)
+        2    0.001    0.000    7.574    3.787 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:833(_res_call)
+        1    0.004    0.004    6.444    6.444 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:584(jacobian)
+        1    0.000    0.000    6.433    6.433 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:821(jacobian)
+        1    0.000    0.000    6.338    6.338 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:670(drte_dsigma)
+        1    0.294    0.294    6.316    6.316 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:600(calc_dpropmat)
+        3    1.015    0.338    3.732    1.244 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:559(calc_prop_matrix)
+       53    0.002    0.000    1.622    0.031 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\functional.py:225(einsum)
+       53    1.620    0.031    1.620    0.031 {built-in method torch.einsum}
+       26    1.409    0.054    1.409    0.054 {built-in method torch.exp}
+        1    0.000    0.000    1.141    1.141 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:560(mforward)
+        1    0.000    0.000    1.141    1.141 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:813(forward)
+        1    0.512    0.512    1.137    1.137 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:534(rte_raiche1999)
+       11    0.804    0.073    0.804    0.073 {built-in method torch.roll}
+        7    0.713    0.102    0.713    0.102 {built-in method torch.sqrt}
+        4    0.632    0.158    0.632    0.158 {built-in method torch.zeros}
+       62    0.000    0.000    0.509    0.008 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\_tensor.py:33(wrapped)
+
+
+
+
+## 100 models
+         61080 function calls (61076 primitive calls) in 10.565 seconds
+
+   Ordered by: cumulative time
+   List reduced from 276 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.015    0.015   10.565   10.565 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:483(setup_matrices)
+        1    0.000    0.000   10.429   10.429 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:568(_model_update)
+        2    0.000    0.000   10.414    5.207 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:52(__call__)
+        2    0.000    0.000   10.414    5.207 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:233(__call__)
+        2    0.001    0.000   10.414    5.207 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:833(_res_call)
+        1    0.005    0.005    8.853    8.853 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:584(jacobian)
+        1    0.002    0.002    8.838    8.838 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:821(jacobian)
+        1    0.000    0.000    8.710    8.710 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:670(drte_dsigma)
+        1    0.429    0.429    8.681    8.681 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:600(calc_dpropmat)
+        3    1.904    0.635    5.528    1.843 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:559(calc_prop_matrix)
+       53    0.002    0.000    2.081    0.039 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\functional.py:225(einsum)
+       53    2.078    0.039    2.078    0.039 {built-in method torch.einsum}
+       26    1.699    0.065    1.699    0.065 {built-in method torch.exp}
+        1    0.000    0.000    1.575    1.575 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:560(mforward)
+        1    0.004    0.004    1.574    1.574 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:813(forward)
+        1    0.755    0.755    1.565    1.565 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:534(rte_raiche1999)
+        4    1.006    0.252    1.006    0.252 {built-in method torch.zeros}
+        7    0.863    0.123    0.863    0.123 {built-in method torch.sqrt}
+       11    0.819    0.074    0.819    0.074 {built-in method torch.roll}
+       62    0.000    0.000    0.769    0.012 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\_tensor.py:33(wrapped)
+
+
+
+
+## 200 models
+         121008 function calls (121004 primitive calls) in 15.902 seconds
+
+   Ordered by: cumulative time
+   List reduced from 276 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.018    0.018   15.902   15.902 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:483(setup_matrices)
+        1    0.000    0.000   15.717   15.717 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:568(_model_update)
+        4    0.000    0.000   15.713    3.928 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:52(__call__)
+        4    0.000    0.000   15.713    3.928 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:233(__call__)
+        4    0.001    0.000   15.713    3.928 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:833(_res_call)
+        1    0.001    0.001   13.220   13.220 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:584(jacobian)
+        3    0.004    0.001   13.215    4.405 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:821(jacobian)
+        3    0.000    0.000   13.018    4.339 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:670(drte_dsigma)
+        3    0.738    0.246   12.965    4.322 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:600(calc_dpropmat)
+        9    2.384    0.265    7.955    0.884 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:559(calc_prop_matrix)
+       32    3.456    0.108    3.456    0.108 {built-in method torch.exp}
+      155    0.004    0.000    3.155    0.020 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\functional.py:225(einsum)
+      155    3.149    0.020    3.149    0.020 {built-in method torch.einsum}
+        1    0.000    0.000    2.497    2.497 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:560(mforward)
+        1    0.000    0.000    2.496    2.496 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:813(forward)
+        1    0.984    0.984    2.489    2.489 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:534(rte_raiche1999)
+       19    1.667    0.088    1.667    0.088 {built-in method torch.sqrt}
+       33    1.404    0.043    1.404    0.043 {built-in method torch.roll}
+       96    0.001    0.000    1.231    0.013 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\_tensor.py:33(wrapped)
+       74    0.629    0.009    0.629    0.009 {method 'pow' of 'torch._C.TensorBase' objects}
+
+
+
+
+## 500 models
+         300638 function calls (300634 primitive calls) in 61.905 seconds
+
+   Ordered by: cumulative time
+   List reduced from 276 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.071    0.071   61.905   61.905 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:483(setup_matrices)
+        1    0.001    0.001   61.195   61.195 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:568(_model_update)
+       10    0.000    0.000   61.134    6.113 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:52(__call__)
+       10    0.001    0.000   61.134    6.113 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:233(__call__)
+       10    0.005    0.000   61.133    6.113 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:833(_res_call)
+        1    0.021    0.021   54.305   54.305 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:584(jacobian)
+        9    0.020    0.002   54.248    6.028 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:821(jacobian)
+        9    0.001    0.000   53.576    5.953 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:670(drte_dsigma)
+        9    2.524    0.280   53.416    5.935 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:600(calc_dpropmat)
+       27    9.582    0.355   34.372    1.273 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:559(calc_prop_matrix)
+      461    0.017    0.000   12.760    0.028 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\functional.py:225(einsum)
+      461   12.739    0.028   12.739    0.028 {built-in method torch.einsum}
+       50   11.546    0.231   11.546    0.231 {built-in method torch.exp}
+        1    0.000    0.000    6.884    6.884 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\inversion\inversion.py:560(mforward)
+        1    0.002    0.002    6.879    6.879 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\forwards\forwards.py:813(forward)
+        1    2.706    2.706    6.859    6.859 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\_repositories\anemone\src\anemone\physics\physics.py:534(rte_raiche1999)
+       55    5.996    0.109    5.996    0.109 {built-in method torch.sqrt}
+      198    0.001    0.000    5.934    0.030 c:\Users\au646858\OneDrive - Aarhus universitet\Documents\_repositories\anemone\.venv\lib\site-packages\torch\_tensor.py:33(wrapped)
+       36    4.853    0.135    4.853    0.135 {built-in method torch.zeros}
+       99    4.688    0.047    4.688    0.047 {built-in method torch.roll}
+
+
+
+

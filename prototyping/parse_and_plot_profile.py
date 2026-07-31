@@ -77,9 +77,9 @@ def plot_top_functions(blocks, outpath, top_n=8):
 
 def main():
     parser = argparse.ArgumentParser(description='Parse profiling blocks and plot scaling')
-    parser.add_argument('infile', nargs='?', default='prototyping/lci_scaling_time.txt')
-    parser.add_argument('--csv', default='prototyping/lci_scaling_times.csv')
-    parser.add_argument('--plot', default='prototyping/lci_scaling_plot.html')
+    parser.add_argument('infile', nargs='?', default='sci_batch50.txt')
+    parser.add_argument('--csv', default='sci_batch50.csv')
+    parser.add_argument('--plot', default='sci_batch50.html')
     parser.add_argument('--top', type=int, default=8, help='number of top functions to plot')
     args = parser.parse_args()
 
@@ -98,4 +98,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    blocks = parse_profile('sci_batch50.txt')
+    plot_top_functions(blocks, 'sci_batch50.html', top_n=8)
+
+    blocks = parse_profile('sci_batch50_reuse.txt')
+    plot_top_functions(blocks, 'sci_batch50_reuse.html', top_n=8)
+

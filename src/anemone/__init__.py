@@ -12,8 +12,15 @@ class constants:
 
 default_dtype = 'double'
 if default_dtype=='float':
-    rdtype = torch.float32
-    cdtype = torch.complex64
+    torch.set_default_dtype(torch.float32)
 elif default_dtype=='double':
-    rdtype = torch.float64
-    cdtype = torch.complex128
+    torch.set_default_dtype(torch.float64)
+
+def rdtype():
+    return torch.get_default_dtype()
+
+def cdtype():
+    cfloat = rdtype()
+    if   cfloat==torch.float32: return torch.complex64
+    elif cfloat==torch.float64: return torch.complex128
+    raise NotImplementedError(f"no complex type associated with current default float {cfloat}")

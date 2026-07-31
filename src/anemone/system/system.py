@@ -32,11 +32,11 @@ class Receiver:
     weighting  : Tensor = None
 
     def __init__(self, x=0., y=0., z=0., grid=False, weighting=None) -> None:
-        self.x = torch.tensor(x, dtype=rdtype) if not isinstance(x, Tensor) else x.to(rdtype)
-        self.y = torch.tensor(y, dtype=rdtype) if not isinstance(y, Tensor) else y.to(rdtype)
-        self.z = torch.tensor(z, dtype=rdtype) if not isinstance(z, Tensor) else z.to(rdtype)
+        self.x = torch.tensor(x, dtype=rdtype()) if not isinstance(x, Tensor) else x.to(rdtype())
+        self.y = torch.tensor(y, dtype=rdtype()) if not isinstance(y, Tensor) else y.to(rdtype())
+        self.z = torch.tensor(z, dtype=rdtype()) if not isinstance(z, Tensor) else z.to(rdtype())
         self.grid = grid
-        self.weighting = torch.tensor(weighting, dtype=rdtype) if weighting is not None else None
+        self.weighting = torch.tensor(weighting, dtype=rdtype()) if weighting is not None else None
 
         if self.grid:
             self._grid()
@@ -73,9 +73,9 @@ class Loop:
     z : Tensor
 
     def __init__(self, x, y, z, **kwargs) -> None:
-        self.x = torch.tensor(x, dtype=rdtype) if not isinstance(x, Tensor) else x.to(rdtype)
-        self.y = torch.tensor(y, dtype=rdtype) if not isinstance(y, Tensor) else y.to(rdtype)
-        self.z = torch.tensor(z, dtype=rdtype) if not isinstance(z, Tensor) else z.to(rdtype)
+        self.x = torch.tensor(x, dtype=rdtype()) if not isinstance(x, Tensor) else x.to(rdtype())
+        self.y = torch.tensor(y, dtype=rdtype()) if not isinstance(y, Tensor) else y.to(rdtype())
+        self.z = torch.tensor(z, dtype=rdtype()) if not isinstance(z, Tensor) else z.to(rdtype())
         
         if not torch.all(self.z == self.z[0]): raise NotImplemented('current implementation only supports horizontal transmitter loops; all z values must be equal.')
         r2 = self.x[0]**2 + self.y[0]**2
@@ -99,9 +99,9 @@ class Loop:
     @classmethod
     def square(cls, side, **kwargs):
         half = side / 2.
-        x = torch.tensor([-half,  half, half, -half, -half], dtype=rdtype)
-        y = torch.tensor([-half, -half, half,  half, -half], dtype=rdtype)
-        z = torch.ones_like(x, dtype=rdtype)*kwargs.pop('z', 0.)
+        x = torch.tensor([-half,  half, half, -half, -half], dtype=rdtype())
+        y = torch.tensor([-half, -half, half,  half, -half], dtype=rdtype())
+        z = torch.ones_like(x, dtype=rdtype())*kwargs.pop('z', 0.)
         lp = cls(x, y, z)
         lp.area = side*side
         return lp
@@ -378,7 +378,7 @@ class Waveform:
         self.d2wdt2[1:-1] = torch.diff(slope)
         self.d2wdt2[0]    = slope[0]
         self.d2wdt2[-1]   = -slope[-1]
-        # self.d2wdt2 = self.d2wdt2.to(rdtype)
+        # self.d2wdt2 = self.d2wdt2.to(rdtype())
 
     def fourier_d2wdt2(self, f):
         FT = torch.exp(2j*torch.pi*f[..., :, None]*self.time[..., None, :])*self.d2wdt2[..., None, :]
@@ -386,8 +386,8 @@ class Waveform:
 
     @classmethod
     def example(cls):
-        t = torch.tensor([-1.0526e-03, -9.2963e-04,  0.0000e+00,  2.5000e-06], dtype=rdtype)
-        wv = torch.tensor([0, 1, 1, 0], dtype=rdtype)
+        t = torch.tensor([-1.0526e-03, -9.2963e-04,  0.0000e+00,  2.5000e-06], dtype=rdtype())
+        wv = torch.tensor([0, 1, 1, 0], dtype=rdtype())
         return cls(t, wv)
 
 # @nosj

@@ -115,7 +115,7 @@ def check_halfspace_circle_center(ForwardMaker, rtol=3e-2):
     rho = torch.logspace(0,3, 101, dtype=rdtype)[None, :]*torch.ones(2, dtype=rdtype)[:, None]
     thick = torch.ones(1, dtype=rdtype)*20
 
-    fwr = ForwardMaker(lp, rx, times, tolerance=1e-6)
+    fwr = ForwardMaker(lp, rx, times, tolerance=1e-5)
     # dbdt = fwr(rho, thick)
     dbdt = fwr(rho, thick).real.T
     dbdt_analytic = dbdt_center_of_circular_loop_halfspace(times[:, None].to(torch.double), rho[None, 0, :].to(torch.double), radius).real.to(rdtype)
@@ -792,7 +792,7 @@ def test_save():
 
 if __name__ == '__main__':
     
-    #test_halfspace_circle_center_forward()
+    test_halfspace_circle_center_forward()
     # test_colecole_forwardTD()
     # test_halfspace_circle_center()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()

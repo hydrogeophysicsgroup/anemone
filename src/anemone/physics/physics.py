@@ -9,6 +9,8 @@ import torch
 from anemone import constants as c, rdtype, cdtype
 
 
+
+
 def calc_zy(sigma, omega, epsilon=c.epsilon0, mu=c.mu0):
     """compute the impedivity (zhat) and admittivity (yhat)
        see W&H between eq. 1.15->1.16, reference to harrington, 1961
@@ -18,12 +20,13 @@ def calc_zy(sigma, omega, epsilon=c.epsilon0, mu=c.mu0):
     return z,y
 
 
-def calc_wavenumber(sigma, omega, mu=c.mu0, epsilon=c.epsilon0, sqrt=True):
+def calc_wavenumber(sigma, omega, mu=c.mu0, epsilon=c.epsilon0, sqrt=True, low_frequency=True):
     """ get the intrinsic complex wavenumber 'k' 
         see equation 4.30 in Ward and Hohmann (pg 207)
     """
-    # k = mu*omega*(epsilon*omega - 1j*sigma)
-    k = -1j*sigma*mu*omega
+    if low_frequency: k = -1j*sigma*mu*omega
+    else:             k = mu*omega*(epsilon*omega - 1j*sigma)
+    
     if sqrt: k = torch.sqrt(k)
     return k
 
@@ -135,12 +138,12 @@ def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=c.mu0, eps
         reflection coefficients for transverse electric mode
     """
     if isinstance(mu, float):
-        mu = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*mu#.to(sigma.device)
+        mu = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*mu#.to(sigma.device)
         zn = 1.
     else:
         zn = None
     if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*epsilon#.to(sigma.device)
+        epsilon = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*epsilon#.to(sigma.device)
 
     n_layers=len(sigma)
 
@@ -189,10 +192,10 @@ def refl_transverse_electric_memopt(sigma, thickness, omega, wave_length, mu=c.m
         reflection coefficients for transverse electric mode
     """
     if isinstance(mu, float):
-        mu = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*mu
+        mu = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*mu
 
     if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*epsilon
+        epsilon = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*epsilon
 
     n_layers=len(sigma)
 
@@ -248,9 +251,9 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=c.mu0, eps
         reflection coefficients for transverse magnetic mode
     """
     if isinstance(mu, float):
-        mu = torch.ones_like(sigma, dtype=cdtype)*mu
+        mu = torch.ones_like(sigma, dtype=cdtype())*mu
     if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma, dtype=cdtype)*epsilon
+        epsilon = torch.ones_like(sigma, dtype=cdtype())*epsilon
 
     n_layers=len(sigma)
 
@@ -446,12 +449,12 @@ def rte_nbc(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
         reflection coefficients for transverse electric mode
     """
     if isinstance(mu, float):
-        mu = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*mu
+        mu = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*mu
         zn = 1.
     else:
         zn = None
     if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*epsilon
+        epsilon = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*epsilon
 
     n_layers=len(sigma)
 
@@ -534,45 +537,98 @@ def rte_lap(sigma, thickness, s, wave_length):
 def rte_raiche1999(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     """ raiche 1999 eq 7 and 8
     """
-#    if isinstance(mu, float):
-#        mu = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*mu
-#    if isinstance(epsilon, float):
-#        epsilon = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*epsilon
-
     n_layers=len(sigma)
 
     lambda2 = wave_length**2
     
     Fj = 0.
-    sj1 = wave_length*(1 + 1j*omega*c.mu0*sigma[-1]/lambda2)**0.5
+    sj1 = (lambda2 + 1j*omega*c.mu0*sigma[-1])**0.5
 
     for i in range(n_layers-2, -1, -1):
-        sj = wave_length*(1 +  1j*omega*c.mu0*sigma[i]/lambda2)**0.5
+        sj = (lambda2 +  1j*omega*c.mu0*sigma[i])**0.5
         RTEj = 1j*omega*c.mu0*(sigma[i] - sigma[i+1])/(sj + sj1)**2
         exp2uh = torch.exp(-2.*sj*thickness[i])
         Fj = exp2uh * (Fj + RTEj) / (1. + Fj * RTEj)
         sj1 = sj*1.
     RTEj = 1j*omega*c.mu0*(-sigma[0])/(sj + wave_length)**2
     rte = (RTEj+Fj) / (1.+RTEj*Fj)
+    del RTEj, sj1, sj, exp2uh, lambda2
     return torch.nan_to_num(rte)
 
-def calc_prop_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, pad=0):
-    # print('sigma device: ', sigma.device)
-    # print('thickness device: ', thickness.device)
-    # print('omega device: ', omega.device)
-    # print('wave_length device: ', wave_length.device)
-    # print('mu device: ', mu.device)
-    # print('epsilon device: ', epsilon.device)
+def rte_raiche1999_clamped(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    n_layers = len(sigma)
+    lambda2 = wave_length**2
 
+    Fj = torch.zeros((), dtype=torch.complex64, device=sigma.device)
+
+    sj1 = wave_length * torch.sqrt(1 + 1j*omega*c.mu0*sigma[-1]/lambda2)
+
+    for i in range(n_layers-2, -1, -1):
+        sj = wave_length * torch.sqrt(1 + 1j*omega*c.mu0*sigma[i]/lambda2)
+
+        RTEj = 1j*omega*c.mu0*(sigma[i] - sigma[i+1])/(sj + sj1)**2
+
+        arg = -2. * sj * thickness[i]
+        arg_real = torch.clamp(arg.real, -80, 80)
+        arg_imag = torch.clamp(arg.imag, -80, 80)
+        exp2uh = torch.exp(arg_real + 1j*arg_imag)
+
+        num = Fj + RTEj
+        den = 1. + Fj * RTEj
+        den = torch.where(torch.abs(den) < 1e-6, den + 1e-6, den)
+
+        Fj = exp2uh * (num / den)
+        sj1 = sj
+
+    RTEj = 1j*omega*c.mu0*(-sigma[0])/(sj + wave_length)**2
+    rte = (RTEj + Fj) / (1. + RTEj * Fj)
+
+    return torch.nan_to_num(rte)
+
+def rte_smatrix(sigma, thickness, omega, wave_length, mu=c.mu0):
+    n = len(sigma)
+    lambda2 = wave_length**2
+
+    R = torch.zeros((), dtype=torch.complex64, device=sigma.device)
+
+    sj1 = wave_length * torch.sqrt(1 + 1j*omega*mu*sigma[-1]/lambda2)
+
+    for i in range(n-2, -1, -1):
+        sj = wave_length * torch.sqrt(1 + 1j*omega*mu*sigma[i]/lambda2)
+
+        # local reflection coefficient
+        rj = (sj1 - sj) / (sj1 + sj)
+
+        # stable exponential
+        arg = -2 * sj * thickness[i]
+        arg_real = torch.clamp(arg.real, -80, 80)
+        arg_imag = torch.clamp(arg.imag, -80, 80)
+        exp_term = torch.exp(arg_real + 1j * arg_imag)
+
+        num = rj + R * exp_term
+        den = 1 + rj * R * exp_term
+
+        den = torch.where(torch.abs(den) < 1e-6, den + 1e-6, den)
+
+        R = num / den
+
+        # optional stabilization (very effective)
+        R = R / torch.maximum(torch.abs(R), torch.tensor(1.0, device=R.device))
+
+        sj1 = sj
+
+    return R
+
+def calc_prop_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, pad=0):
     thick = torch.vstack([torch.zeros_like(thickness[:1]), thickness])
 
     lambda2 = wave_length**2
     k2 = calc_wavenumber(sigma, omega, mu=mu, epsilon=epsilon, sqrt=False)
-    un = torch.sqrt(lambda2 - k2)
-    u0 = freespace_u0(omega, wave_length)
-    un1 = torch.roll(un, 1, dims=0)
-    un1[0] = u0
-    un2 = un*1.
+    un2 = torch.sqrt(lambda2 - k2)
+    # u0 = freespace_u0(omega, wave_length)
+    un1 = torch.roll(un2, 1, dims=0)
+    un1[0] = wave_length
+    # un2 = un*1.
 
     euh_p = torch.exp(un1*thick)
 
@@ -581,7 +637,7 @@ def calc_prop_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.e
     d_un    = 1.-unratio
     m_un    = 1.+unratio
 
-    propmat = torch.zeros((2,2, m_un.shape[0]+pad)+m_un.shape[1:], dtype=cdtype, device=sigma.device)
+    propmat = torch.zeros((2,2, m_un.shape[0]+pad)+m_un.shape[1:], dtype=cdtype(), device=sigma.device)
     if pad>0:
         propmat[0,0,:pad] = 1.
         propmat[1,1,:pad] = 1.
@@ -604,7 +660,7 @@ def calc_dpropmat(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsi
     propmat = calc_prop_matrix(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)#.to(sigma.device)
     propmat = torch.roll(propmat, -pad//2, dims=2)
 
-    answer = torch.zeros((2,)+propmat.shape[2:], dtype=cdtype, device=thickness.device)
+    answer = torch.zeros((2,)+propmat.shape[2:], dtype=cdtype(), device=thickness.device)
     
     answer[0, :] = 1.
     for i in range(answer.shape[1]-2, -1, -1):
@@ -625,7 +681,7 @@ def calc_dpropmat(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsi
     # # print(dsig)
         
     dsigma = sigma.clone()
-    sigma_pert = 0.05*dsigma
+    sigma_pert = 0.02*dsigma
     dsigma[::2] -= sigma_pert[::2]
     dpropmat = calc_prop_matrix(dsigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon, pad=pad)
     dpropmat = torch.roll(dpropmat, -pad//2, dims=2)
@@ -661,83 +717,18 @@ def calc_dpropmat(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsi
 
 def rte_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     if isinstance(mu, float):
-        mu = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*mu
+        mu = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*mu
     if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*epsilon
+        epsilon = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*epsilon
     _,rte = calc_dpropmat(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
     return torch.nan_to_num(rte)
 
-def drte_dsigma(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
-    if isinstance(mu, float):
-        mu = torch.ones_like(sigma)*mu
-    if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma)*epsilon
-    dsigma,_ = calc_dpropmat(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
-    return torch.nan_to_num(dsigma).T
-
-# def drte_dsigma(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
-#     """
-#     https://github.com/hydrogeophysicsgroup/TEM1D/blob/main/TEM1DRESP.for#L860C1-L942C12
-#     """    
-#     n_layers=len(sigma)
-
-#     u = (wave_length**2 +  1j*omega*mu*sigma)**0.5
-#     G = torch.zeros_like(u)
-#     R = torch.zeros_like(u)
-#     E = torch.zeros_like(u)
-
-#     drte_du = torch.zeros_like(u)
-   
-#     for i in range(n_layers-2, -1, -1):
-#         H = u[i] + u[i+1]
-#         R[i+1] = mu*1j*omega*(sigma[i] - sigma[i+1]) / H**2
-#         E[i] = torch.exp(-2.*u[i]*thickness[i])
-#         G[i] = E[i] * (G[i+1] + R[i]) / (1. + G[i+1] * R[i])
-    
-#     for i_p in range(len(sigma)-1):
-
-#         H = u[i_p] + u[i_p+1]
-#         DT = 2.*u[i_p+1] / H*H
-#         H = 1.+G[i_p+1]*R[i_p]
-#         DG = -2.*thickness[i_p]*G[i_p] + DT*E[i_p]*(1.-G[i_p+1]*G[i_p+1])/(H*H)
-        
-#         if i_p==0:
-#             drte_du[i_p] = DG
-#             continue
-
-        
-#         i_p1 = i_p-1
-
-#         H = u[i_p1] + u[i_p1+1]
-#         DT = 2.*u[i_p1+1] / H*H
-#         H = 1.+G[i_p1+1]*R[i_p1]
-#         DG = DG * ( 1. + R[i_p1+1]*R[i_p1+1]) + DT*(1. - G[i_p1+1]*G[i_p1+1])*E[i_p1] / (H*H)
-
-#         if i_p1==0:
-#             drte_du[i_p] = DG
-#             continue
-
-#         i_p2 = i_p-2
-#         for i in range(i_p2, -1, -1):
-#             H = 1. + G[i+1]*R[i+1]
-#             DG = DG * E[i] * (1. - R[i+1]*R[i+1]) / (H*H)
-#         drte_du[i_p] = DG
-    
-#     H = u[-1] + u[-2]
-#     DT = 2.*u[-2] / H*H
-#     DG = -2.*E[-2]*DT
-#     for i in range(n_layers-3, -1, -1):
-#         H = 1. + G[i+1]*R[i+1]
-#         DG = DG * E[i] * (1. - R[i+1]*R[i+1]) / (H*H)
-#     drte_du[-1] = DG
-    
-#     return (0.5*drte_du *mu*1j*omega / u).squeeze().T
 
 def rte_halfspace(sigma, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     if isinstance(mu, float):
-        mu = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*mu
+        mu = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*mu
     if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma, dtype=cdtype, device=sigma.device)*epsilon
+        epsilon = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*epsilon
     
     u = torch.sqrt(1. + 1j*sigma*mu*omega/wave_length**2)
     rte = (1 - u) / (1 + u)

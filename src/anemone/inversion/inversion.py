@@ -130,7 +130,10 @@ class BaseInversion:
 
 
     def mforward(self, mvec):
-        return self.forward(*self.model.modelize(mvec))
+        mparam = self.model.modelize(mvec)
+        if hasattr(self.forward, 'device'):
+            mparam = [x.to(self.forward.device) for x in mparam]
+        return self.forward(*mparam)
 
     @property
     def stop_inversion(self):
@@ -180,7 +183,9 @@ class Tikhonov(BaseInversion):
 
     def calc_dm(self):
         r_data = self.G.T @ self.Cdi @ (self.data_observed-self.data_predicted)
-        Aown = self.GtG + self.damp_matrix + self.HtH
+        damp_mask = (self.GtG.diagonal() < 0.01*self.HtH.diagonal()).to(self.GtG.dtype)
+        c_damp = damp_mask @ self.damp_matrix
+        Aown = self.GtG + c_damp + self.HtH
         return solve(Aown, r_data)
 
 
@@ -192,16 +197,16 @@ def fastjacobian(cls):
             assert self.model.free[-1]==False, "FastJacobian only works for models with fixed thicknesses"
 
         def jacobian(self, mvec):
-            self.mvec = mvec*1.
             rho, thick = self.model.modelize(mvec)
-            # rho = torch.from_numpy(rho)
             if isinstance(thick, np.ndarray): thick = torch.from_numpy(thick)
-            G = self.forward(rho, thick, jac=True)#.detach().cpu().numpy()
-            G *= rho[:, None]
-            #self._dpred = torch.tensor(self.data_predicted, device=self.mvec.device, dtype=self.mvec.dtype)
-            G /= self.data_predicted.exp()
+            G = self.forward(rho, thick, jac=True)
+            if self.model.log_scale:
+                G *= rho[:, None]
+            if self.forward.log_scale:
+                G /= self.data_predicted.exp()[None, :]
             return G.T
     return FastJacobian
+
 
 
 @nosj
@@ -278,10 +283,14 @@ class Inversion(BaseInversion):
                             self.damp_exponent[i] -=1
                         else:
                             self.damp[pslice] = 0
-        self.damp = torch.clamp(self.damp, min=1.)  # Ensure damping is at least 1
+        #self.damp = torch.clamp(self.damp, min=1.)  # Ensure damping is at least 1
+        
+
         if sp.sparse.issparse(self.Imod):
+            self.damp *= (self.GtG.diagonal()>0.05*self.CtC.diagonal()).astype(float)
             return sp.sparse.csr_matrix(self.Imod.multiply(self.damp.cpu().numpy()))# self.damp*self.Imod
         else:
+            self.damp *= (self.GtG.diagonal()>0.05*self.CtC.diagonal()).to(float)
             return self.damp * self.Imod
 
     def find_damping(self):
@@ -454,6 +463,7 @@ class LCI(Inversion):
     _r_data        = None
     horizontal_smoothness = 0.8
     data_misfits   = np.inf
+    reuse_jac = True
 
     @property
     def m(self):
@@ -484,8 +494,8 @@ class LCI(Inversion):
         if not isinstance(self.data_misfits, list): self.data_misfits = [self.data_misfits]
         self.mvec = self.m.to(torch.float)        
         self.device =self.mvec.device
-        self.step_down                        = torch.log(torch.tensor(2.0))
-        self.step_up                          = torch.log(torch.tensor(1.2))
+        if not hasattr(self, 'step_down'): self.step_down = torch.log(torch.tensor(2.0))
+        if not hasattr(self, 'step_up'):   self.step_up   = torch.log(torch.tensor(1.2))
 
 
         self.Cdi = self.recip_error_squared.to(torch.float)
@@ -562,6 +572,9 @@ class LCI(Inversion):
         mvecs = mvec.reshape(self.n_sites, -1).T
         _, thickness = self.inv_list[0].model.mod
         rhos = mvecs.exp()
+        if hasattr(self.inv_list[0].forward, 'device'):
+            rhos = rhos.to(self.inv_list[0].forward.device)
+            thickness = thickness.to(self.inv_list[0].forward.device)
         self._dpredgrid = self.inv_list[0].forward(rhos, thickness)
         return self._dpredgrid.flatten()
     
@@ -572,7 +585,7 @@ class LCI(Inversion):
 
         self._dpred = self.mforward(self.mvec)
         self.jacobian(self.mvec)
-        self._r_data -= self.CtC @ self.cmvec 
+        # self._r_data -= self.CtC @ self.cmvec 
     
     def calc_dm(self):
         Aown = sp.sparse.csr_matrix(self._GtG) + self.CtC + self.damp_matrix()
@@ -592,21 +605,37 @@ class LCI(Inversion):
         mvecs = mvec.reshape(self.n_sites, -1).T
         _,thick = self.inv_list[0].model.mod
         rhos = mvecs.exp()
-        # thick = self.inv_list[0].model.thickness
         
-        if self.n_sites<100:
-            self.Ggrid = self.inv_list[0].forward(rhos, thick, jac=True)
+        if hasattr(self.inv_list[0].forward, 'device'):
+            rhos = rhos.to(self.inv_list[0].forward.device)
+            thick = thick.to(self.inv_list[0].forward.device)
+
+        if self.reuse_jac:
+            mvec0 = mvecs[:, 0]
+            Gsingle = self.inv_list[0].forward(rhos[:, 0], thick, jac=True)
+            self.Ggrid[0] = Gsingle
+            for i_site in range(1, self.n_sites):
+                cvec = mvecs[:, i_site]
+                rel_diff = torch.abs(cvec - mvec0) / torch.abs(mvec0)
+                if torch.all(rel_diff < 1e-1):
+                    self.Ggrid[i_site] = Gsingle
+                else:
+                    mvec0 = cvec
+                    self.Ggrid[i_site] = self.inv_list[i_site].forward(rhos[:, i_site], thick, jac=True)
         else:
             batch=50
-            i=0
-            while (i+2)*batch<self.n_sites:
-                self.Ggrid[i*batch:(i+1)*batch] = self.inv_list[0].forward(rhos[:, i*batch:(i+1)*batch], thick, jac=True)
-                i += 1
-            self.Ggrid[i*batch:] = self.inv_list[0].forward(rhos[:, i*batch:], thick, jac=True)
+            if self.n_sites<batch:
+                self.Ggrid = self.inv_list[0].forward(rhos, thick, jac=True)
+            else:
+                i=0
+                while (i+2)*batch<self.n_sites:
+                    self.Ggrid[i*batch:(i+1)*batch] = self.inv_list[0].forward(rhos[:, i*batch:(i+1)*batch], thick, jac=True)
+                    i += 1
+                self.Ggrid[i*batch:] = self.inv_list[0].forward(rhos[:, i*batch:], thick, jac=True)
 
 
         self.Ggrid /= self._dpredgrid.exp()[:, None, :]
-        self.Ggrid *= rhos.T[:,:,None]
+        self.Ggrid /= rhos.cpu().T[:,:,None]
         r_data = torch.einsum('ijk,ijk->ij', self.Ggrid, ((self._dobsgrid-self._dpredgrid)/self._derrgrid)[:, None, :])
         self.Ggrid *= self.one_over_error
 
@@ -733,7 +762,4 @@ class SCI(LCI):
             shape=(n_constraints, n_params)
         ).tocsr()
 
-        # #ax[2].imshow((c_mat != 0).astype(int), aspect='auto', cmap='gray', interpolation='nearest')
-        # ax[2].spy(c_mat, markersize=1)
-        # plt.show()
-        return c_mat#sp.sparse.csr_matrix(c_mat)
+        return c_mat
