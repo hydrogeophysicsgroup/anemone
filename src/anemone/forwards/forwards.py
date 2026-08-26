@@ -672,3 +672,29 @@ class Forward(BaseForward):
         self.omega = self.omega.to(device)
         self.lamda = self.lamda.to(device)
         self.device=device
+
+    @classmethod
+    def from_gex(cls, fname, **kwargs):
+        from libaarhusxyz import GEX
+        import numpy as np
+        gex = GEX(fname)
+        x,y = gex.General['TxLoopPoint'][:, 0], gex.General['TxLoopPoint'][:, 1]
+        x,y = np.append(x, x[0]),               np.append(y, y[0])
+        z   = np.ones_like(x)*abs(gex.General['TxCoilPosition'][2])
+        tx  = Loop(x,y,z)
+        rx  = Receiver(*abs(gex.General['RxCoilPosition']))        
+        lmgates = torch.from_numpy(gex.gate_times('Channel1')[1:,0])
+        hmgates = torch.from_numpy(gex.gate_times('Channel2')[1:,0])
+        order, fcut = gex.Channel1['TiBLowPassFilter']
+        rx_filter = ButterworthFilter(fcut,order)
+
+        LMwv = Waveform(gex.General['WaveformLMPoint'][:, 0], gex.General['WaveformLMPoint'][:, 1])
+        HMwv = Waveform(gex.General['WaveformHMPoint'][:, 0], gex.General['WaveformHMPoint'][:, 1])
+
+        lmfwr = cls(tx, rx, lmgates, waveform=LMwv, filterfunc=rx_filter, do_setup=False, **kwargs)
+        hmfwr = cls(tx, rx, hmgates, waveform=HMwv, filterfunc=rx_filter, do_setup=False, **kwargs)
+        return lmfwr + hmfwr
+
+    @classmethod
+    def from_temfile(cls, fname, **kwargs):
+        raise NotImplementedError
