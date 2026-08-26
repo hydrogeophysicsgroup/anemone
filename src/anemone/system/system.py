@@ -291,7 +291,11 @@ def box_filter(r, r_min, r_par_max):
     return y
 
 def norm(tensor, axis=-1, keepdims=False):
-    return np.sqrt(np.sum(tensor**2, axis=axis, keepdims=keepdims))
+    if isinstance(tensor, np.ndarray):
+        return np.sum(tensor**2, axis=axis, keepdims=keepdims)**0.5
+    else: 
+        return torch.sum(tensor**2, axis=axis, keepdim=keepdims)**0.5
+
 
 
 def getRz(P,Q):

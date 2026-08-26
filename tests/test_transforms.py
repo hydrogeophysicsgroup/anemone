@@ -17,7 +17,7 @@ def calc_rte_halfspace(sigma, omega, wave_length):
 def test_frequency_response():
     rho = 100.                   # meters
     sigma = 1./100.            # 1/ohm-m
-    frqs = torch.logspace(-6, 5, 501, dtype=cdtype)  # Hz
+    frqs = torch.logspace(-6, 5, 501, dtype=cdtype())  # Hz
     omega = c.twopi*frqs
     
     hz_analytical = physics.halfspace_vmd(1./sigma, omega, rho)
@@ -390,7 +390,6 @@ if __name__ == '__main__':
     
     test_frequency_response()
     test_transforms_varying_samples_per_decades()
-    test_fourier()
     test_spline_integration()
     test_invlaplace()
     test_fourier_lowerfrequencies()

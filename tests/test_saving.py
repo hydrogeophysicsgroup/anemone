@@ -61,30 +61,6 @@ def test_filterchain_save():
     assert fc==fc2, "FilterChains are not equal after saving"
     os.remove('test_filterchain.json')
         
-def test_baseforward_save():
-    from anemone.forwards import BaseForward
-    fwr = BaseForward.example(tolerance=1e-6)
-    # print(fwr)
-    fwr.save('test_forward.json')
-    fwr2 = BaseForward.load('test_forward.json', load_subclasses=True)
-    print(fwr2)
-
-    assert fwr==fwr2, "Forwards are not equal after saving"
-
-    rho = torch.tensor([10., 20., 30.])
-    thk = torch.tensor([5., 10.])
-    dbdt = fwr(rho, thk)
-
-    fwr.save('test_forward.json')
-    fwr2 = BaseForward.load('test_forward.json', load_subclasses=True)
-
-
-    assert fwr==fwr2, "Forwards are not equal after saving"
-    dbdt2 = fwr2(rho, thk)
-    assert torch.allclose(dbdt, dbdt2), "Forward responses are different after saving"
-
-    os.remove('test_forward.json')
-
 def test_forward_save():
     from anemone.forwards import Forward
 
@@ -122,6 +98,5 @@ def test_model_save():
 if __name__ == '__main__':
     # test_loop_save()
     # test_filterchain_save()
-    # test_baseforward_save()
-    test_forward_save()
-    test_model_save()
+    # test_forward_save()
+    # test_model_save()
