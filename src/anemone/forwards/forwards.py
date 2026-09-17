@@ -381,10 +381,10 @@ class Forward(BaseForward):
         
     def __call__(self, rho, thickness, jac=False):
         # with torch.no_grad():
-        self.rho = ((rho+0j)[..., None, None])#.to(self.device)
+        self.rho = ((rho+0j)[..., None, None]).to(self.device)
         if rho.ndim > thickness.ndim:
             thickness = thickness[:, None, ...]
-        self.thick = ((thickness+0j)[..., None, None])#.to(self.device)
+        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
         if jac:
             G = self.jacobian()
             return G*c.mu0 / rho[:, None]**2
@@ -781,6 +781,8 @@ class VMDForward(BaseForward):
 def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
     import numpy as np
 
+    t2t = t2t.detach().cpu()
+    geomz = geomz.detach().cpu()
     t_indices = np.arange(t2t.shape[0])
     t1 = (t2t[0, :, None]*geomz.real[None, :]).numpy()
     
@@ -853,8 +855,8 @@ class Forward(BaseForward):
             self.lmb = self.lmb.to(self.device).to(cdtype)
 
     def setup(self):
-        self.rho   = 40*torch.ones(2, dtype=cdtype)[:, None, None]
-        self.thick = 20*torch.ones(1, dtype=cdtype)[:, None, None]
+        self.rho   = 40*torch.ones(2, dtype=cdtype, device=self.device)[:, None, None]
+        self.thick = 20*torch.ones(1, dtype=cdtype, device=self.device)[:, None, None]
 
         def frq_integrand(f):
             self.omega = c.twopi*f[None,:,None]
@@ -895,6 +897,8 @@ class Forward(BaseForward):
         self.H2t, self.omega, self.lmb = make_H2t(self.t2t, self.geomz, self.omega1, self.lmb1, tolerance=self.tolerance)
 
         self.H2t    = self.H2t.to(self.device).to(cdtype)
+        self.omega  = self.omega.to(self.device).to(cdtype)
+        self.lmb    = self.lmb.to(self.device).to(cdtype)
         self.H2t   /= torch.sqrt(self.omega)
         self.omega *= c.sqrt_twopi
         self.rho    = None
@@ -965,6 +969,8 @@ class Forward(BaseForward):
         newfwr.H2t, newfwr.omega, newfwr.lmb = make_H2t(t2t, newfwr.geomz, tmp_omega, tmp_lmb, tolerance=tol)
 
         newfwr.H2t       = newfwr.H2t.to(newfwr.device).to(cdtype)
+        newfwr.omega     = newfwr.omega.to(newfwr.device).to(cdtype)
+        newfwr.lmb       = newfwr.lmb.to(newfwr.device).to(cdtype)
         newfwr.H2t      /= torch.sqrt(newfwr.omega)
         newfwr.omega    *= c.sqrt_twopi
         newfwr.rho       = None
