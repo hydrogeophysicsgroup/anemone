@@ -41,9 +41,8 @@ def generate_forward(device, dtype):
 
     dev = torch.device(device)
     torch.set_default_device(dev)
-
-    
     fwr.set_device(dev)
+    fwr.primary = fwr.primary.to(dev)
     return torch, fwr    
 
 
