@@ -8,9 +8,6 @@
 import torch
 from anemone import constants as c, rdtype, cdtype
 
-
-
-
 def calc_zy(sigma, omega, epsilon=c.epsilon0, mu=c.mu0):
     """compute the impedivity (zhat) and admittivity (yhat)
        see W&H between eq. 1.15->1.16, reference to harrington, 1961
@@ -30,76 +27,42 @@ def calc_wavenumber(sigma, omega, mu=c.mu0, epsilon=c.epsilon0, sqrt=True, low_f
     if sqrt: k = torch.sqrt(k)
     return k
 
-def halfspace_vmd(rho, omega, r):
-    """get the analytic response for a vertical magnetic dipole at the surface of the earth
-       see equation 4.56 of ward and hohmann (pg.211)
-
-        Args:
-            rho    (float): halfspace resistivity
-            omega (1d-array): the angular frequency
-            r        (float): horizontal distance from the dipole
-
-        Returns:
-            z-component of the magnetic field
+def rte_raiche1999(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    """ raiche 1999 eq 7 and 8
     """
-    sigma = 1./rho
-    k = calc_wavenumber(sigma, omega)
-    Hz = 9 - (9 + 9j*k*r - 4*k**2 * r**2 -1j*k**3*r**3)*torch.exp(-1j*k*r)
-    Hz /= (2*torch.pi*k**2 * r**5)
-    return Hz
+    n_layers=len(sigma)
 
-def halfspace_horizontal_electric_dipole(rho, omega, r):
-    """this needs to be confirmed.
+    lambda2 = wave_length**2
+    
+    Fj = 0.
+    sj1 = (lambda2 + 1j*omega*c.mu0*sigma[-1])**0.5
 
-        Args:
-            rho    (float): halfspace resistivity
-            omega (1d-array): the angular frequency
-            r        (float): horizontal distance from the dipole
+    for i in range(n_layers-2, -1, -1):
+        sj = (lambda2 +  1j*omega*c.mu0*sigma[i])**0.5
+        RTEj = 1j*omega*c.mu0*(sigma[i] - sigma[i+1])/(sj + sj1)**2
+        exp2uh = torch.exp(-2.*sj*thickness[i])
+        Fj = exp2uh * (Fj + RTEj) / (1. + Fj * RTEj)
+        sj1 = sj*1.
+    RTEj = 1j*omega*c.mu0*(-sigma[0])/(sj + wave_length)**2
+    rte = (RTEj+Fj) / (1.+RTEj*Fj)
+    del RTEj, sj1, sj, exp2uh, lambda2
+    return torch.nan_to_num(rte)
 
-        Returns:
-            z-component of the magnetic field
-    """
-    UserWarning("Hz from a horizontal electric dipole over a halfspace should be confirmed.\nUse at your own risk.")
-    sigma = 1./rho
-    k = calc_wavenumber(sigma, omega)
+def rte_halfspace(sigma, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    if isinstance(mu, float):
+        mu = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*mu
+    if isinstance(epsilon, float):
+        epsilon = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*epsilon
+    
+    u = torch.sqrt(1. + 1j*sigma*mu*omega/wave_length**2)
+    rte = (1 - u) / (1 + u)
+    return torch.nan_to_num(rte)
 
-    Hz = 3 - (3 + 3j*k*r - (r*k)**2)*torch.exp(-1j*k*r)
-
-    Hz /= -(2*torch.pi*k**2 * r**5)
-    return Hz
-
-def hz_halfspace_center_circle_loop(rho, omega, r, I=1.):
-    """ get the vertical component of the response at the center of a circular loop on the earth's surface.
-        see equation 4.94 of ward and hohmann (pg. 220)
-        Args:
-            rho    (float): halfspace resistivity
-            omega (1d-array): set of angular frequencies
-            r        (float): radius of the loop
-        Returns:
-            Hz    (1d-array): magnetic field strength
-    """
-    sigma = 1./rho
-    k = calc_wavenumber(sigma, omega)
-
-    Hz = 3-(3+3j*k*r - (r*k)**2)*torch.exp(-1j*k*r)
-    Hz *= -I / (k**2 * r**3)
-    return Hz
-
-def hz_halfspace_center_circle_loop_time(times, rho, r, I=1.):
-    sigma = 1./rho
-    theta = torch.sqrt(0.25*c.mu0*sigma / times)
-    theta_r = theta*r
-
-    hz = 3*torch.exp(-theta_r**2)/(r*theta*c.sqrt_pi) + (1 - 3 / (2*theta_r**2))*torch.erf(theta_r)
-    hz *= I/(2*r)
-    return hz
-
-
-def hzdt_halfspace_center_circle_loop(times, rho, r, I=1.):
-    sigma = 1./rho
-    theta = torch.sqrt(0.25*c.mu0*sigma / times)
-    dhdt = 1./(c.mu0*sigma*r**3)*(3*torch.erf(theta*r)-2*theta*r*(3+2*theta**2*r**2)*torch.exp(-theta**2*r**2)/c.sqrt_pi)
-    return dhdt
+def rte(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
+    if thickness is None: 
+        return rte_halfspace(sigma, omega, wave_length, mu=mu, epsilon=epsilon)
+    else:
+        return rte_raiche1999(sigma, omega, wave_length, mu=mu, epsilon=epsilon)
 
 
 def freespace_u0(omega, wave_length, sqrt=True):
@@ -117,6 +80,99 @@ def freespace_u0(omega, wave_length, sqrt=True):
     if sqrt: u02=torch.sqrt(u02+0j)
     return u02
 
+def colecole(rho_o, m, tau, C, omega):
+    """equation 1 from Pelton et al. 1978
+    """
+    tmp = 1.+(1j*omega*tau)**C
+    tmp = 1. - 1./tmp
+    tmp = 1. - m*tmp
+    rho = rho_o*tmp
+    return rho
+
+def mpa2colecole(rho, phi_max, tau_phi, C):
+    n = 0
+    m0 = torch.zeros_like(phi_max)
+    m_new = torch.ones_like(phi_max)
+    max_m0 = 0.99
+    
+    tan_phi = torch.tan(-phi_max).real
+
+    while torch.any(torch.abs(m_new - m0)/m_new > 1e-3) and n<100:
+        if n>0: m0 = m_new*1.
+        tau_cc = tau_phi*((1.-m0)**(-0.5/C))
+        ab = 1./(1.+(1j*tau_cc/tau_phi)**C)
+        m_new = tan_phi / ((1.-ab.real)*tan_phi + ab.imag)
+        m_new[m_new>max_m0] = max_m0
+        m_new[m_new<0] = 0.
+        n += 1
+    return rho, m_new, tau_cc,  C
+
+def colecole2mpa(rho, m, tau_cc, C):
+    tau_phi = tau_cc * (1-m)**(0.5/C)
+    rho_cmplx = colecole(rho, m, tau_cc, C, 1./tau_phi)
+    phi_max =  -torch.arctan(rho_cmplx.imag/rho_cmplx.real)
+    return rho, phi_max, tau_phi, C    
+
+def drte_dsigma(sigma, thickness, omega, wave_length):
+    """
+    Analytic drte/dsigma via Fortran TEM1DRESP.for (Raiche 1999).
+    https://github.com/hydrogeophysicsgroup/TEM1D/blob/main/TEM1DRESP.for#L860C1-L942C12
+
+    Index convention (Fortran -> Python):
+      W(0..NLAY): W(0)=wave_length (air), W(1..NLAY)=u for conductors+halfspace.
+      IPARM=1..NLAY, IPP=IPARM used directly as array index into W/G/R/E.
+      sigma[0..NLAY-1] = Fortran SIGS(1..NLAY), SIGS(0)=0 (air).
+    Layer axis is 0.
+    """
+    NLAY = len(sigma)
+
+    # --- Build extended W(0..NLAY): prepend air wavenumber W(0)=wave_length ---
+    u_cond = (wave_length**2 + 1j*omega*c.mu0*sigma)**0.5         
+    u = torch.cat([wave_length.expand_as(u_cond[:1]), u_cond], dim=0)
+
+    G = torch.zeros_like(u)
+    R = torch.zeros_like(u)
+    E = torch.zeros_like(u)
+
+    # --- Forward pass: vectorise R and E, keep G sequential (Möbius chain) ---
+    H_fwd = u[:-1] + u[1:]                                             
+    dsigs = torch.cat([-sigma[:1], sigma[:-1] - sigma[1:]], dim=0)     # SIGS(i)-SIGS(i+1)
+    R[1:] = c.mu0*1j*omega * dsigs / H_fwd**2
+
+    thks = torch.cat([torch.zeros_like(thickness[:1]), thickness], dim=0)  
+    E[:-1] = torch.exp(-2.*u[:-1]*thks)
+
+    for i in range(NLAY - 1, -1, -1):
+        G[i] = E[i] * (G[i+1] + R[i+1]) / (1. + G[i+1] * R[i+1])
+
+
+    denom_k  = (1. + G[1:-1]*R[1:-1])**2
+
+    # P[k] = E[k]*(1-R[k+1]^2) / (1+G[k+1]*R[k+1])^2
+    P  = E[:-2] * (1. - R[1:-1]**2) / denom_k
+    CP = torch.cat([torch.ones_like(P[:1]),
+                    torch.cumprod(P, dim=0)], dim=0)               # (NLAY,   ...)
+
+    # B[k] = DT_neg[k]*(1-G[k+1]^2)*E[k] / (1+G[k+1]*R[k+1])^2
+    DT_neg = -2.*u[:-2] / (u[:-2] + u[1:-1])**2
+    B = DT_neg * (1. - G[1:-1]**2) * E[:-2] / denom_k
+
+    # DG_IPP[j] for IPP=j+1 in 1..NLAY-1
+    H_ipp   = u[1:-1] + u[2:]
+    DG_IPP  = (-2.*thks[1:]*G[1:-1]
+               + 2.*u[2:]/H_ipp**2 * E[1:-1]*(1. - G[2:]**2)
+                                              / (1. + G[2:]*R[2:])**2)
+
+    # Combine: drte_du[IPP] = DG_IPP * CP[IPP] + B * CP[IPP-1]
+    drte_du = torch.zeros_like(u)
+    drte_du[1:NLAY] = DG_IPP * CP[1:] + B * CP[:-1]
+
+    # Halfspace IPP=NLAY: E[NLAY-1] * DT_neg_half * CP[NLAY-1]
+    drte_du[NLAY] = E[-2] * (-2.*u[-2] / (u[-1] + u[-2])**2) * CP[-1]
+
+    drte_dsigma = (drte_du[1:] * 0.5*c.mu0*1j*omega / u_cond).squeeze()
+
+    return drte_dsigma
 
 def refl_transverse_electric(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     """ rte = (Y_0 - hat Y_1)/(Y_0 + hat Y_1) - W&H eq 4.19 (pg 205)
@@ -283,38 +339,7 @@ def refl_transverse_magnetic(sigma, thickness, omega, wave_length, mu=c.mu0, eps
     rtm = (imp_freespace - imp_boundary[0]) / (imp_freespace + imp_boundary[0])
     return rtm
 
-def colecole(rho_o, m, tau, C, omega):
-    """equation 1 from Pelton et al. 1978
-    """
-    tmp = 1.+(1j*omega*tau)**C
-    tmp = 1. - 1./tmp
-    tmp = 1. - m*tmp
-    rho = rho_o*tmp
-    return rho
-
-def mpa2colecole(rho, phi_max, tau_phi, C):
-    n = 0
-    m0 = torch.zeros_like(phi_max)
-    m_new = torch.ones_like(phi_max)
-    max_m0 = 0.99
-    
-    tan_phi = torch.tan(-phi_max).real
-
-    while torch.any(torch.abs(m_new - m0)/m_new > 1e-3) and n<100:
-        if n>0: m0 = m_new*1.
-        tau_cc = tau_phi*((1.-m0)**(-0.5/C))
-        ab = 1./(1.+(1j*tau_cc/tau_phi)**C)
-        m_new = tan_phi / ((1.-ab.real)*tan_phi + ab.imag)
-        m_new[m_new>max_m0] = max_m0
-        m_new[m_new<0] = 0.
-        n += 1
-    return rho, m_new, tau_cc,  C
-
-def colecole2mpa(rho, m, tau_cc, C):
-    tau_phi = tau_cc * (1-m)**(0.5/C)
-    rho_cmplx = colecole(rho, m, tau_cc, C, 1./tau_phi)
-    phi_max =  -torch.arctan(rho_cmplx.imag/rho_cmplx.real)
-    return rho, phi_max, tau_phi, C          
+      
 
 def transverse_electric_field_coefficients(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, return_un=False):
     import numpy as np
@@ -534,91 +559,6 @@ def rte_lap(sigma, thickness, s, wave_length):
     R = -s*sigma[0]/(H*H)
     return (R+gamma_n)/(1.+R*gamma_n)
 
-def rte_raiche1999(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
-    """ raiche 1999 eq 7 and 8
-    """
-    n_layers=len(sigma)
-
-    lambda2 = wave_length**2
-    
-    Fj = 0.
-    sj1 = (lambda2 + 1j*omega*c.mu0*sigma[-1])**0.5
-
-    for i in range(n_layers-2, -1, -1):
-        sj = (lambda2 +  1j*omega*c.mu0*sigma[i])**0.5
-        RTEj = 1j*omega*c.mu0*(sigma[i] - sigma[i+1])/(sj + sj1)**2
-        exp2uh = torch.exp(-2.*sj*thickness[i])
-        Fj = exp2uh * (Fj + RTEj) / (1. + Fj * RTEj)
-        sj1 = sj*1.
-    RTEj = 1j*omega*c.mu0*(-sigma[0])/(sj + wave_length)**2
-    rte = (RTEj+Fj) / (1.+RTEj*Fj)
-    del RTEj, sj1, sj, exp2uh, lambda2
-    return torch.nan_to_num(rte)
-
-def rte_raiche1999_clamped(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
-    n_layers = len(sigma)
-    lambda2 = wave_length**2
-
-    Fj = torch.zeros((), dtype=torch.complex64, device=sigma.device)
-
-    sj1 = wave_length * torch.sqrt(1 + 1j*omega*c.mu0*sigma[-1]/lambda2)
-
-    for i in range(n_layers-2, -1, -1):
-        sj = wave_length * torch.sqrt(1 + 1j*omega*c.mu0*sigma[i]/lambda2)
-
-        RTEj = 1j*omega*c.mu0*(sigma[i] - sigma[i+1])/(sj + sj1)**2
-
-        arg = -2. * sj * thickness[i]
-        arg_real = torch.clamp(arg.real, -80, 80)
-        arg_imag = torch.clamp(arg.imag, -80, 80)
-        exp2uh = torch.exp(arg_real + 1j*arg_imag)
-
-        num = Fj + RTEj
-        den = 1. + Fj * RTEj
-        den = torch.where(torch.abs(den) < 1e-6, den + 1e-6, den)
-
-        Fj = exp2uh * (num / den)
-        sj1 = sj
-
-    RTEj = 1j*omega*c.mu0*(-sigma[0])/(sj + wave_length)**2
-    rte = (RTEj + Fj) / (1. + RTEj * Fj)
-
-    return torch.nan_to_num(rte)
-
-def rte_smatrix(sigma, thickness, omega, wave_length, mu=c.mu0):
-    n = len(sigma)
-    lambda2 = wave_length**2
-
-    R = torch.zeros((), dtype=torch.complex64, device=sigma.device)
-
-    sj1 = wave_length * torch.sqrt(1 + 1j*omega*mu*sigma[-1]/lambda2)
-
-    for i in range(n-2, -1, -1):
-        sj = wave_length * torch.sqrt(1 + 1j*omega*mu*sigma[i]/lambda2)
-
-        # local reflection coefficient
-        rj = (sj1 - sj) / (sj1 + sj)
-
-        # stable exponential
-        arg = -2 * sj * thickness[i]
-        arg_real = torch.clamp(arg.real, -80, 80)
-        arg_imag = torch.clamp(arg.imag, -80, 80)
-        exp_term = torch.exp(arg_real + 1j * arg_imag)
-
-        num = rj + R * exp_term
-        den = 1 + rj * R * exp_term
-
-        den = torch.where(torch.abs(den) < 1e-6, den + 1e-6, den)
-
-        R = num / den
-
-        # optional stabilization (very effective)
-        R = R / torch.maximum(torch.abs(R), torch.tensor(1.0, device=R.device))
-
-        sj1 = sj
-
-    return R
-
 def calc_prop_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0, pad=0):
     thick = torch.vstack([torch.zeros_like(thickness[:1]), thickness])
 
@@ -724,15 +664,76 @@ def rte_matrix(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon
     return torch.nan_to_num(rte)
 
 
-def rte_halfspace(sigma, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
-    if isinstance(mu, float):
-        mu = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*mu
-    if isinstance(epsilon, float):
-        epsilon = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*epsilon
-    
-    u = torch.sqrt(1. + 1j*sigma*mu*omega/wave_length**2)
-    rte = (1 - u) / (1 + u)
-    return torch.nan_to_num(rte)
+def halfspace_vmd(rho, omega, r):
+    """get the analytic response for a vertical magnetic dipole at the surface of the earth
+       see equation 4.56 of ward and hohmann (pg.211)
+
+        Args:
+            rho    (float): halfspace resistivity
+            omega (1d-array): the angular frequency
+            r        (float): horizontal distance from the dipole
+
+        Returns:
+            z-component of the magnetic field
+    """
+    sigma = 1./rho
+    k = calc_wavenumber(sigma, omega)
+    Hz = 9 - (9 + 9j*k*r - 4*k**2 * r**2 -1j*k**3*r**3)*torch.exp(-1j*k*r)
+    Hz /= (2*torch.pi*k**2 * r**5)
+    return Hz
+
+def halfspace_horizontal_electric_dipole(rho, omega, r):
+    """this needs to be confirmed.
+
+        Args:
+            rho    (float): halfspace resistivity
+            omega (1d-array): the angular frequency
+            r        (float): horizontal distance from the dipole
+
+        Returns:
+            z-component of the magnetic field
+    """
+    UserWarning("Hz from a horizontal electric dipole over a halfspace should be confirmed.\nUse at your own risk.")
+    sigma = 1./rho
+    k = calc_wavenumber(sigma, omega)
+
+    Hz = 3 - (3 + 3j*k*r - (r*k)**2)*torch.exp(-1j*k*r)
+
+    Hz /= -(2*torch.pi*k**2 * r**5)
+    return Hz
+
+def hz_halfspace_center_circle_loop(rho, omega, r, I=1.):
+    """ get the vertical component of the response at the center of a circular loop on the earth's surface.
+        see equation 4.94 of ward and hohmann (pg. 220)
+        Args:
+            rho    (float): halfspace resistivity
+            omega (1d-array): set of angular frequencies
+            r        (float): radius of the loop
+        Returns:
+            Hz    (1d-array): magnetic field strength
+    """
+    sigma = 1./rho
+    k = calc_wavenumber(sigma, omega)
+
+    Hz = 3-(3+3j*k*r - (r*k)**2)*torch.exp(-1j*k*r)
+    Hz *= -I / (k**2 * r**3)
+    return Hz
+
+def hz_halfspace_center_circle_loop_time(times, rho, r, I=1.):
+    sigma = 1./rho
+    theta = torch.sqrt(0.25*c.mu0*sigma / times)
+    theta_r = theta*r
+
+    hz = 3*torch.exp(-theta_r**2)/(r*theta*c.sqrt_pi) + (1 - 3 / (2*theta_r**2))*torch.erf(theta_r)
+    hz *= I/(2*r)
+    return hz
+
+
+def hzdt_halfspace_center_circle_loop(times, rho, r, I=1.):
+    sigma = 1./rho
+    theta = torch.sqrt(0.25*c.mu0*sigma / times)
+    dhdt = 1./(c.mu0*sigma*r**3)*(3*torch.erf(theta*r)-2*theta*r*(3+2*theta**2*r**2)*torch.exp(-theta**2*r**2)/c.sqrt_pi)
+    return dhdt
 
 def dbdt_center_of_circular_loop_halfspace(time, rho, r):
     sigma = 1./rho
@@ -741,67 +742,6 @@ def dbdt_center_of_circular_loop_halfspace(time, rho, r):
     term2 = (2.0/c.sqrt_pi)*tau*(3.0 + 2.0*tau**2)*torch.exp(-tau**2)
     dbdt = (term1 - term2)/(sigma*r**3)
     return dbdt
-
-def drte_dsigma(sigma, thickness, omega, wave_length):
-    """
-    Analytic drte/dsigma via Fortran TEM1DRESP.for (Raiche 1999).
-    https://github.com/hydrogeophysicsgroup/TEM1D/blob/main/TEM1DRESP.for#L860C1-L942C12
-
-    Index convention (Fortran -> Python):
-      W(0..NLAY): W(0)=wave_length (air), W(1..NLAY)=u for conductors+halfspace.
-      IPARM=1..NLAY, IPP=IPARM used directly as array index into W/G/R/E.
-      sigma[0..NLAY-1] = Fortran SIGS(1..NLAY), SIGS(0)=0 (air).
-    Layer axis is 0.
-    """
-    NLAY = len(sigma)
-
-    # --- Build extended W(0..NLAY): prepend air wavenumber W(0)=wave_length ---
-    u_cond = (wave_length**2 + 1j*omega*c.mu0*sigma)**0.5         
-    u = torch.cat([wave_length.expand_as(u_cond[:1]), u_cond], dim=0)
-
-    G = torch.zeros_like(u)
-    R = torch.zeros_like(u)
-    E = torch.zeros_like(u)
-
-    # --- Forward pass: vectorise R and E, keep G sequential (Möbius chain) ---
-    H_fwd = u[:-1] + u[1:]                                             
-    dsigs = torch.cat([-sigma[:1], sigma[:-1] - sigma[1:]], dim=0)     # SIGS(i)-SIGS(i+1)
-    R[1:] = c.mu0*1j*omega * dsigs / H_fwd**2
-
-    thks = torch.cat([torch.zeros_like(thickness[:1]), thickness], dim=0)  
-    E[:-1] = torch.exp(-2.*u[:-1]*thks)
-
-    for i in range(NLAY - 1, -1, -1):
-        G[i] = E[i] * (G[i+1] + R[i+1]) / (1. + G[i+1] * R[i+1])
-
-
-    denom_k  = (1. + G[1:-1]*R[1:-1])**2
-
-    # P[k] = E[k]*(1-R[k+1]^2) / (1+G[k+1]*R[k+1])^2
-    P  = E[:-2] * (1. - R[1:-1]**2) / denom_k
-    CP = torch.cat([torch.ones_like(P[:1]),
-                    torch.cumprod(P, dim=0)], dim=0)               # (NLAY,   ...)
-
-    # B[k] = DT_neg[k]*(1-G[k+1]^2)*E[k] / (1+G[k+1]*R[k+1])^2
-    DT_neg = -2.*u[:-2] / (u[:-2] + u[1:-1])**2
-    B = DT_neg * (1. - G[1:-1]**2) * E[:-2] / denom_k
-
-    # DG_IPP[j] for IPP=j+1 in 1..NLAY-1
-    H_ipp   = u[1:-1] + u[2:]
-    DG_IPP  = (-2.*thks[1:]*G[1:-1]
-               + 2.*u[2:]/H_ipp**2 * E[1:-1]*(1. - G[2:]**2)
-                                              / (1. + G[2:]*R[2:])**2)
-
-    # Combine: drte_du[IPP] = DG_IPP * CP[IPP] + B * CP[IPP-1]
-    drte_du = torch.zeros_like(u)
-    drte_du[1:NLAY] = DG_IPP * CP[1:] + B * CP[:-1]
-
-    # Halfspace IPP=NLAY: E[NLAY-1] * DT_neg_half * CP[NLAY-1]
-    drte_du[NLAY] = E[-2] * (-2.*u[-2] / (u[-1] + u[-2])**2) * CP[-1]
-
-    drte_dsigma = (drte_du[1:] * 0.5*c.mu0*1j*omega / u_cond).squeeze()
-
-    return drte_dsigma
 
 def dbzdt_halfspace_coincident_circle_loop(times, rho, r, I=1., max_terms=2000):
     """
