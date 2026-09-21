@@ -165,3 +165,5 @@ scripts/plog_opener.cmd
 
 scratch/*
 *.npy
+
+site/*
