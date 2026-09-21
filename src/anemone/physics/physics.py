@@ -737,12 +737,37 @@ def hzdt_halfspace_center_circle_loop(times, rho, r, I=1.):
     return dhdt
 
 def dbdt_center_of_circular_loop_halfspace(time, rho, r):
-    sigma = 1./rho
-    tau = r*torch.sqrt(0.25*sigma*c.mu0/time)
-    term1 = 3.0*torch.erf(tau)
-    term2 = (2.0/c.sqrt_pi)*tau*(3.0 + 2.0*tau**2)*torch.exp(-tau**2)
-    dbdt = (term1 - term2)/(sigma*r**3)
-    return dbdt
+    if max(time)>1e-3: 
+        return dbdt_center_of_circular_loop_halfspace_extended(time, rho, r)
+    else:
+        sigma = 1./rho
+        tau = r*torch.sqrt(0.25*sigma*c.mu0/time)
+        term1 = 3.0*torch.erf(tau)
+        term2 = (2.0/c.sqrt_pi)*tau*(3.0 + 2.0*tau**2)*torch.exp(-tau**2)
+        dbdt = (term1 - term2)/(sigma*r**3)
+        return dbdt
+
+def dbdt_center_of_circular_loop_halfspace_extended(times, rhos, r):
+    import math
+    sqrt_pi = float(torch.pi**0.5)
+    mu0 = float(torch.pi*4e-7)    
+    dbdt = torch.empty(rhos.shape+times.shape)
+    for i_rho, rho in enumerate(rhos):
+        sigma = 1./rho
+        for i_t,time in enumerate(times):    
+            sigma            = 1./rho
+            theta            = math.sqrt(0.25*mu0*sigma / time)
+            dhdt             = 1./(mu0*sigma*r**3)*(3*math.erf(theta*r)-2*theta*r*(3+2*theta**2*r**2)*math.exp(-theta**2*r**2)/sqrt_pi)
+            dbdt[i_rho, i_t] = dhdt
+    
+    # analytic solution breaks down around 1 ms, 
+    # so we use the known asymptotic behavior to extend it to later times
+    
+    i_t = torch.searchsorted(times, 1e-3)
+    dbdt_ref = dbdt[:, i_t]*times[i_t]**(5/2)
+    dbdt[:, i_t:] = dbdt_ref[:, None]*(times[None, i_t:]**(-5/2))
+
+    return dbdt*mu0    
 
 def dbzdt_halfspace_coincident_circle_loop(times, rho, r, I=1., max_terms=2000):
     """
