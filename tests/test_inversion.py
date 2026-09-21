@@ -1,15 +1,14 @@
 from anemone.inversion import *
-from anemone.forwards import Forward, logify_forward
+from anemone.forwards import Forward
 from anemone.system import Loop, Receiver, Waveform, FilterChain, ButterworthFilter
 from anemone.experiment import compute_relstd
 
 import matplotlib.pyplot as plt
 
 def test_tikhonov_few_layer():
-    logForward = logify_forward(Forward)
 
     times = torch.logspace(-5,-3, 32)
-    fwrTD = logForward.example(times=times, tolerance=1e-7)
+    fwrTD = Forward.example(times=times, tolerance=1e-7)
 
     rho = torch.tensor([20, 80, 40])
     thk = torch.tensor([30,40.])
@@ -50,10 +49,8 @@ def test_tikhonov_few_layer():
         plt.show()
 
 def test_tikhonov_smooth():
-    logForward = logify_forward(Forward)
-
     times = torch.logspace(-5,-2, 32)
-    fwrTD = logForward.example(times=times, tolerance=1e-5)
+    fwrTD = Forward.example(times=times, tolerance=1e-5)
 
     rho = torch.tensor([20, 80, 40])
     thk = torch.tensor([30,40.])
@@ -584,9 +581,11 @@ def rediscretize_matrices(z_old, z_new):
 
 def test_lci(n_mods=100):
     # n_mod
+    #import torch_directml
+
+    #gpu = torch_directml.device()
     gpu = torch.device('cpu')
     print('number of threads: ', torch.get_num_threads())
-    logForward = logify_forward(Forward)
 
     t1 = torch.logspace(-6, -4, 15)
     t2 = torch.logspace(-5, -3, 31)

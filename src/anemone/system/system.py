@@ -4,22 +4,6 @@ from anemone import constants as c, rdtype, cdtype
 from nosj import nosj
 
 
-S1 = lambda x: 1 - (9/4)*x**2 * ( 1 - 2./9*x*(1 + 5/2*x*(1 - 2/5 * x)))
-S2 = lambda x: -1/2*x*(1 - 11/6*x*(1 - 2/11*x*(1 + 5/2*x*(1-2/5*x))))
-
-def lamontagne(x):
-    phi   = x*0.
-    xm2m1 = (-2 <= x)*(x < -1)
-    xm1m0 = (-1 <= x)*(x < 0)
-    x0p1  = (0 <= x)*(x <= 1)
-    x1p2  = (1 < x)*(x <= 2)
-    
-    phi[xm2m1] = S2(-x[xm2m1]-1)
-    phi[xm1m0] = S1(-x[xm1m0])
-    phi[x0p1] = S1(x[x0p1])
-    phi[x1p2] = S2(x[x1p2]-1)
-    
-    return phi
 
 from torch import Tensor
 
@@ -479,7 +463,121 @@ class FilterChain:
             summation_term[i_step] += C_i * torch.exp(-w_i * t[i_step])
         return summation_term
 
+
+S1 = lambda x: 1 - (9/4)*x**2 * ( 1 - 2./9*x*(1 + 5/2*x*(1 - 2/5 * x)))
+S2 = lambda x: -1/2*x*(1 - 11/6*x*(1 - 2/11*x*(1 + 5/2*x*(1-2/5*x))))
+
+def lamontagne(x):
+    phi   = x*0.
+    xm2m1 = (-2 <= x)*(x < -1)
+    xm1m0 = (-1 <= x)*(x < 0)
+    x0p1  = (0 <= x)*(x <= 1)
+    x1p2  = (1 < x)*(x <= 2)
     
+    phi[xm2m1] = S2(-x[xm2m1]-1)
+    phi[xm1m0] = S1(-x[xm1m0])
+    phi[x0p1] = S1(x[x0p1])
+    phi[x1p2] = S2(x[x1p2]-1)
+    
+    return phi
+
+def waveform_matrix(t_eval, t_sampled, waveform=None):
+    t_eval = t_eval.to(rdtype())
+    t_sampled = t_sampled.to(rdtype())
+
+    if waveform is None:
+        t2t = interpolation_matrix(t_sampled, t_eval)
+    else:
+        logT = torch.log(t_sampled)#.cpu()
+        dT = logT[1]-logT[0]
+        t2t = torch.zeros(t_eval.shape+t_sampled.shape, device=t_sampled.device, dtype=t_eval.dtype)
+
+        for t_wv,k_wv in zip(waveform.time, waveform.d2wdt2):
+            t2t += k_wv*torch.nan_to_num(lamontagne((torch.log(t_eval-t_wv)[:,None]-logT[None,:])/dT))
+    return t2t
+
+def interpolation_matrix(t_in, t_out):
+    t_out = t_out.to(t_in.dtype)
+    logT = torch.log(t_in)#.cpu()
+    dT = logT[1]-logT[0]
+    t2t = torch.nan_to_num(lamontagne((torch.log(t_out)[:,None]-logT[None,:])/dT))
+    return t2t
+
+def gating_matrix(t_sampled, t_st, t_end, n_eval=1000):
+    logT = torch.log(t_sampled)#.cpu()
+    dT = logT[1]-logT[0]
+
+    dt = (t_end - t_st)/n_eval
+
+    gate_matrix = torch.zeros(t_st.shape+t_sampled.shape, dtype=t_sampled.dtype, device=t_sampled.device)
+
+    for i in range(n_eval):
+        t_eval = torch.log(t_st + dt*i)
+        gate_matrix += lamontagne((t_eval[:, None]-logT[None, :])/dT)
+    return gate_matrix/n_eval
+
+def stepoff_response(t):
+    amp = torch.zeros_like(t)
+    amp[t<0.] = 1.
+    return amp    
+
+def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
+    import numpy as np
+
+    if geomz.ndim > 1:
+        n_g = geomz.shape[0]
+    else:
+        n_g = 1
+        geomz = geomz[None, :]
+
+    t2t_real = t2t.real.numpy()
+    t2t_np   = t2t.numpy()
+    geomz_np = geomz.real.numpy()
+    omega_np = omega.squeeze().cpu().numpy()
+    lmb_np   = lmb.squeeze().cpu().numpy()
+    n_t      = t2t.shape[0]
+    n_omega  = omega_np.shape[0]
+    n_lmb    = lmb_np.shape[0]
+    n_ol     = n_omega * n_lmb
+
+    from anemone.physics import rte_halfspace
+    rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:, None], lmb[None, :]).squeeze().cpu().numpy()
+
+    if tolerance is not None:
+        full_mask  = np.zeros((n_omega, n_lmb), dtype=bool)
+        row_arange = np.arange(n_t)
+
+        for i_g in range(n_g):
+            t_g    = np.abs(t2t_real[:, :, np.newaxis] *
+                            geomz_np[i_g][np.newaxis, np.newaxis, :] *
+                            rte_ref[np.newaxis, :, :])
+            t_flat   = t_g.reshape(n_t, n_ol)
+            # sort values only — no argsort needed since threshold is applied by value
+            t_sorted = np.sort(t_flat, axis=1)
+            t_cumsum = np.cumsum(t_sorted, axis=1)
+            t_cumsum /= t_cumsum[:, -1:]
+
+            threshold_idx = (t_cumsum < tolerance).sum(axis=1) + 1   # (n_t,)
+            safe_idx      = np.minimum(threshold_idx, n_ol - 1)
+            threshold_val = t_sorted[row_arange, safe_idx]            # (n_t,)
+            threshold_val[threshold_idx >= n_ol] = np.inf
+
+            mask = t_flat >= threshold_val[:, np.newaxis]             # (n_t, n_ol)
+            full_mask |= mask.any(axis=0).reshape(n_omega, n_lmb)
+    else:
+        full_mask = np.ones((n_omega, n_lmb), dtype=bool)
+
+    n_selected = full_mask.sum()
+    H2t = np.zeros((n_t, n_g, n_selected), dtype=complex)
+    for i_g in range(n_g):
+        t_g = t2t_np[:, :, np.newaxis] * geomz_np[i_g][np.newaxis, np.newaxis, :]
+        H2t[:, i_g, :] = t_g[:, full_mask]
+
+    H2t = H2t.squeeze()
+    Omega, Lambda = np.meshgrid(omega_np, lmb_np, indexing='ij')
+    Omega  = Omega[full_mask]
+    Lambda = Lambda[full_mask]
+    return torch.tensor(H2t), torch.from_numpy(Omega), torch.from_numpy(Lambda)
 
 if __name__ == "__main__":
     f1 = ButterworthFilter(1000., order=2)

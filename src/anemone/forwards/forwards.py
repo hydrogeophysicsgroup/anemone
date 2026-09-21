@@ -1,69 +1,21 @@
-from anemone.transforms import Hankel, invFourier, CubicSpline, invLaplace, coefficient_bounds
-from anemone.physics import rte_raiche1999 as rte, freespace_u0 as u0, colecole, mpa2colecole, colecole2mpa
-from anemone.physics import rte_nbc_laplace as rtelap
-from anemone.physics import drte_dsigma, calc_dpropmat
+from anemone.transforms import Hankel, invFourier, CubicSpline, invLaplace
+
+from anemone.system import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
+from anemone.system import lamontagne, stepoff_response, integrate_around_loop
+from anemone.system import waveform_matrix, interpolation_matrix, gating_matrix, make_H2t
+
+from anemone.physics import rte, freespace_u0 as u0, colecole, mpa2colecole, colecole2mpa, drte_dsigma
+
 from anemone import constants as c, rdtype, cdtype
 
-from anemone.system import integrate_around_loop
 import torch
-from numpy import ndarray
 import warnings
 
-from anemone.system import lamontagne
-from copy import deepcopy
-
-def waveform_matrix(t_eval, t_sampled, waveform=None):
-    t_eval = t_eval.to(rdtype())
-    t_sampled = t_sampled.to(rdtype())
-
-    if waveform is None:
-        t2t = interpolation_matrix(t_sampled, t_eval)
-    else:
-        logT = torch.log(t_sampled)#.cpu()
-        dT = logT[1]-logT[0]
-        t2t = torch.zeros(t_eval.shape+t_sampled.shape, device=t_sampled.device, dtype=t_eval.dtype)
-
-        for t_wv,k_wv in zip(waveform.time, waveform.d2wdt2):
-            t2t += k_wv*torch.nan_to_num(lamontagne((torch.log(t_eval-t_wv)[:,None]-logT[None,:])/dT))
-    return t2t
-
-def interpolation_matrix(t_in, t_out):
-    t_out = t_out.to(t_in.dtype)
-    logT = torch.log(t_in)#.cpu()
-    dT = logT[1]-logT[0]
-    t2t = torch.nan_to_num(lamontagne((torch.log(t_out)[:,None]-logT[None,:])/dT))
-    return t2t
-
-def gating_matrix(t_sampled, t_st, t_end, n_eval=1000):
-    logT = torch.log(t_sampled)#.cpu()
-    dT = logT[1]-logT[0]
-
-    dt = (t_end - t_st)/n_eval
-
-    gate_matrix = torch.zeros(t_st.shape+t_sampled.shape, dtype=t_sampled.dtype, device=t_sampled.device)
-
-    for i in range(n_eval):
-        t_eval = torch.log(t_st + dt*i)
-        gate_matrix += lamontagne((t_eval[:, None]-logT[None, :])/dT)
-    return gate_matrix/n_eval
-
-def stepoff_response(t):
-    amp = torch.zeros_like(t)
-    amp[t<0.] = 1.
-    return amp
-
-def logify_forward(cls):
-    class LogFwr(cls):
-        def __call__(self, *args, **kwargs):
-            if not kwargs.get('jac', False):
-                return torch.abs(super().__call__(*args, **kwargs)).log()
-            else:
-                return super().__call__(*args, **kwargs)
-    return LogFwr
-
 from nosj import nosj
-from anemone.system import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
 import biotsavart
+
+
+
 
 @nosj
 class BaseForward:
@@ -80,9 +32,10 @@ class BaseForward:
     omega      : torch.Tensor = None
     lamda      : torch.Tensor = None
     primary    : torch.Tensor = None
-    kind       : str          = 'res'
     log_scale  : bool         = False
     description: str          = 'Base Forward Model'
+
+    kind = 'res' # tag of the earth model, set by the earth model classes; not a serialised field
 
 
     def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None, **kwargs):
@@ -121,14 +74,18 @@ class BaseForward:
         self.filterfunc = filterfunc
         self.device = times.device
         if waveform is not None:
-            if self.waveform.time.max()<self.tmin:
-                self.tmin += -self.waveform.time.max()
+
+            wv_tmax = self.waveform.time.max() if isinstance(self.waveform, Waveform) else max([wv.time.max() for wv in self.waveform])
+            wv_tmin = self.waveform.time.min() if isinstance(self.waveform, Waveform) else min([wv.time.min() for wv in self.waveform])
+
+            if wv_tmax <self.tmin:
+                self.tmin += -wv_tmax
             else:
                 self.tmin /= 100.
-            self.tmax += -self.waveform.time.min()
-            waveform.time = waveform.time.to(self.device)
-            waveform.amplitude = waveform.amplitude.to(self.device)
-            waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
+            self.tmax += -wv_tmin
+            # waveform.time = waveform.time.to(self.device)
+            # waveform.amplitude = waveform.amplitude.to(self.device)
+            # waveform.d2wdt2 = waveform.d2wdt2.to(self.device)
 
 
         self.tolerance=tolerance
@@ -142,27 +99,29 @@ class BaseForward:
             t_primary = torch.logspace(self.tmin.log10(), self.tmax.log10(), 16*(int((self.tmax/self.tmin).log10())+1))
         else:
             t_primary = self.times*1.
-        
-        if waveform is not None:
-            if self.filterfunc is None:
-                primary =  stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) @ self.waveform.d2wdt2
+
+        if isinstance(self.waveform, Waveform):
+            if waveform is not None:
+                if self.filterfunc is None:
+                    primary =  stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) @ self.waveform.d2wdt2
+                else:
+                    primary =  self.filterfunc.stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) @ self.waveform.d2wdt2
             else:
-                primary =  self.filterfunc.stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) @ self.waveform.d2wdt2
-        else:
-            primary  =  stepoff_response(t_primary) if self.filterfunc is None else self.filterfunc.stepoff_response(t_primary)
+                primary  =  stepoff_response(t_primary) if self.filterfunc is None else self.filterfunc.stepoff_response(t_primary)
 
-        if self.t_end is not None:
-            primary_ft = CubicSpline(t_primary, primary, torch.log10)
-            primary = primary_ft.integrate(self.t_st, self.t_end, normalize=True)
+            if self.t_end is not None:
+                primary_ft = CubicSpline(t_primary, primary, torch.log10)
+                primary = primary_ft.integrate(self.t_st, self.t_end, normalize=True)
 
-        if getattr(self.receiver, 'weighting', None) is not None:
-            bfield = bfield @ self.receiver.weighting
-        
-        if bfield.numel()==1:
-            self.primary = bfield*primary            
-        else:
-            self.primary = (bfield[:,None]*primary[None,:]).mean(0)
+            if getattr(self.receiver, 'weighting', None) is not None:
+                bfield = bfield @ self.receiver.weighting
             
+            if bfield.numel()==1:
+                self.primary = bfield*primary            
+            else:
+                self.primary = (bfield[:,None]*primary[None,:]).mean(0)
+        else:
+            self.primary = 0.
        
 
         if self.device is not None:
@@ -174,13 +133,9 @@ class BaseForward:
         
         self.omega = kwargs.get('omega', None)
         self.lamda = kwargs.get('lamda', None)
-        self.kind  = kwargs.get('kind', 'res')
         self.description = kwargs.get('description', 'Base Forward Model')
         self.log_scale = kwargs.get('log_scale', False)
 
-    # @property
-    # def sigma(self):
-    #     return 1./self.rho
     
     def calc_ft(self):
         def frq_integrand(f):
@@ -231,86 +186,47 @@ class BaseForward:
         kwargs.setdefault('waveform', Waveform.example())
         return cls(**kwargs)
 
-    def _res_call(self, rho, thickness):
-        if not isinstance(rho, torch.Tensor):       rho       = torch.tensor(rho)
-        if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)        
-        self.rho = ((rho+0j)[..., None, None]).to(self.device).to(cdtype())
-        if rho.ndim > thickness.ndim:
+    def _set_param(self, value, complex=False):
+        if not isinstance(value, torch.Tensor): value = torch.tensor(value)
+        if complex: value = value.to(cdtype())
+        return value[..., None, None].to(self.device)
+
+    def _set_thickness(self, thickness):
+        if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)
+        if self.rho.ndim-2 > thickness.ndim:
             thickness = thickness[:, None]
         self.thick = ((thickness+0j)[..., None, None]).to(self.device).to(cdtype())
+
+    def _evaluate(self, jac=False):
+        if jac: raise NotImplementedError('{} does not provide an analytic jacobian'.format(type(self).__name__))
         return self.forward().squeeze().real
 
-    def _colecole_call(self, rho, m, tau,  C, thickness):
-        self.rho   =       rho.to(self.device).to(cdtype())[..., None,None]
-        self.m     =         m.to(self.device).to(cdtype())[..., None,None]
-        self.tau   =       tau.to(self.device).to(cdtype())[..., None,None]
-        self.c     =         C.to(self.device).to(cdtype())[..., None,None]
-        if rho.ndim > thickness.ndim:
-            thickness = thickness[:, None]
-        self.thick = ((thickness+0j)[..., None, None]).to(self.device).to(cdtype())   
-    
-        return self.forward()        
-
-    def _mpa_call(self, rho, phi_max, tau_phi, C, thickness):
-        self.rho     =     rho.to(self.device)[..., None,None]
-        self.phi_max = phi_max.to(self.device)[..., None,None]
-        self.tau_phi = tau_phi.to(self.device)[..., None,None]
-        self.c       =       C.to(self.device)[..., None,None]
-        if rho.ndim > thickness.ndim:
-            thickness = thickness[:, None]
-        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
-        return self.forward()
-    
-    def _cpa_call(self, rho, phi, thickness):
-        self.rho   =       rho.to(self.device).to(cdtype())[..., None,None]
-        self.phi     =     phi.to(self.device).to(cdtype())[..., None,None]
-        if rho.ndim > thickness.ndim:
-            thickness = thickness[:, None]
-        self.thick = ((thickness+0j)[..., None, None]).to(self.device)
-        return self.forward()
-
-    def __call__(self, *args, **kwargs):
-        if   self.kind == 'res':      data = self._res_call(*args, **kwargs)
-        elif self.kind == 'mpa':      data = self._mpa_call(*args, **kwargs)
-        elif self.kind == 'colecole': data = self._colecole_call(*args, **kwargs)
-        elif self.kind == 'cpa':      data = self._cpa_call(*args, **kwargs)
-        if not kwargs.get('jac', False):
-            data += self.primary
-        if self.log_scale and not kwargs.get('jac', False): data = torch.log(torch.abs(data))
+    def _finalize(self, data, jac=False):
+        if jac: return data
+        data = data + self.primary
+        if self.log_scale: data = torch.log(torch.abs(data))
         return data
 
-    @staticmethod
-    def colecole2mpa(rho, m, tau, C):
-        from anemone.physics import colecole2mpa # not used much, so imported here to keep things clean.
-        rho, phi_max, tau_phi, C = colecole2mpa(rho, m, tau, C)
-        return rho, phi_max, tau_phi, C
+    def __call__(self, rho, thickness=None, jac=False):
+        self.rho = self._set_param(rho)
+        if thickness is not None: self._set_thickness(thickness)
+        return self._finalize(self._evaluate(jac), jac)
 
     @property
     def sigma(self):
-        if   self.kind == 'res':      return 1./self.rho
-        elif self.kind == 'colecole': return 1./colecole(self.rho, self.m, self.tau, self.c, self.omega)    
-        elif self.kind == 'mpa':      
-            rho, m_new, tau_cc, C = mpa2colecole(self.rho, self.phi_max, self.tau_phi, self.c)
-            return 1./colecole(rho, m_new, tau_cc, C, self.omega)
-        elif self.kind == 'cpa':    
-            b = -2.*self.phi / c.pi
-            k = self.rho * self.omega_L**b
-            return k*(1j*self.omega + self.omega_L)**(-b)            
-        
+        return 1./self.rho
+
     @classmethod
-    def colecole(cls, source, receiver, times, **kwargs):
-        kwargs.setdefault('kind', 'colecole')
-        return cls(source, receiver, times, **kwargs)
+    def colecole(cls, source, receiver, times, **kwargs) -> 'ForwardColeCole':
+        return specialize(cls, ColeColeEarth)(source, receiver, times, **kwargs)
     
     @classmethod
-    def mpa(cls, source, receiver, times, **kwargs):
-        kwargs.setdefault('kind', 'mpa')
-        return cls(source, receiver, times, **kwargs)
+    def mpa(cls, source, receiver, times, **kwargs) -> 'ForwardMPA':
+        return specialize(cls, MPAEarth)(source, receiver, times, **kwargs)
     
     @classmethod
-    def cpa(cls, source, receiver, times, drake_model=True, **kwargs):
-        kwargs.setdefault('kind', 'cpa')
-        self = cls(source, receiver, times, **kwargs)
+    def cpa(cls, source, receiver, times, drake_model=True, **kwargs) -> 'ForwardCPA':
+        self = specialize(cls, CPAEarth)(source, receiver, times, **kwargs)
         self.omega_L = c.twopi*1e-5 if drake_model else 0.
         return self
 
@@ -318,194 +234,6 @@ class BaseForward:
         self.log_scale = True
         return self
 
-class ForwardLaplace(BaseForward):
-    """ Essentially the same as the BaseForward, but uses invserse Laplace transforms instead of inverse Fourier transforms."""
-    sfield_rte = None
-    pfield = None
-    tmp_u0 = None
-    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None, t_smp_per_decade=12):
-        super().__init__(source, receiver, times, waveform, filterfunc, t_end, tolerance)
-        if waveform is not None:
-            if self.tmin<0: 
-                self.tmin = torch.tensor([1e-9])
-                Warning('tmin is less than 0, setting tmin to 0.25e-6')
-            self.tmin /= 2.2
-            self.tmax *= 2.2
-
-            self.t_smp_per_decade = t_smp_per_decade
-            self.t_eval = torch.logspace(torch.log10(self.tmin).item(), torch.log10(self.tmax).item(), int(t_smp_per_decade*torch.log10(self.tmax/self.tmin)), dtype=rdtype())
-        else:
-            self.t_eval = self.times
-        self.tolerance=tolerance
-        if self.device is not None:
-            for attr_name in self.__dict__:
-                attr_value = getattr(self, attr_name)
-                if torch.is_tensor(attr_value):
-                    setattr(self, attr_name, attr_value.to(self.device))
-
-    def calc_ft(self):
-        def wvlngth_integrand(wave_length):
-            lmb = wave_length[None, :, None]
-            def s_integrand(s):
-                """ Hz from horizontal electric dipole. """
-                omega = -1j*s[None, None, :]
-                
-                if self.tmp_u0     is None: self.tmp_u0 = u0(omega, lmb)
-                if self.sfield_rte is None: self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)# / self.tmp_u0
-                if self.pfield     is None: self.pfield     = torch.exp(-self.tmp_u0*self.pfield_dz)# / self.tmp_u0
-                cRTE = torch.nan_to_num(rte(self.sigma, self.thick, omega, lmb))
-                intg = cRTE*self.sfield_rte
-
-                if self.filterfunc is not None:
-                    intg *= self.filterfunc.omega_filter(omega)
-
-                if self.waveform is not None:
-                    intg /= -1j*omega
-
-                return intg
-            cbft = invLaplace(s_integrand, device=self.device, n_coefficients=16)
-            res =  cbft(self.t_eval)
-            res *= lmb / c.fourpi
-            return res.squeeze().swapaxes(-2,-1)
-
-        hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
-        res = integrate_around_loop(self.source, self.receiver, hkl1)
-        return CubicSpline(self.t_eval, res, transform=torch.log10, integrate=False)
-
-
-class DualMoment(BaseForward):
-    def __init__(self, source, receiver, times, waveforms, filterfunc=None, tolerance=None):
-        fwr1 = Forward(source, receiver, times[0], waveforms[0], filterfunc, tolerance=tolerance)
-        fwr2 = Forward(source, receiver, times[1], waveforms[1], filterfunc, tolerance=tolerance)
-        self = fwr1 + fwr2
-
-    @classmethod
-    def example(cls, tx=None, rx=None, times=None, waveforms=None):
-        from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter
-        if tx is None: tx = Loop.square(40)
-        if rx is None: rx = Receiver()
-        if times is None: times = [torch.logspace(-6, -4, 32), torch.logspace(-5, -3, 32)]
-        if waveforms is None: waveforms = [Waveform.example(), Waveform.example()]
-        return cls(tx, rx, times, waveforms, ButterworthFilter(3e5))
-
-    @property
-    def lm(self):
-        return self.dpred[:len(self.times[0])]
-
-    @property
-    def hm(self):
-        return self.dpred[len(self.times[0]):]
-
-# Experimental forwards
-# These are not used in production, but are here for reference and testing purposes.
-
-class ForwardFD(BaseForward):
-    def __init__(self, source, receiver, freqs, waveform=None, filterfunc=None, tolerance=None):
-        self.source = source
-        self.receiver = receiver
-        self.freqs = freqs if isinstance(freqs, torch.Tensor) else torch.tensor(freqs)
-        self.device = freqs.device
-        self.rmin = self.source.min_horizontal_distance(self.receiver).to(freqs.device)
-        self.rmax = self.source.max_horizontal_distance(self.receiver).to(freqs.device)
-        self.srcz = torch.tensor([source.z[0]], dtype=rdtype())
-        self.rz = self.receiver.z.flatten()[0]
-        self.pfield_dz = torch.abs(self.srcz-self.rz)#[:, None, None]
-        self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)#[:, None, None]
-
-        self.filterfunc = filterfunc
-        self.waveform = waveform
-        self.tolerance=tolerance
-        if self.device is not None:
-            for attr_name in self.__dict__:
-                attr_value = getattr(self, attr_name)
-                if torch.is_tensor(attr_value):
-                    setattr(self, attr_name, attr_value.to(self.device))      
-
-    def forward(self):
-        def frq_integrand(f):
-            self.omega = c.twopi*f[None,:,None]
-            def wvlngth_integrand(wave_length):
-                """ Hz from horizontal electric dipole. """
-                self.lmb = wave_length[None, None, :]
-                
-                tmp_u0 = u0(self.omega, self.lmb)
-                intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, self.omega, self.lmb)*torch.exp(-tmp_u0*self.sfield_dz)
-                intg *= self.lmb**2 / tmp_u0
-            
-                if self.filterfunc is not None:
-                    intg *= self.filterfunc.omega_filter(self.omega)
-                return torch.squeeze(intg/c.fourpi)
-            
-            hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
-            res = integrate_around_loop(self.source, self.receiver, hkl1)
-            if self.waveform is not None:
-                res /= -1j*self.omega.squeeze()
-            return res
-        
-        H = frq_integrand(self.freqs)
-
-        if self.waveform is not None:
-            return H*self.waveform.fourier_d2wdt2(self.freqs)
-        else:
-            return H.T
-
-def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
-    import numpy as np
-
-    if geomz.ndim > 1:
-        n_g = geomz.shape[0]
-    else:
-        n_g = 1
-        geomz = geomz[None, :]
-
-    t2t_real = t2t.real.numpy()
-    t2t_np   = t2t.numpy()
-    geomz_np = geomz.real.numpy()
-    omega_np = omega.squeeze().cpu().numpy()
-    lmb_np   = lmb.squeeze().cpu().numpy()
-    n_t      = t2t.shape[0]
-    n_omega  = omega_np.shape[0]
-    n_lmb    = lmb_np.shape[0]
-    n_ol     = n_omega * n_lmb
-
-    from anemone.physics import rte_halfspace
-    rte_ref = rte_halfspace(torch.tensor(sigma_ref), omega[:, None], lmb[None, :]).squeeze().cpu().numpy()
-
-    if tolerance is not None:
-        full_mask  = np.zeros((n_omega, n_lmb), dtype=bool)
-        row_arange = np.arange(n_t)
-
-        for i_g in range(n_g):
-            t_g    = np.abs(t2t_real[:, :, np.newaxis] *
-                            geomz_np[i_g][np.newaxis, np.newaxis, :] *
-                            rte_ref[np.newaxis, :, :])
-            t_flat   = t_g.reshape(n_t, n_ol)
-            # sort values only — no argsort needed since threshold is applied by value
-            t_sorted = np.sort(t_flat, axis=1)
-            t_cumsum = np.cumsum(t_sorted, axis=1)
-            t_cumsum /= t_cumsum[:, -1:]
-
-            threshold_idx = (t_cumsum < tolerance).sum(axis=1) + 1   # (n_t,)
-            safe_idx      = np.minimum(threshold_idx, n_ol - 1)
-            threshold_val = t_sorted[row_arange, safe_idx]            # (n_t,)
-            threshold_val[threshold_idx >= n_ol] = np.inf
-
-            mask = t_flat >= threshold_val[:, np.newaxis]             # (n_t, n_ol)
-            full_mask |= mask.any(axis=0).reshape(n_omega, n_lmb)
-    else:
-        full_mask = np.ones((n_omega, n_lmb), dtype=bool)
-
-    n_selected = full_mask.sum()
-    H2t = np.zeros((n_t, n_g, n_selected), dtype=complex)
-    for i_g in range(n_g):
-        t_g = t2t_np[:, :, np.newaxis] * geomz_np[i_g][np.newaxis, np.newaxis, :]
-        H2t[:, i_g, :] = t_g[:, full_mask]
-
-    H2t = H2t.squeeze()
-    Omega, Lambda = np.meshgrid(omega_np, lmb_np, indexing='ij')
-    Omega  = Omega[full_mask]
-    Lambda = Lambda[full_mask]
-    return torch.tensor(H2t), torch.from_numpy(Omega), torch.from_numpy(Lambda)
 
 @nosj
 class Forward(BaseForward): 
@@ -611,20 +339,9 @@ class Forward(BaseForward):
                 Gr /= -(self.rho.real.squeeze()**2)[:,None]
             return Gr
     
-    def _res_call(self, rho, thickness, jac=False):
+    def _evaluate(self, jac=False):
         with torch.no_grad():
-            if not isinstance(rho, torch.Tensor):       rho       = torch.tensor(rho)
-            if not isinstance(thickness, torch.Tensor): thickness = torch.tensor(thickness)    
-
-            self.rho = ((rho+0j)[..., None, None]).to(cdtype())
-            if rho.ndim > thickness.ndim:
-                thickness = thickness[:, None, ...]
-            self.thick = ((thickness+0j)[..., None, None]).to(cdtype())
-            if jac:
-                G = self.jacobian()
-                return G.cpu()
-            else:            
-                return self.forward()
+            return self.jacobian().cpu() if jac else self.forward()
         
     def __add__(self, other):
         newfwr = self.copy()
@@ -664,7 +381,7 @@ class Forward(BaseForward):
         newfwr.t2slc = slice(len(newfwr.times), None)
         newfwr.times = torch.cat([newfwr.times, other.times])
         newfwr.primary = torch.cat([newfwr.primary, other.primary])
-
+        newfwr.waveform = [self.waveform, other.waveform]
         return newfwr
     
     def set_device(self, device):
@@ -698,3 +415,263 @@ class Forward(BaseForward):
     @classmethod
     def from_temfile(cls, fname, **kwargs):
         raise NotImplementedError
+
+class ColeColeEarth:
+    """ Dispersive earth parameterised with the Cole-Cole model. """
+    kind = 'colecole'
+
+    @property
+    def sigma(self):
+        return 1./colecole(self.rho, self.m, self.tau, self.c, self.omega)
+
+    def jacobian(self):
+        rho,m,tau,c,thick,w = self.rho.squeeze(), self.m.squeeze(), self.tau.squeeze(), self.c.squeeze(), self.thick.squeeze(), self.omega.squeeze()
+        with torch.no_grad():
+
+            drds   = drte_dsigma(self.sigma, self.thick, self.omega, self.lamda).T
+            drdrho = - drds / rho[None,:]**2
+            iwtp1  = 1+1j*w[:,None]*tau[None,:]
+            drhodm = -rho*(1-iwtp1**(-c[None,:]))
+            drhodt = -c*rho[None,:]*m[None,:]*(iwtp1**(-c-1))*(1j*w[:,None])
+            drhodc = -rho[None,:]*m[None,:]*torch.log(iwtp1)*(iwtp1**(-c[None,:]))
+            G_rte  = torch.concatenate([drdrho, drdrho*drhodm, drdrho*drhodt, drdrho*drhodc], dim=1).real
+            
+            if self.H2t.dtype == rdtype():
+               G_rte           = G_rte.real.to(rdtype())
+
+            return torch.einsum('ij,jk->ik', self.H2t, G_rte)
+    
+    def __call__(self, rho, m, tau, C, thickness=None, jac=False):
+        self.rho = self._set_param(rho)
+        self.m   = self._set_param(m)
+        self.tau = self._set_param(tau)
+        self.c   = self._set_param(C)
+        if thickness is None:
+            self.thick = None
+        else:
+            self._set_thickness(thickness)
+        return self._finalize(self._evaluate(jac), jac)
+
+
+class MPAEarth:
+    """ Dispersive earth parameterised with the maximum phase angle re-parameterisation of Cole-Cole. """
+    kind = 'mpa'
+
+    @property
+    def sigma(self):
+        rho, m_new, tau_cc, C = mpa2colecole(self.rho, self.phi_max, self.tau_phi, self.c)
+        return 1./colecole(rho, m_new, tau_cc, C, self.omega)
+
+    def __call__(self, rho, phi_max, tau_phi, C, thickness=None, jac=False):
+        self.rho     = self._set_param(rho,     complex=False)
+        self.phi_max = self._set_param(phi_max, complex=False)
+        self.tau_phi = self._set_param(tau_phi, complex=False)
+        self.c       = self._set_param(C,       complex=False)
+        if thickness is None:
+            self.thick = None
+        else:
+            self._set_thickness(thickness)
+        return self._finalize(self._evaluate(jac), jac)
+
+    @staticmethod
+    def colecole2mpa(rho, m, tau, C):
+        from anemone.physics import colecole2mpa # not used much, so imported here to keep things clean.
+        rho, phi_max, tau_phi, C = colecole2mpa(rho, m, tau, C)
+        return rho, phi_max, tau_phi, C
+
+
+class CPAEarth:
+    """ Dispersive earth with a constant phase angle. """
+    kind = 'cpa'
+    omega_L = c.twopi*1e-5
+
+    @property
+    def sigma(self):
+        b = -2.*self.phi / c.pi
+        k = self.rho * self.omega_L**b
+        return k*(1j*self.omega + self.omega_L)**(-b)
+
+    def __call__(self, rho, phi, thickness=None, jac=False):
+        self.rho = self._set_param(rho)
+        self.phi = self._set_param(phi)
+        if thickness is None:
+            self.thick = None
+        else:
+            self._set_thickness(thickness)
+        return self._finalize(self._evaluate(jac), jac)
+
+
+_specialized_forwards = {}
+
+def _make_specialized(cls, base):
+    # __init__ is set explicitly so that dataclass() does not shadow it with a generated one
+    cls.__init__ = base.__init__
+    annotations = {}
+    for klass in reversed(cls.__mro__):
+        annotations.update(vars(klass).get('__annotations__', {}))
+    cls.__annotations__ = annotations
+    return nosj(cls)
+
+def specialized(base, earth):
+    """ Register an explicitly written `earth`+`base` class as the specialization of that pair. """
+    def decorator(cls):
+        cls = _make_specialized(cls, base)
+        _specialized_forwards[(base, earth)] = cls
+        return cls
+    return decorator
+
+def specialize(base, earth):
+    """ Build (and cache) the forward class combining a forward `base` with an `earth` model. """
+    if issubclass(base, earth):
+        return base
+    key = (base, earth)
+    if key not in _specialized_forwards:
+        name = base.__name__ + earth.__name__.replace('Earth', '')
+        _specialized_forwards[key] = _make_specialized(type(name, (earth, base), {}), base)
+    return _specialized_forwards[key]
+
+
+class ForwardLaplace(BaseForward):
+    """ Essentially the same as the BaseForward, but uses invserse Laplace transforms instead of inverse Fourier transforms."""
+    sfield_rte = None
+    pfield = None
+    tmp_u0 = None
+    def __init__(self, source, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None, t_smp_per_decade=12):
+        super().__init__(source, receiver, times, waveform, filterfunc, t_end, tolerance)
+        if waveform is not None:
+            if self.tmin<0: 
+                self.tmin = torch.tensor([1e-9])
+                Warning('tmin is less than 0, setting tmin to 0.25e-6')
+            self.tmin /= 2.2
+            self.tmax *= 2.2
+
+            self.t_smp_per_decade = t_smp_per_decade
+            self.t_eval = torch.logspace(torch.log10(self.tmin).item(), torch.log10(self.tmax).item(), int(t_smp_per_decade*torch.log10(self.tmax/self.tmin)), dtype=rdtype())
+        else:
+            self.t_eval = self.times
+        self.tolerance=tolerance
+        if self.device is not None:
+            for attr_name in self.__dict__:
+                attr_value = getattr(self, attr_name)
+                if torch.is_tensor(attr_value):
+                    setattr(self, attr_name, attr_value.to(self.device))
+
+    def calc_ft(self):
+        def wvlngth_integrand(wave_length):
+            lmb = wave_length[None, :, None]
+            def s_integrand(s):
+                """ Hz from horizontal electric dipole. """
+                omega = -1j*s[None, None, :]
+                
+                if self.tmp_u0     is None: self.tmp_u0 = u0(omega, lmb)
+                if self.sfield_rte is None: self.sfield_rte = torch.exp(-self.tmp_u0*self.sfield_dz)# / self.tmp_u0
+                if self.pfield     is None: self.pfield     = torch.exp(-self.tmp_u0*self.pfield_dz)# / self.tmp_u0
+                cRTE = torch.nan_to_num(rte(self.sigma, self.thick, omega, lmb))
+                intg = cRTE*self.sfield_rte
+
+                if self.filterfunc is not None:
+                    intg *= self.filterfunc.omega_filter(omega)
+
+                if self.waveform is not None:
+                    intg /= -1j*omega
+
+                return intg
+            cbft = invLaplace(s_integrand, device=self.device, n_coefficients=16)
+            res =  cbft(self.t_eval)
+            res *= lmb / c.fourpi
+            return res.squeeze().swapaxes(-2,-1)
+
+        hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
+        res = integrate_around_loop(self.source, self.receiver, hkl1)
+        return CubicSpline(self.t_eval, res, transform=torch.log10, integrate=False)
+
+
+class DualMoment(BaseForward):
+    def __init__(self, source, receiver, times, waveforms, filterfunc=None, tolerance=None):
+        fwr1 = Forward(source, receiver, times[0], waveforms[0], filterfunc, tolerance=tolerance)
+        fwr2 = Forward(source, receiver, times[1], waveforms[1], filterfunc, tolerance=tolerance)
+        self = fwr1 + fwr2
+
+    @classmethod
+    def example(cls, tx=None, rx=None, times=None, waveforms=None):
+        from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter
+        if tx is None: tx = Loop.square(40)
+        if rx is None: rx = Receiver()
+        if times is None: times = [torch.logspace(-6, -4, 32), torch.logspace(-5, -3, 32)]
+        if waveforms is None: waveforms = [Waveform.example(), Waveform.example()]
+        return cls(tx, rx, times, waveforms, ButterworthFilter(3e5))
+
+    @property
+    def lm(self):
+        return self.dpred[:len(self.times[0])]
+
+    @property
+    def hm(self):
+        return self.dpred[len(self.times[0]):]
+
+# Experimental forwards
+# These are not used in production, but are here for reference and testing purposes.
+
+
+class ForwardFD(BaseForward):
+    def __init__(self, source, receiver, freqs, waveform=None, filterfunc=None, tolerance=None):
+        self.source = source
+        self.receiver = receiver
+        self.freqs = freqs if isinstance(freqs, torch.Tensor) else torch.tensor(freqs)
+        self.device = freqs.device
+        self.rmin = self.source.min_horizontal_distance(self.receiver).to(freqs.device)
+        self.rmax = self.source.max_horizontal_distance(self.receiver).to(freqs.device)
+        self.srcz = torch.tensor([source.z[0]], dtype=rdtype())
+        self.rz = self.receiver.z.flatten()[0]
+        self.pfield_dz = torch.abs(self.srcz-self.rz)#[:, None, None]
+        self.sfield_dz = torch.abs(self.srcz)+torch.abs(self.rz)#[:, None, None]
+
+        self.filterfunc = filterfunc
+        self.waveform = waveform
+        self.tolerance=tolerance
+        if self.device is not None:
+            for attr_name in self.__dict__:
+                attr_value = getattr(self, attr_name)
+                if torch.is_tensor(attr_value):
+                    setattr(self, attr_name, attr_value.to(self.device))      
+
+    def forward(self):
+        def frq_integrand(f):
+            self.omega = c.twopi*f[None,:,None]
+            def wvlngth_integrand(wave_length):
+                """ Hz from horizontal electric dipole. """
+                self.lmb = wave_length[None, None, :]
+                
+                tmp_u0 = u0(self.omega, self.lmb)
+                intg = torch.exp(-tmp_u0*self.pfield_dz)+rte(self.sigma, self.thick, self.omega, self.lmb)*torch.exp(-tmp_u0*self.sfield_dz)
+                intg *= self.lmb**2 / tmp_u0
+            
+                if self.filterfunc is not None:
+                    intg *= self.filterfunc.omega_filter(self.omega)
+                return torch.squeeze(intg/c.fourpi)
+            
+            hkl1 = Hankel(wvlngth_integrand, 1, range=(self.rmin, self.rmax), device=self.device, tolerance=self.tolerance)
+            res = integrate_around_loop(self.source, self.receiver, hkl1)
+            if self.waveform is not None:
+                res /= -1j*self.omega.squeeze()
+            return res
+        
+        H = frq_integrand(self.freqs)
+
+        if self.waveform is not None:
+            return H*self.waveform.fourier_d2wdt2(self.freqs)
+        else:
+            return H.T
+
+# written out explicitly (rather than built by specialize) so editors can resolve their __call__ signatures
+@specialized(Forward, ColeColeEarth)
+class ForwardColeCole(ColeColeEarth, Forward):
+    pass
+
+@specialized(Forward, MPAEarth)
+class ForwardMPA(MPAEarth, Forward):
+    pass
+
+@specialized(Forward, CPAEarth)
+class ForwardCPA(CPAEarth, Forward):
+    pass

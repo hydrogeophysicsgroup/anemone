@@ -48,6 +48,7 @@ def rte_raiche1999(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.eps
     del RTEj, sj1, sj, exp2uh, lambda2
     return torch.nan_to_num(rte)
 
+
 def rte_halfspace(sigma, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     if isinstance(mu, float):
         mu = torch.ones_like(sigma, dtype=cdtype(), device=sigma.device)*mu
@@ -62,7 +63,7 @@ def rte(sigma, thickness, omega, wave_length, mu=c.mu0, epsilon=c.epsilon0):
     if thickness is None: 
         return rte_halfspace(sigma, omega, wave_length, mu=mu, epsilon=epsilon)
     else:
-        return rte_raiche1999(sigma, omega, wave_length, mu=mu, epsilon=epsilon)
+        return rte_raiche1999(sigma, thickness, omega, wave_length, mu=mu, epsilon=epsilon)
 
 
 def freespace_u0(omega, wave_length, sqrt=True):
@@ -115,7 +116,7 @@ def colecole2mpa(rho, m, tau_cc, C):
 
 def drte_dsigma(sigma, thickness, omega, wave_length):
     """
-    Analytic drte/dsigma via Fortran TEM1DRESP.for (Raiche 1999).
+    Analytic drte/dsigma via Fortran TEM1DRESP.for.
     https://github.com/hydrogeophysicsgroup/TEM1D/blob/main/TEM1DRESP.for#L860C1-L942C12
 
     Index convention (Fortran -> Python):
