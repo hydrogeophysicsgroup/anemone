@@ -747,14 +747,19 @@ def dbdt_center_of_circular_loop_halfspace(time, rho, r):
         dbdt = (term1 - term2)/(sigma*r**3)
         return dbdt
 
-def dbdt_center_of_circular_loop_halfspace_extended(times, rhos, r):
+def dhdt_center_of_circular_loop_late_time_approx(times, rho, radius):
+    sigma = 1./rho
+    return sigma**(3/2)*c.mu0**(3/2) * radius**2 * times**(-5/2.) / 20. / c.sqrt_pi
+
+
+def dbdt_center_of_circular_loop_halfspace_extended(times, rhos, r, late_time=1e-3):
     import math
     sqrt_pi = float(torch.pi**0.5)
     mu0 = float(torch.pi*4e-7)    
     dbdt = torch.empty(rhos.shape+times.shape)
     for i_rho, rho in enumerate(rhos):
         sigma = 1./rho
-        for i_t,time in enumerate(times):    
+        for i_t,time in enumerate(times[times<late_time]):    
             sigma            = 1./rho
             theta            = math.sqrt(0.25*mu0*sigma / time)
             dhdt             = 1./(mu0*sigma*r**3)*(3*math.erf(theta*r)-2*theta*r*(3+2*theta**2*r**2)*math.exp(-theta**2*r**2)/sqrt_pi)
@@ -763,9 +768,8 @@ def dbdt_center_of_circular_loop_halfspace_extended(times, rhos, r):
     # analytic solution breaks down around 1 ms, 
     # so we use the known asymptotic behavior to extend it to later times
     
-    i_t = torch.searchsorted(times, 1e-3)
-    dbdt_ref = dbdt[:, i_t]*times[i_t]**(5/2)
-    dbdt[:, i_t:] = dbdt_ref[:, None]*(times[None, i_t:]**(-5/2))
+    i_t = torch.searchsorted(times, late_time)
+    dbdt[:, i_t:] = dhdt_center_of_circular_loop_late_time_approx(times[None,i_t:], rhos[:, None], r)
 
     return dbdt*mu0    
 
