@@ -145,87 +145,88 @@ class Loop:
             return self._geomz_circle(rx, R)        
         from numpy.polynomial.legendre import leggauss
 
-        R = R.cpu().numpy()
+        R = R.cpu()#.numpy()
 
-        logR = np.log(R)
+        logR = torch.log(R)
         dR   = float(logR[1] - logR[0])
         n_R  = len(R)
 
-        rx_xyz = rx.xyz.numpy()
+        rx_xyz = rx.xyz
         n_rec  = len(rx)
 
-        geomz_out = np.zeros((n_rec, n_R))
+        geomz_out = torch.zeros((n_rec, n_R))
 
-        lp_xyz = self.xyz.numpy()[:, None] - rx_xyz[None, :]  # (n_pts, n_rec, 3)
+        lp_xyz = self.xyz[:, None] - rx_xyz[None, :]  # (n_pts, n_rec, 3)
 
         # 3-pt GL is exact for degree ≤ 5 polynomials; phi is piecewise degree-5.
         # Splitting at each phi piece boundary means the polynomial part is
         # integrated exactly and only the smooth ln(cosh) composition incurs error.
         gp, gw = leggauss(3)  # (3,)
-        u_breaks = np.array([-2., -1., 0., 1., 2.])
+        u_breaks = torch.tensor([-2., -1., 0., 1., 2.])
 
         for i in range(len(self) - 1):
             Rz, _ = getRz(lp_xyz[i], lp_xyz[i+1])
-            p1    = np.einsum('...ij,...j->...i', Rz, lp_xyz[i])    # (n_rec, 3)
-            p2    = np.einsum('...ij,...j->...i', Rz, lp_xyz[i+1])  # (n_rec, 3)
+            p1    = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i])    # (n_rec, 3)
+            p2    = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i+1])  # (n_rec, 3)
             x1, y1 = p1[..., 0].flatten(), p1[..., 1].flatten()     # (n_rec,)
             x2     = p2[..., 0].flatten()                            # (n_rec,)
 
             # Skip receivers closer than 1 cm to the wire (y1 is perp. distance)
-            safe = np.abs(y1) > 1e-3
+            safe = torch.abs(y1) > 1e-3
             if not safe.any():
                 continue
 
-            y1_s    = y1[safe];  abs_y1_s = np.abs(y1_s)  # (n_safe,)
+            y1_s    = y1[safe];  abs_y1_s = torch.abs(y1_s)  # (n_safe,)
             x1_s    = x1[safe];  x2_s     = x2[safe]
 
             # Change of variable  x = y1·sinh(α)
             #   r = |y1|·cosh(α),   dx = y1·cosh(α) dα
             #   ∫ −y1·phi/r dx  =  ∫ −y1²/|y1|·phi dα  =  ∫ −|y1|·phi dα
-            a1 = np.arcsinh(x1_s / y1_s)  # (n_safe,)
-            a2 = np.arcsinh(x2_s / y1_s)  # (n_safe,)
+            a1 = torch.arcsinh(x1_s / y1_s)  # (n_safe,)
+            a2 = torch.arcsinh(x2_s / y1_s)  # (n_safe,)
 
             # beta[j,k] = (log|y1_j| − logR_k) / dR
-            beta = (np.log(abs_y1_s)[:, None] - logR[None, :]) / dR  # (n_safe, n_R)
+            beta = (torch.log(abs_y1_s)[:, None] - logR[None, :]) / dR  # (n_safe, n_R)
 
             # Alpha breakpoints for phi piece boundaries, per (receiver, R).
             # alpha_break corresponds to u_break via cosh(alpha) = exp((u−beta)·dR).
             # Set to 0 (lower bound of positive-alpha domain) when breakpoint < 0.
-            with np.errstate(over='ignore'):
-                cosh_b = np.exp(np.minimum(
-                    (u_breaks[None, None, :] - beta[:, :, None]) * dR, 500.
-                ))  # (n_safe, n_R, 5)
-            alpha_breaks = np.where(
-                cosh_b >= 1., np.arccosh(np.maximum(cosh_b, 1.)), 0.
+            # with np.errstate(over='ignore'):
+            cosh_b = torch.exp(torch.minimum(
+                (u_breaks[None, None, :] - beta[:, :, None]) * dR, torch.tensor([500.])
+            ))  # (n_safe, n_R, 5)
+
+            alpha_breaks = torch.where(
+                cosh_b >= 1., torch.arccosh(torch.maximum(cosh_b, torch.ones(1))), 0.
             )  # (n_safe, n_R, 5)
 
             def F_pos(a_pos):
                 """∫_0^{a_pos} −|y1|·phi(beta + ln(cosh α)/dR) dα → (n_safe, n_R)"""
-                out = np.zeros((int(safe.sum()), n_R))
+                out = torch.zeros((int(safe.sum()), n_R))
                 cap = a_pos[:, None]  # (n_safe, 1)
                 for k in range(4):
-                    lo = np.minimum(alpha_breaks[:, :, k  ], cap)
-                    hi = np.minimum(alpha_breaks[:, :, k+1], cap)
+                    lo = torch.minimum(alpha_breaks[:, :, k  ], cap)
+                    hi = torch.minimum(alpha_breaks[:, :, k+1], cap)
                     if not (lo < hi).any():
                         continue
-                    ah = np.where(lo < hi, (hi - lo) / 2., 0.)  # (n_safe, n_R)
-                    am = np.where(lo < hi, (hi + lo) / 2., 0.)  # (n_safe, n_R)
+                    ah = torch.where(lo < hi, (hi - lo) / 2., 0.)  # (n_safe, n_R)
+                    am = torch.where(lo < hi, (hi + lo) / 2., 0.)  # (n_safe, n_R)
                     alpha_gl = am[:, :, None] + ah[:, :, None] * gp[None, None, :]
-                    r_gl     = abs_y1_s[:, None, None] * np.cosh(alpha_gl)
-                    u_gl     = (np.log(r_gl) - logR[None, :, None]) / dR
+                    r_gl     = abs_y1_s[:, None, None] * torch.cosh(alpha_gl)
+                    u_gl     = (torch.log(r_gl) - logR[None, :, None]) / dR
                     # ah=0 for inactive cells → zero contribution without explicit mask
                     out += (-abs_y1_s[:, None]
                             * (lamontagne(u_gl) * ah[:, :, None] * gw[None, None, :]).sum(-1))
                 return out
 
             # Fundamental theorem: ∫_{a1}^{a2} = sgn(a2)·F_pos(|a2|) − sgn(a1)·F_pos(|a1|)
-            contrib = (  np.sign(a2)[:, None] * F_pos(np.abs(a2))
-                       - np.sign(a1)[:, None] * F_pos(np.abs(a1)))
+            contrib = (  torch.sign(a2)[:, None] * F_pos(torch.abs(a2))
+                       - torch.sign(a1)[:, None] * F_pos(torch.abs(a1)))
             geomz_out[safe] += contrib
             
         if hasattr(rx, 'weighting') and rx.weighting is not None:
-            geomz_out = np.einsum('i,ij...->j...', rx.weighting, geomz_out)
-        return torch.from_numpy(geomz_out)
+            geomz_out = torch.einsum('i,ij...->j...', rx.weighting, geomz_out)
+        return geomz_out
 
     def _geomz_circle(self, rx, R):
         radius = self.radius if isinstance(self.radius, torch.Tensor) else torch.tensor(self.radius, dtype=R.dtype)
@@ -288,7 +289,7 @@ def getRz(P,Q):
     cos_theta = QP[..., 0] / mQP
     sin_theta = QP[..., 1] / mQP
 
-    Rz = np.zeros(QP.shape+(3,))
+    Rz = torch.zeros(QP.shape+(3,))
 
     Rz[..., 0,0] = cos_theta
     Rz[..., 1,1] = cos_theta
@@ -296,7 +297,7 @@ def getRz(P,Q):
     Rz[..., 1,0] = -sin_theta
     Rz[..., 2,2] = 1.
     
-    return Rz, np.swapaxes(Rz, -1, -2)
+    return Rz, torch.swapaxes(Rz, -1, -2)
 
 
 def integrate_around_loop(lp, rx, hr):
@@ -328,7 +329,7 @@ def integrate_around_loop(lp, rx, hr):
             p2 = torch.einsum('...ij,...j->...i', Rz, lp_xyz[i+1])
 
             p12 = p2-p1
-            tdist = norm(p12, keepdim=True)
+            tdist = norm(p12, keepdims=True)
             p12 /= tdist
             cp = p1
 
@@ -409,6 +410,7 @@ class ButterworthFilter:
         elif self.order==2: recip_resp = (s**2 + s*2**(1/2) + 1)
         elif self.order==3: recip_resp = (s**2 + s + 1)*(1+s)
         elif self.order==4: recip_resp = (s**2 + 1.84776*s+1)*(s**2 + 0.76537*s+1)
+        else: raise NotImplementedError(f"filter of order {self.order} has not been implemented")
         return (1./recip_resp)
     
     def stepoff_response(self, t):

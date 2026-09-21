@@ -20,6 +20,8 @@ dependencies = [
     "nosj",
     "biotsavartlaw",
     "libaarhusxyz",
+    "pytest",
+    "jupyter>=1.1.1",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +29,7 @@ docs = [
     "mkdocs",
     "mkdocs-jupyter",
     "pymdown-extensions",
+    "pytest",
 ]
 
 [tool.setuptools.packages.find]
