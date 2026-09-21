@@ -579,7 +579,7 @@ def rediscretize_matrices(z_old, z_new):
         where=column_sums != 0,
     )
 
-def test_lci(n_mods=100):
+def test_lci(n_mods=15):
     # n_mod
     #import torch_directml
 

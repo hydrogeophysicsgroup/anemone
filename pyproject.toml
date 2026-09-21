@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anemone"
+version = "0.1.0"
+description = "electromagnetic forward"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Matt Griffiths", email = "mpg@geo.au.dk" },
+]
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "scipy",
+    "torch",
+    "nosj",
+    "biotsavartlaw",
+    "libaarhusxyz",
+]
+
+[project.optional-dependencies]
+docs = [
+    "mkdocs",
+    "mkdocs-jupyter",
+    "pymdown-extensions",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["anemone*"]
