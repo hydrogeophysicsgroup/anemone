@@ -674,6 +674,73 @@ class ForwardFD(BaseForward):
         else:
             return H.T
 
+class VMDForward(Forward):
+    geomz = None
+    t2t   = None
+
+    def __init__(self, source_height, receiver, times, waveform=None, filterfunc=None, t_end=None, tolerance=None):
+        from anemone.system import Loop
+        tx = Loop.square(1., z=source_height)
+        self.rx_dist = torch.sqrt(receiver.x**2 + receiver.y**2)
+        if self.rx_dist==0.: self.rx_dist = torch.tensor([1e-2])
+        self.t2t = None
+        super().__init__(tx, receiver, times, waveform, filterfunc, t_end, tolerance)
+        
+    def setup(self):
+        with torch.no_grad():
+            def frq_integrand(f):
+                self.omega = c.twopi*f[:,None]
+                def wvlngth_integrand(wave_length):
+                    """ Hz from horizontal electric dipole. """
+                    self.lamda = wave_length[None, :]          
+                    self.sfield_rte = torch.exp(-self.lamda*self.sfield_dz)*self.lamda / c.fourpi
+                    intg = rte(torch.ones(1)/40., None, self.omega, self.lamda)*self.sfield_rte
+                    return intg.squeeze()
+                hkl1 = Hankel(wvlngth_integrand, 0)
+
+                hkl1._recenter_function(self.rx_dist)
+                def geomz_r(r):
+                    log_r = torch.log(r/self.rx_dist)
+                    dR = log_r[1]-log_r[0]
+                    r_norm = log_r / dR
+                    return lamontagne(r_norm)
+                
+                Hr, self.geomz, self.lamda1 = hkl1.preintegrate(geomz_r, self.rmin, self.rmax)
+                self.geomz *= torch.exp(-self.lamda1*self.sfield_dz)*self.lamda1**2 / c.fourpi
+                return Hr.squeeze()
+            
+            self.cbft=invFourier(frq_integrand)
+            def t2t_func(t_in):
+                if self.t_end is not None:
+                    wv_mat = waveform_matrix(t_in, t_in, waveform=self.waveform)
+                    self.gate_mat = gating_matrix(t_in, self.t_st, self.t_end, n_eval=1000)
+                    
+                    return self.gate_mat @ wv_mat
+                else:
+                    self.gate_mat = None
+                    return waveform_matrix(self.times, t_in, waveform=self.waveform)
+
+            
+            Ht, self.t2t, self.omega1 = self.cbft.preintegrate(t2t_func, self.tmin, self.tmax)
+            self.t2t *= c.mu0
+
+
+            if self.filterfunc is not None:
+                self.t2t *= self.filterfunc.omega_filter(self.omega1*c.sqrt_twopi)#.squeeze()
+            if self.waveform is not None:
+                self.t2t /= -1j*c.sqrt_twopi
+            else:
+                self.t2t *= self.omega1.squeeze()
+            self.t2t /= torch.sqrt(self.omega1.squeeze())
+            self.H2t, self.omega, self.lamda = make_H2t(self.t2t, self.geomz.real, self.omega1.real, self.lamda1.real, tolerance=self.tolerance)
+
+            if self.filterfunc is None:
+                self.H2t    = 2.*self.H2t.real.to(rdtype())
+            self.omega *= c.sqrt_twopi
+            self.rho    = None
+            self.thick  = None
+
+
 # written out explicitly (rather than built by specialize) so editors can resolve their __call__ signatures
 @specialized(Forward, ColeColeEarth)
 class ForwardColeCole(ColeColeEarth, Forward):
