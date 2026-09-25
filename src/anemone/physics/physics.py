@@ -795,3 +795,42 @@ def dbzdt_halfspace_coincident_circle_loop(times, rho, r, I=1., max_terms=2000):
 
     dbdt = 2 * I * r * c.mu0 * c.sqrt_pi * tr**3 * summation / times64[None,:]
     return dbdt.to(times.dtype)
+
+from mpmath import mp, mpf, sqrt, fabs
+
+def dbzdt_halfspace_coincident_circle_loop(times, rho, r, I=1., max_terms=2000, prec=100):
+    """W&H Eq. 4.101 — mpmath arbitrary precision."""
+    print('arbitrary precision floats')
+
+    mp.dps = prec  # decimal digits of precision
+
+    mu0     = mpf('1.25663706212e-6')      # or mpf(c.mu0)
+    sqrt_pi = sqrt(mp.pi)
+    r_mp    = mpf(r)
+    I_mp    = mpf(I)
+
+    result = [[mpf(0)] * len(times) for _ in range(len(rho))]
+
+    for i, p in enumerate(rho):
+        sigma = mpf(1) / mpf(float(p))
+        for j, t in enumerate(times):
+            t_mp  = mpf(float(t))
+            theta = sqrt(mpf('0.25') * mu0 * sigma / t_mp)
+            tr    = theta * r_mp
+            x2    = tr * tr
+
+            term = mpf(1) / 5
+            summation = term
+            for m in range(max_terms - 1):
+                ratio = (-(2*m + 4) * (2*m + 3) * (2*m + 5) * x2
+                         / ((m + 1) * (m + 2) * (m + 3) * (2*m + 7)))
+                term = term * ratio
+                summation = summation + term
+                if fabs(term / summation) < mpf(10) ** (-prec + 2):
+                    print(f'broke at {m}', flush=True)
+                    break
+
+            result[i][j] = 2 * I_mp * r_mp * mu0 * sqrt_pi * tr**3 * summation / t_mp
+
+    # cast back to float / tensor at the end
+    return torch.tensor([[float(v) for v in row] for row in result])

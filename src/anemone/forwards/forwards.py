@@ -323,7 +323,10 @@ class Forward(BaseForward):
                 cRTE = cRTE.real.to(rdtype())
             res = torch.einsum('ik,...k->i...', self.H2t, cRTE)
             if len(res.shape)>1: res = res.mT
-            return res
+            # dbdt is a physically real quantity; any residual imaginary part
+            # is numerical noise from the Hankel/Fourier transforms. This
+            # matches BaseForward._evaluate, which always discards it via .real.
+            return res.real.to(rdtype())
 
     def jacobian(self):
         with torch.no_grad():
@@ -337,7 +340,11 @@ class Forward(BaseForward):
             else:
                 Gr = torch.einsum('ik,...k->i...', self.H2t, dRTE).T
                 Gr /= -(self.rho.real.squeeze()**2)[:,None]
-            return Gr
+            # The jacobian of a real quantity (dbdt) w.r.t. a real parameter
+            # (resistivity) is real. When filterfunc is set, H2t stays complex
+            # and Gr would otherwise stay complex too, which breaks downstream
+            # linear algebra (e.g. G.T @ Cdi @ G) that assumes real dtype.
+            return Gr.real.to(rdtype())
     
     def _evaluate(self, jac=False):
         with torch.no_grad():
@@ -373,6 +380,10 @@ class Forward(BaseForward):
         if newfwr.filterfunc is None:
             newfwr.H2t       = 2.*newfwr.H2t.real.to(newfwr.device).to(rdtype())
         # newfwr.H2t      /= torch.sqrt(newfwr.omega.real)
+        # setup() applies this mu0 scaling to H2t for individual forwards; since
+        # we recompute H2t here from the combined t2t rather than reusing
+        # newfwr/tmpother's already-scaled H2t, it must be (re)applied here too.
+        newfwr.H2t      *= c.mu0
         newfwr.omega    *= c.sqrt_twopi
         newfwr.rho       = None
         newfwr.thick     = None
