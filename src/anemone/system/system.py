@@ -442,6 +442,7 @@ class FilterChain:
     
     def stepoff_response(self, t):
         N = len(self)
+        if N==1: return self.filters[0].stepoff_response(t)
         omegas = c.twopi*torch.tensor([cfilter.fcut for cfilter in self.filters])
         if len(np.unique(omegas.numpy())) != N:
             raise ValueError("All cutoff frequencies in 'omegas' must be distinct.")
@@ -505,7 +506,7 @@ def interpolation_matrix(t_in, t_out):
     t2t = torch.nan_to_num(lamontagne((torch.log(t_out)[:,None]-logT[None,:])/dT))
     return t2t
 
-def gating_matrix(t_sampled, t_st, t_end, n_eval=1000):
+def gating_matrix(t_sampled, t_st, t_end, n_eval=10000):
     logT = torch.log(t_sampled)#.cpu()
     dT = logT[1]-logT[0]
 

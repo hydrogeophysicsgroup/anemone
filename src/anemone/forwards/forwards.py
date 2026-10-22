@@ -121,7 +121,7 @@ class BaseForward:
             else:
                 self.primary = (bfield[:,None]*primary[None,:]).mean(0)
         else:
-            self.primary = 0.
+            self.primary = torch.zeros_like(self.times)
        
 
         if self.device is not None:
