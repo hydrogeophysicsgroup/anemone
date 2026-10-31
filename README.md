@@ -1,6 +1,18 @@
 # anEMone
 a pytorch based 1D electromagnetic modelling and inversion code.
 
+## Installation
+
+```console
+pip install anemone-core
+```
+
+The package is published on PyPI as `anemone-core`, but is imported as `anemone`:
+
+```python
+import anemone
+```
+
 ## Documentation
 
 The documentation site is built from markdown files in `docs/` using MkDocs.

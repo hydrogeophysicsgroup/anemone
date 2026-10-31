@@ -96,6 +96,7 @@ def test_model_save():
 
 
 if __name__ == '__main__':
+    pass
     # test_loop_save()
     # test_filterchain_save()
     # test_forward_save()

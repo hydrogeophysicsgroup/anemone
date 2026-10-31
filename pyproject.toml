@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "anemone"
+name = "anemone-core"
 version = "0.1.0"
-description = "electromagnetic forward"
+description = "A PyTorch based 1D electromagnetic modelling and inversion code"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -20,11 +20,16 @@ dependencies = [
     "nosj",
     "biotsavartlaw",
     "libaarhusxyz",
+]
+
+[project.urls]
+Repository = "https://github.com/hydrogeophysicsgroup/anemone"
+
+[project.optional-dependencies]
+dev = [
     "pytest",
     "jupyter>=1.1.1",
 ]
-
-[project.optional-dependencies]
 docs = [
     "mkdocs",
     "mkdocs-jupyter",
