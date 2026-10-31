@@ -1,12 +1,4 @@
-from setuptools import setup, Extension, find_packages
+from setuptools import setup
 
-setup(  
-    name='anemone',
-    author='Matt Griffiths',
-    author_email='mpg@geo.au.dk',
-    packages=['anemone', 'anemone.experiment', 'anemone.physics', 'anemone.transforms', 'anemone.inversion', 'anemone.forwards', 'anemone.system'],
-    package_dir={'':'src'},        
-    install_requires=['numpy', 'matplotlib', 'scipy', 'torch'],
-    license='MIT',
-    description='electromagnetic forward',        
-)
+
+setup()

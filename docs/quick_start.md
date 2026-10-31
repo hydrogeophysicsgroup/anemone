@@ -21,6 +21,28 @@ navigate into the *anemone* folder from the console and enter the following comm
 pip install -e .
 ```
 
+### Documentation site
+
+The documentation source lives in the `docs/` folder as markdown. To install the documentation tools, including notebook rendering support, run:
+
+```console
+pip install -e ".[docs]"
+```
+
+To preview the site locally:
+
+```console
+mkdocs serve
+```
+
+To build the static site:
+
+```console
+mkdocs build
+```
+
+Jupyter notebooks can be rendered by MkDocs through `mkdocs-jupyter` when they are included in the docs navigation. For now, keep curated notebooks inside `docs/` when you want them to become part of the published documentation.
+
 
 ## Usage
 

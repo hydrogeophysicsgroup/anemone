@@ -8,6 +8,12 @@ nav:
   - Usage: usage.md
   - Project Layout: project_layout.md
 
+plugins:
+  - search
+  - mkdocs-jupyter:
+      execute: false
+      include_source: true
+
 markdown_extensions:
   - pymdownx.arithmatex:
       generic: true

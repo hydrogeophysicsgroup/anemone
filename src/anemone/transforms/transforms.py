@@ -38,7 +38,7 @@ def gaver_stehfest_coefficients(N):
             denominator *= factorial(2*k-i)
             tmpv += numerator/denominator
         v.append((-1)**(i + N/2.)*tmpv)
-    return torch.tensor(v, dtype=rdtype)
+    return torch.tensor(v, dtype=rdtype())
 
 class invLaplace:
     """ Inverse laplace transform using Gaver-Stehfest method.
@@ -56,7 +56,7 @@ class invLaplace:
             self.v = self.v.to(device)
         else:
             self.device = self.v.device
-        self.i = (torch.arange(n_coefficients, device=self.device)+1).to(rdtype)
+        self.i = (torch.arange(n_coefficients, device=self.device)+1).to(rdtype())
         self.n_coefficients = n_coefficients
         
 
@@ -182,8 +182,8 @@ class Hankel:
 
         self.func_results = None       
 
-        self.lamda = torch.clone(hkl[0])#.to(rdtype)
-        self.fc = torch.clone(hkl[1])#.to(rdtype)
+        self.lamda = torch.clone(hkl[0])#.to(rdtype())
+        self.fc = torch.clone(hkl[1])#.to(rdtype())
 
         if device is not None:
             self.fc=self.fc.to(device)
@@ -201,7 +201,7 @@ class Hankel:
     def _recenter_function(self, r_center):
         assert self.rcidx == 0, "recentering is only allowed once"
         if isinstance(r_center, tuple): r_center = torch.sqrt(r_center[0]*r_center[1]).to(self.device)
-        self.rc = r_center#.to(rdtype)
+        self.rc = r_center#.to(rdtype())
         self.lamda = self.lamda/self.rc
         self.rcidx = self.smp_per_decade*torch.log10(self.rc)
         self.func_results = None
@@ -312,16 +312,19 @@ class Hankel:
             i_offsets = i_offsets.to(self.device)
 
 
-        FC = torch.zeros_like(self.fc, device=self.device)
+        FC = torch.zeros(geomz.shape[:-1]+self.fc.shape, device=self.device)
+        
+        while self.fc.ndim < FC.ndim:
+            self.fc = self.fc[None, :]
         
         for i, i_offset in enumerate(i_offsets):
             if i_offset == 0:
-                FC += geomz[i]*self.fc / rout[i]
+                FC += geomz[..., i, None]*self.fc / rout[i]
             elif i_offset > 0:
-                FC[:-i_offset] += geomz[i]*self.fc[..., i_offset:] / rout[i]
+                FC[..., :-i_offset] += geomz[..., i, None]*self.fc[..., i_offset:] / rout[i]
             else:
                 i_offset *= -1
-                FC[i_offset:] += geomz[i]*self.fc[..., :-i_offset] / rout[i]
+                FC[..., i_offset:] += geomz[..., i, None]*self.fc[..., :-i_offset] / rout[i]
         
         if self.tolerance is not None:
             idxmin, idxmax = coefficient_bounds(FC.cpu().numpy(), tolerance=self.tolerance)
@@ -330,7 +333,7 @@ class Hankel:
             idx_slice = slice(None, None)
         if FC.dtype != self.func_results.dtype:
             FC = FC.to(self.func_results.dtype)   
-        return torch.einsum('...i,i->...', self.func_results, FC), FC[idx_slice], self.lamda[..., idx_slice]
+        return torch.einsum('ji,...i->j...', self.func_results, FC), FC[idx_slice], self.lamda[..., idx_slice]
 
 class Fourier(Hankel):
     """ A fourier transform for logarithmically sampled data. The implementation uses hankel transforms at the base.
@@ -339,7 +342,8 @@ class Fourier(Hankel):
         
     def __init__(self, func, log10min=-20, log10max=20, smp_per_decade=16, device=None, range=None, tolerance=None):
         def f1(lamda):
-            return func(lamda/c.sqrt_twopi)/torch.sqrt(lamda)
+            x = func(lamda/c.sqrt_twopi)
+            return x.permute(*torch.arange(x.ndim - 1, -1, -1))/torch.sqrt(lamda)
         super().__init__(f1, -0.5, log10min, log10max, smp_per_decade, device, None)
         self.lambda_included = False
         _, realfc = hankel_coefficients(-0.5, log10min, log10max, smp_per_decade, omega_0=np.pi/5.25, a=0.1)
@@ -388,7 +392,7 @@ class Fourier(Hankel):
 
     def preintegrate(self, timeOperator, tmin, tmax):
         i_offsets, rout, tout = self.calc_tvals(tmin, tmax)
-        Wmat = timeOperator(tout).to(cdtype)
+        Wmat = timeOperator(tout).to(cdtype())
 
         if self.func_results is None:
             self.func_results = self.func(self.lamda)
@@ -403,7 +407,7 @@ class Fourier(Hankel):
         if self.fc.dtype != self.func_results.dtype:
             self.fc = self.fc.to(self.func_results.dtype)   
 
-        FC = torch.zeros(Wmat.shape[:-1]+self.fc.shape, dtype=cdtype, device=self.device)
+        FC = torch.zeros(Wmat.shape[:-1]+self.fc.shape, dtype=cdtype(), device=self.device)
         sqRout = torch.sqrt(rout)
         
         for i, i_offset in enumerate(i_offsets):
