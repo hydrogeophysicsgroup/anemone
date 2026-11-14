@@ -392,6 +392,38 @@ class SystemResponse:
         self.time = time
         self.amplitude = amplitude
 
+def allpole_stepoff_response(poles, t):
+    """Step-off response of an all-pole low-pass filter with unit DC gain.
+
+    The filter is ``H(s) = prod(-p_k) / prod(s - p_k)`` with ``poles`` p_k in
+    rad/s (Re(p_k) < 0). The input is 1 for t < 0 and 0 for t >= 0, so the
+    response is 1 for t <= 0 and ``1 - L^-1[H(s)/s](t)`` for t > 0.
+
+    The partial fractions are expanded with multiplicity, so repeated poles
+    (e.g. two identical first-order filters in a chain) and complex pole
+    pairs (Butterworth filters of order >= 2) are both handled.
+    """
+    from scipy.signal import residue
+    poles = np.atleast_1d(np.asarray(poles, dtype=complex))
+    w0    = np.exp(np.mean(np.log(np.abs(poles))))   # normalise, so the poles are O(1)
+    a     = np.real(np.poly(poles/w0))
+    # step-on response: Y(s) = H(s)/s, which adds a pole at s=0
+    r, p, _ = residue([a[-1]], np.append(a, 0.), tol=1e-6)
+
+    amp = torch.ones_like(t, dtype=rdtype())
+    i_step = t > 0
+    tau = (t[i_step]*w0).to(cdtype())
+    step_on = torch.zeros_like(tau)
+    m = 0
+    for i in range(len(r)):
+        # residue() lists a pole of multiplicity M as M consecutive entries,
+        # for (s-p)^-1, (s-p)^-2, ..., (s-p)^-M
+        m = m+1 if (i > 0 and np.isclose(p[i], p[i-1], rtol=0., atol=1e-12)) else 1
+        step_on += complex(r[i]) * tau**(m-1) / float(np.prod(np.arange(1, m))) * torch.exp(complex(p[i])*tau)
+    amp[i_step] = 1. - step_on.real.to(amp.dtype)
+    return amp
+
+
 @nosj
 class ButterworthFilter:
     fcut : float
@@ -413,10 +445,14 @@ class ButterworthFilter:
         else: raise NotImplementedError(f"filter of order {self.order} has not been implemented")
         return (1./recip_resp)
     
+    def poles(self):
+        """Poles of the filter in rad/s."""
+        n = int(self.order)
+        k = np.arange(n)
+        return c.twopi*self.fcut*np.exp(1j*np.pi*(2*k + n + 1)/(2*n))
+
     def stepoff_response(self, t):
-        amp = torch.exp(-t/self.tau)
-        amp[t<0.] = 1.
-        return amp**self.order
+        return allpole_stepoff_response(self.poles(), t)
     
 
 from typing import List
@@ -443,28 +479,10 @@ class FilterChain:
     def stepoff_response(self, t):
         N = len(self)
         if N==1: return self.filters[0].stepoff_response(t)
-        omegas = c.twopi*torch.tensor([cfilter.fcut for cfilter in self.filters])
-        if len(np.unique(omegas.numpy())) != N:
-            raise ValueError("All cutoff frequencies in 'omegas' must be distinct.")
-        
-        # Initialize the summation term
-        summation_term = torch.zeros_like(t, dtype=float)
-        summation_term[t<=0.] = 1.
-        i_step = t>0
-        
-        
-        for i in range(N):
-            w_i = omegas[i]
-            
-            # Isolate all w_j where j != i
-            w_j = omegas[omegas!=w_i]
-            
-            # Calculate the product coefficient for this specific filter
-            C_i = torch.prod(w_j / (w_j - w_i))
-            
-            # Add this filter's exponential decay curve to the total summation
-            summation_term[i_step] += C_i * torch.exp(-w_i * t[i_step])
-        return summation_term
+        # The chain is the product of the filters, so its poles are the union
+        # of the filters' poles (with multiplicity). Equal cutoff frequencies
+        # give repeated poles, which allpole_stepoff_response handles.
+        return allpole_stepoff_response(np.concatenate([np.atleast_1d(cfilter.poles()) for cfilter in self.filters]), t)
 
 
 S1 = lambda x: 1 - (9/4)*x**2 * ( 1 - 2./9*x*(1 + 5/2*x*(1 - 2/5 * x)))
