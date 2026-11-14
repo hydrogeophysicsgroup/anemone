@@ -551,9 +551,9 @@ def make_H2t(t2t, geomz, omega, lmb, tolerance=1e-6, sigma_ref=1e-2):
         n_g = 1
         geomz = geomz[None, :]
 
-    t2t_real = t2t.real.numpy()
-    t2t_np   = t2t.numpy()
-    geomz_np = geomz.real.numpy()
+    t2t_real = t2t.real.cpu().numpy()
+    t2t_np   = t2t.cpu().numpy()
+    geomz_np = geomz.real.cpu().numpy()
     omega_np = omega.squeeze().cpu().numpy()
     lmb_np   = lmb.squeeze().cpu().numpy()
     n_t      = t2t.shape[0]

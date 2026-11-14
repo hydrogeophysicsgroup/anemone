@@ -93,19 +93,22 @@ class BaseForward:
         self.tmin /= 2.
         self.tmax *= 2.
 
-        bfield = torch.from_numpy(biotsavart.calc_bfield(source.xyz, receiver.xyz)[..., -1])
+        bfield = torch.from_numpy(biotsavart.calc_bfield(source.xyz, receiver.xyz)[..., -1]).to(self.device)
 
         if self.t_end is not None:
-            t_primary = torch.logspace(self.tmin.log10(), self.tmax.log10(), 16*(int((self.tmax/self.tmin).log10())+1))
+            t_primary = torch.logspace(self.tmin.log10(), self.tmax.log10(), 16*(int((self.tmax/self.tmin).log10())+1), device=self.device)
         else:
             t_primary = self.times*1.
 
         if isinstance(self.waveform, Waveform):
             if waveform is not None:
+                # the waveform itself is left where it is (it may be shared between forwards)
+                wv_time   = self.waveform.time.to(self.device)
+                wv_d2wdt2 = self.waveform.d2wdt2.to(self.device)
                 if self.filterfunc is None:
-                    primary =  stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) @ self.waveform.d2wdt2
+                    primary =  stepoff_response(t_primary[:, None] - wv_time[None, :]) @ wv_d2wdt2
                 else:
-                    primary =  self.filterfunc.stepoff_response(t_primary[:, None] - self.waveform.time[None, :]) @ self.waveform.d2wdt2
+                    primary =  self.filterfunc.stepoff_response(t_primary[:, None] - wv_time[None, :]) @ wv_d2wdt2
             else:
                 primary  =  stepoff_response(t_primary) if self.filterfunc is None else self.filterfunc.stepoff_response(t_primary)
 
@@ -257,11 +260,9 @@ class Forward(BaseForward):
             self.lamda = self.lamda.to(self.device).to(cdtype())
 
     def setup(self):
-        self.rho   = 40*torch.ones(2, dtype=cdtype())[:, None, None]
-        self.thick = 20*torch.ones(1, dtype=cdtype())[:, None, None]
         with torch.no_grad():
-            self.rho   = 40*torch.ones(2, dtype=cdtype())[:, None, None]
-            self.thick = 20*torch.ones(1, dtype=cdtype())[:, None, None]
+            self.rho   = 40*torch.ones(2, dtype=cdtype(), device=self.device)[:, None, None]
+            self.thick = 20*torch.ones(1, dtype=cdtype(), device=self.device)[:, None, None]
 
             def frq_integrand(f):
                 self.omega = c.twopi*f[None,:,None]
@@ -305,8 +306,12 @@ class Forward(BaseForward):
             self.t2t /= torch.sqrt(self.omega1.squeeze())
             self.H2t, self.omega, self.lamda = make_H2t(self.t2t, self.geomz.real, self.omega1.real, self.lamda1.real, tolerance=self.tolerance)
 
+            # make_H2t returns CPU tensors
+            self.H2t   = self.H2t.to(self.device)
+            self.omega = self.omega.to(self.device).to(cdtype())
+            self.lamda = self.lamda.to(self.device).to(cdtype())
             if self.filterfunc is None:
-                self.H2t    = 2.*self.H2t.real.to(self.device).to(rdtype())
+                self.H2t    = 2.*self.H2t.real.to(rdtype())
 
             self.H2t *= c.mu0
             self.omega *= c.sqrt_twopi
@@ -377,8 +382,12 @@ class Forward(BaseForward):
         # t2t /= torch.sqrt(tmp_omega)
         newfwr.H2t, newfwr.omega, newfwr.lamda = make_H2t(t2t, newfwr.geomz, tmp_omega, tmp_lamda, tolerance=tol)
 
+        # make_H2t returns CPU tensors
+        newfwr.H2t   = newfwr.H2t.to(newfwr.device)
+        newfwr.omega = newfwr.omega.to(newfwr.device).to(cdtype())
+        newfwr.lamda = newfwr.lamda.to(newfwr.device).to(cdtype())
         if newfwr.filterfunc is None:
-            newfwr.H2t       = 2.*newfwr.H2t.real.to(newfwr.device).to(rdtype())
+            newfwr.H2t       = 2.*newfwr.H2t.real.to(rdtype())
         # newfwr.H2t      /= torch.sqrt(newfwr.omega.real)
         # setup() applies this mu0 scaling to H2t for individual forwards; since
         # we recompute H2t here from the combined t2t rather than reusing
@@ -399,6 +408,8 @@ class Forward(BaseForward):
         self.H2t   = self.H2t.to(device)
         self.omega = self.omega.to(device)
         self.lamda = self.lamda.to(device)
+        if torch.is_tensor(self.primary):
+            self.primary = self.primary.to(device)
         self.device=device
 
     @classmethod
