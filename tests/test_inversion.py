@@ -392,7 +392,6 @@ def test_lci(n_mods=100):
 def test_sci():
     gpu = torch.device('cpu')
     print('number of threads: ', torch.get_num_threads())
-    logForward = logify_forward(Forward)
 
     t1 = torch.logspace(-6, -4, 15)
     t2 = torch.logspace(-5, -3, 31)
@@ -401,8 +400,8 @@ def test_sci():
     wv1 = Waveform(torch.tensor([-0.5e-3, -0.9e-3, 0., 0.5e-6]), torch.tensor([0, 1, 1, 0]))
     wv2 = Waveform(torch.tensor([-1e-3, -1.5e-3, 0., 0.5e-5]), torch.tensor([0, 1, 1, 0]))
 
-    fwr1 = logForward(tx, rx, t1, waveform=wv1, tolerance=1e-6)
-    fwr2 = logForward(tx, rx, t2, waveform=wv2, tolerance=1e-6)
+    fwr1 = Forward(tx, rx, t1, waveform=wv1, tolerance=1e-6, logscale=True)
+    fwr2 = Forward(tx, rx, t2, waveform=wv2, tolerance=1e-6, logscale=True)
 
     fwr = fwr1 + fwr2
 
