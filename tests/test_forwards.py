@@ -807,3 +807,50 @@ if __name__ == '__main__':
     # test_multireceiver_frequency_domain()
     # test_Laplace_40x40_aarhusInv_piecewise_waveform()
     pass
+
+def _filtered_forward(device, do_setup=True):
+    from anemone.forwards import Forward
+    from anemone.experiment import Loop, Receiver, Waveform, ButterworthFilter, FilterChain
+    recfilter = FilterChain([ButterworthFilter(6.79e5, 1),
+                             ButterworthFilter(4.83e5, 1),
+                             ButterworthFilter(4.83e5, 1)])   # repeated cutoff, as in many .gex files
+    times = torch.logspace(-5, -3, 21, dtype=rdtype()).to(device)
+    return Forward(Loop.square(40), Receiver(), times, waveform=Waveform.example(),
+                   filterfunc=recfilter, do_setup=do_setup)
+
+
+def test_forward_repeated_filter_cutoffs():
+    fwr = _filtered_forward('cpu')
+    d = fwr(torch.tensor([50., 10., 100.], dtype=rdtype()), torch.tensor([20., 30.], dtype=rdtype()))
+    assert d.shape == (21,) and torch.isfinite(d).all()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA device")
+@pytest.mark.parametrize("do_setup", [True, False])
+def test_forward_on_cuda_matches_cpu(do_setup):
+    """A Forward built with `times` on the GPU (waveform + filters) must run
+    there and agree with the CPU result, also for the sum of two forwards."""
+    rho = torch.tensor([[50., 10., 100.], [20., 200., 5.]], dtype=rdtype())
+    thk = torch.tensor([20., 30.], dtype=rdtype())
+    out = {}
+    for device in ('cpu', 'cuda'):
+        fwr = _filtered_forward(device, do_setup=do_setup)
+        if not do_setup:
+            fwr.setup()
+        both = fwr + _filtered_forward(device)
+        out[device] = [fwr(rho.to(device), thk.to(device)).cpu(), both(rho.to(device), thk.to(device)).cpu()]
+        assert fwr.H2t.device.type == device and both.H2t.device.type == device
+    for d_cpu, d_gpu in zip(out['cpu'], out['cuda']):
+        assert torch.allclose(d_cpu, d_gpu, rtol=1e-8, atol=0.)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA device")
+def test_forward_set_device_cuda():
+    """Build on the CPU, then move to the GPU with set_device."""
+    rho = torch.tensor([50., 10., 100.], dtype=rdtype())
+    thk = torch.tensor([20., 30.], dtype=rdtype())
+    fwr = _filtered_forward('cpu')
+    d_cpu = fwr(rho, thk)
+    fwr.set_device(torch.device('cuda'))
+    d_gpu = fwr(rho.cuda(), thk.cuda())
+    assert torch.allclose(d_cpu, d_gpu.cpu(), rtol=1e-8, atol=0.)
