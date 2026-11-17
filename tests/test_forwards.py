@@ -854,3 +854,19 @@ def test_forward_set_device_cuda():
     fwr.set_device(torch.device('cuda'))
     d_gpu = fwr(rho.cuda(), thk.cuda())
     assert torch.allclose(d_cpu, d_gpu.cpu(), rtol=1e-8, atol=0.)
+
+
+def test_gated_forward_copy_and_sum():
+    """With gate integration (t_end), copy() must keep the gate open times, and
+    the first block of a sum of two forwards must equal the first forward."""
+    from anemone.forwards import Forward
+    from anemone.system import Loop, Receiver
+    t_open = torch.logspace(-5, -3, 8, dtype=rdtype())
+    fwr = Forward(Loop.square(40), Receiver(), t_open, t_end=1.25*t_open)
+    assert torch.equal(fwr.copy().t_st, fwr.t_st)
+
+    other = Forward(Loop.square(40), Receiver(), 2*t_open, t_end=2.5*t_open)
+    rho, thk = torch.tensor([100., 100.], dtype=rdtype()), torch.tensor([10.], dtype=rdtype())
+    both = fwr + other
+    with torch.no_grad():
+        assert torch.allclose(both(rho, thk)[both.t1slc], fwr(rho, thk), rtol=1e-3)
