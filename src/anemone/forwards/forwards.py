@@ -28,6 +28,7 @@ class BaseForward:
     waveform   : Waveform = None
     filterfunc : FilterChain = None
     t_end      : torch.Tensor = None
+    t_st       : torch.Tensor = None  # gate open times (with t_end); a field so copy() keeps them
     tolerance  : float = None
     omega      : torch.Tensor = None
     lamda      : torch.Tensor = None
@@ -45,7 +46,8 @@ class BaseForward:
         self.times    = times if isinstance(times, torch.Tensor) else torch.tensor(times)
 
         if t_end is not None:
-            self.t_st = self.times
+            # copy() re-runs __init__ with times = gate centres, so take t_st when given
+            self.t_st = kwargs['t_st'] if kwargs.get('t_st') is not None else self.times
             self.t_end= t_end
             self.times = (self.t_st * self.t_end)**0.5
             self.tmin = self.t_st.min()
